@@ -113,16 +113,42 @@ def _render_error(msg: str, title: str = "Error"):
     ))
 
 
+def _build_tool_map():
+    """Build a name -> function lookup from registered user_functions."""
+    from tools import user_functions
+    return {f.__name__: f for f in user_functions}
+
+
+def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
+    """Execute a single tool function by name and return the result as a string."""
+    func = tool_map.get(name)
+    if not func:
+        return json.dumps({"error": f"Unknown tool: {name}"})
+    try:
+        args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+        result = func(**args)
+        return str(result) if result is not None else ""
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+
 def stream_response(client, thread_id: str, agent_id: str):
-    from azure.ai.agents.models import MessageDeltaChunk, ThreadRun, RunStep, AgentStreamEvent
+    from azure.ai.agents.models import (
+        MessageDeltaChunk, ThreadRun, RunStep, AgentStreamEvent, ToolOutput,
+    )
     from rich.spinner import Spinner
     from rich.live import Live
 
+    tool_map = _build_tool_map()
     full_text = ""
     tool_calls_shown = set()
     spinner = None
     live = None
     streaming_started = False
+
+    # Track requires_action state from the stream
+    run_id = None
+    pending_tool_calls = None  # set when run enters requires_action
 
     def _start_spinner(label: str):
         nonlocal spinner, live
@@ -138,6 +164,7 @@ def stream_response(client, thread_id: str, agent_id: str):
             live = None
             spinner = None
 
+    # ── Phase 1: Initial streaming run ────────────────────────
     try:
         _start_spinner("thinking...")
 
@@ -151,7 +178,13 @@ def stream_response(client, thread_id: str, agent_id: str):
                         full_text += event_data.text
 
                 elif isinstance(event_data, ThreadRun):
-                    if event_data.status == "failed":
+                    run_id = event_data.id
+                    if event_data.status == "requires_action":
+                        _stop_spinner()
+                        pending_tool_calls = (
+                            event_data.required_action.submit_tool_outputs.tool_calls
+                        )
+                    elif event_data.status == "failed":
                         _stop_spinner()
                         _render_error(str(event_data.last_error), "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
@@ -181,8 +214,84 @@ def stream_response(client, thread_id: str, agent_id: str):
     finally:
         _stop_spinner()
 
+    # ── Phase 2: Tool execution loop ──────────────────────────
+    # If the run entered requires_action, execute tools and submit results.
+    # Loop in case the agent chains multiple rounds of tool calls.
+    while pending_tool_calls and run_id:
+        # Execute each pending tool call
+        tool_outputs = []
+        for tc in pending_tool_calls:
+            if tc.type == "function":
+                _render_tool_card({"name": tc.function.name, "args": tc.function.arguments})
+                _start_spinner(f"running {tc.function.name}...")
+                result = _execute_tool_call(tool_map, tc.function.name, tc.function.arguments)
+                _stop_spinner()
+                tool_outputs.append(ToolOutput(
+                    tool_call_id=tc.id,
+                    output=result,
+                ))
+
+        pending_tool_calls = None  # reset before checking again
+
+        # Submit tool outputs (non-streaming) and get updated run
+        _start_spinner("thinking...")
+        try:
+            run = client.runs.submit_tool_outputs(
+                thread_id=thread_id,
+                run_id=run_id,
+                tool_outputs=tool_outputs,
+            )
+        except Exception as e:
+            _stop_spinner()
+            _render_error(str(e), "Tool Submit Failed")
+            break
+
+        # Poll until the run reaches a terminal state or requires_action
+        while run.status in ("queued", "in_progress"):
+            time.sleep(0.5)
+            run = client.runs.get(thread_id=thread_id, run_id=run.id)
+
+        _stop_spinner()
+
+        if run.status == "requires_action":
+            pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
+            continue  # another round of tool execution
+        elif run.status == "completed":
+            break  # done — fetch messages below
+        else:
+            _render_error(
+                str(getattr(run, "last_error", run.status)),
+                f"Run {run.status.title()}",
+            )
+            break
+
+    # ── Phase 3: Render the response ──────────────────────────
+    # If we streamed text in Phase 1, render it. Otherwise, fetch
+    # the assistant's final message from the thread (post-tool response).
     if full_text.strip():
         console.print(Markdown(full_text.strip()), highlight=False)
+    elif run_id:
+        # Text was generated after tool execution — fetch from thread
+        try:
+            messages = client.messages.list(thread_id=thread_id)
+            # Handle both paginated (.data) and plain list returns
+            msg_list = getattr(messages, "data", None) or list(messages)
+            # Find the latest assistant message (API usually returns newest first)
+            for msg in msg_list:
+                if msg.role == "assistant":
+                    parts = []
+                    for content_item in msg.content:
+                        if hasattr(content_item, "text"):
+                            txt = content_item.text
+                            text_val = getattr(txt, "value", None) or str(txt)
+                            if text_val.strip():
+                                parts.append(text_val.strip())
+                    if parts:
+                        full_text = "\n\n".join(parts)
+                        console.print(Markdown(full_text), highlight=False)
+                    break
+        except Exception:
+            pass  # graceful — the tool output was still submitted
 
     console.print()
     return full_text
