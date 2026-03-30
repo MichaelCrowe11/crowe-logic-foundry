@@ -3,6 +3,8 @@ Browser tool — fetch and extract content from web pages.
 """
 
 import json
+import httpx
+from bs4 import BeautifulSoup
 
 
 def browse_url(url: str, extract_mode: str = "text") -> str:
@@ -15,9 +17,6 @@ def browse_url(url: str, extract_mode: str = "text") -> str:
     :return: JSON with the extracted page content.
     :rtype: str
     """
-    import httpx
-    from bs4 import BeautifulSoup
-
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 

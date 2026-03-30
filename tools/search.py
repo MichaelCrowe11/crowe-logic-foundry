@@ -5,6 +5,13 @@ Search tools — web search and local file content search (grep).
 import json
 import subprocess
 import os
+import httpx
+from bs4 import BeautifulSoup
+
+# Resolve ripgrep path once at import time
+_RG_PATH = subprocess.run(
+    ["which", "rg"], capture_output=True, text=True
+).stdout.strip() or None
 
 
 def web_search(query: str, num_results: int = 5) -> str:
@@ -17,11 +24,8 @@ def web_search(query: str, num_results: int = 5) -> str:
     :return: JSON list of search results.
     :rtype: str
     """
-    import httpx
-
     num_results = min(num_results, 10)
 
-    # Use DuckDuckGo Lite as a free, no-API-key search fallback
     try:
         response = httpx.get(
             "https://lite.duckduckgo.com/lite/",
@@ -30,8 +34,6 @@ def web_search(query: str, num_results: int = 5) -> str:
             timeout=15,
             follow_redirects=True,
         )
-        # Parse the lite HTML for result links
-        from bs4 import BeautifulSoup
         soup = BeautifulSoup(response.text, "html.parser")
 
         results = []
@@ -63,12 +65,9 @@ def grep_search(pattern: str, path: str = ".", file_glob: str = "", max_results:
     search_path = os.path.expanduser(path)
     max_results = min(max_results, 200)
 
-    # Prefer ripgrep, fall back to grep
-    rg_path = subprocess.run(["which", "rg"], capture_output=True, text=True).stdout.strip()
-
     try:
-        if rg_path:
-            cmd = [rg_path, "--json", "-m", str(max_results), "--no-heading"]
+        if _RG_PATH:
+            cmd = [_RG_PATH, "--json", "-m", str(max_results), "--no-heading"]
             if file_glob:
                 cmd.extend(["--glob", file_glob])
             cmd.extend([pattern, search_path])
@@ -77,7 +76,7 @@ def grep_search(pattern: str, path: str = ".", file_glob: str = "", max_results:
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
-        if rg_path:
+        if _RG_PATH:
             # Parse ripgrep JSON output
             matches = []
             for line in result.stdout.splitlines():

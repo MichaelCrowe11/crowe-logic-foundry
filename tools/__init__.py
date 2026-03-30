@@ -25,8 +25,10 @@ from tools.playwright_browser import (
 
 # Talon Music Engine
 from tools.talon_music import (
-    talon_compose, talon_import_midi, talon_analyze,
-    talon_transform, talon_export,
+    talon_generate_chords, talon_generate_drums, talon_generate_melody,
+    talon_quantum_melody, talon_quantum_chord, talon_compose_emotion,
+    talon_full_composition, talon_import_midi, talon_analyze,
+    talon_list_grooves, talon_list_emotions,
 )
 
 # Quantum computing
@@ -54,8 +56,10 @@ user_functions = {
     browser_navigate, browser_click, browser_type_text,
     browser_snapshot, browser_screenshot,
     # Talon Music
-    talon_compose, talon_import_midi, talon_analyze,
-    talon_transform, talon_export,
+    talon_generate_chords, talon_generate_drums, talon_generate_melody,
+    talon_quantum_melody, talon_quantum_chord, talon_compose_emotion,
+    talon_full_composition, talon_import_midi, talon_analyze,
+    talon_list_grooves, talon_list_emotions,
     # Quantum
     run_quantum_circuit, synapse_evaluate, qubit_flow_execute,
     # MCP ecosystem

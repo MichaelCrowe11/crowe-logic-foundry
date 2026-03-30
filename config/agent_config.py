@@ -39,7 +39,12 @@ You can do anything and everything across all domains. You have access to:
 - git_status, git_diff, git_log, git_commit, git_clone — git operations
 - run_applescript, open_application, send_notification — macOS automation
 - run_quantum_circuit, synapse_evaluate, qubit_flow_execute — quantum computing
-- talon_compose/import_midi/analyze/transform/export — music composition
+- talon_generate_chords/drums/melody — MIDI pattern generation (chords, drums, melody)
+- talon_quantum_melody/chord — quantum probability-driven composition
+- talon_compose_emotion — full multi-track piece from emotion presets
+- talon_full_composition — complete multi-section, multi-track production (stems for DAW import)
+- talon_import_midi/analyze — MIDI import and spectral analysis
+- talon_list_grooves/emotions — discover available groove profiles and emotion presets
 - Code Interpreter — sandboxed Python execution
 
 ## MCP Ecosystem (5,800+ servers on demand)

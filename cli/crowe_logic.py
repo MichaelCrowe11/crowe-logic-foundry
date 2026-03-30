@@ -56,18 +56,6 @@ def get_client():
     return AgentsClient(endpoint=PROJECT_ENDPOINT, credential=DefaultAzureCredential())
 
 
-def setup_toolset():
-    """Build the toolset definition (for agent creation reference only).
-    We do NOT call enable_auto_function_calls — tool execution is handled
-    manually in stream_response() Phase 2 to avoid race conditions."""
-    from azure.ai.agents.models import FunctionTool, ToolSet, CodeInterpreterTool
-    from tools import user_functions
-    toolset = ToolSet()
-    toolset.add(FunctionTool(user_functions))
-    toolset.add(CodeInterpreterTool())
-    return toolset
-
-
 def _extract_tool_info(step_details) -> list[dict]:
     """Pull tool names and arguments from a RunStep's step_details."""
     tools = []
@@ -130,10 +118,15 @@ def _cancel_active_runs(client, thread_id: str):
         pass  # thread may have no runs yet
 
 
-def _build_tool_map():
-    """Build a name -> function lookup from registered user_functions."""
-    from tools import user_functions
-    return {f.__name__: f for f in user_functions}
+_tool_map_cache = None
+
+def _get_tool_map() -> dict:
+    """Cached name -> function lookup from registered user_functions."""
+    global _tool_map_cache
+    if _tool_map_cache is None:
+        from tools import user_functions
+        _tool_map_cache = {f.__name__: f for f in user_functions}
+    return _tool_map_cache
 
 
 def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
@@ -156,8 +149,8 @@ def stream_response(client, thread_id: str, agent_id: str):
     from rich.spinner import Spinner
     from rich.live import Live
 
-    tool_map = _build_tool_map()
-    full_text = ""
+    tool_map = _get_tool_map()
+    text_chunks = []  # accumulate chunks, join once at the end
     tool_calls_shown = set()
     spinner = None
     live = None
@@ -194,7 +187,7 @@ def stream_response(client, thread_id: str, agent_id: str):
                         _stop_spinner()
                         streaming_started = True
                     if event_data.text:
-                        full_text += event_data.text
+                        text_chunks.append(event_data.text)
                         sys.stdout.write(event_data.text)
                         sys.stdout.flush()
 
@@ -241,57 +234,36 @@ def stream_response(client, thread_id: str, agent_id: str):
         sys.stdout.flush()
 
     # ── Phase 2: Tool execution loop ──────────────────────────
-    # If the run entered requires_action, execute tools and submit results.
-    # Loop in case the agent chains multiple rounds of tool calls.
-    tool_phase_ok = True  # tracks whether Phase 2 completed without error
+    def _poll_run(rid):
+        """Poll until run leaves queued/in_progress. Returns the run."""
+        r = client.runs.get(thread_id=thread_id, run_id=rid)
+        while r.status in ("queued", "in_progress"):
+            time.sleep(0.5)
+            r = client.runs.get(thread_id=thread_id, run_id=rid)
+        return r
+
+    tool_phase_ok = True
     while pending_tool_calls and run_id:
-        # Confirm the run has actually reached requires_action on the server.
-        # The stream event can arrive before the server fully commits the state.
+        # Wait for server to commit requires_action state
         _start_spinner("preparing tools...")
         try:
-            run = client.runs.get(thread_id=thread_id, run_id=run_id)
-            wait_start = time.time()
-            while run.status in ("queued", "in_progress") and time.time() - wait_start < 60:
-                time.sleep(0.5)
-                run = client.runs.get(thread_id=thread_id, run_id=run_id)
-            _stop_spinner()
-
-            if run.status == "completed":
-                # Run completed on its own (server-side tool execution)
-                break
-            elif run.status == "in_progress":
-                # Still processing — keep polling until it finishes
-                while run.status == "in_progress":
-                    time.sleep(1)
-                    run = client.runs.get(thread_id=thread_id, run_id=run_id)
-                if run.status == "requires_action":
-                    pass  # fall through to re-read tool calls below
-                elif run.status == "completed":
-                    break
-                else:
-                    _render_error(
-                        str(getattr(run, "last_error", run.status)),
-                        f"Run {run.status.title()}",
-                    )
-                    tool_phase_ok = False
-                    break
-            elif run.status != "requires_action":
-                _render_error(
-                    str(getattr(run, "last_error", run.status)),
-                    f"Run {run.status.title()}",
-                )
-                tool_phase_ok = False
-                break
-
-            # Re-read tool calls from the confirmed server state
-            pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
+            run = _poll_run(run_id)
         except Exception as e:
             _stop_spinner()
             _render_error(str(e), "Run Status Error")
             tool_phase_ok = False
             break
+        _stop_spinner()
 
-        # Execute each pending tool call
+        if run.status == "completed":
+            break
+        if run.status != "requires_action":
+            _render_error(str(getattr(run, "last_error", run.status)), f"Run {run.status.title()}")
+            tool_phase_ok = False
+            break
+
+        # Execute tool calls from confirmed server state
+        pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
         tool_outputs = []
         for tc in pending_tool_calls:
             if tc.type == "function":
@@ -299,72 +271,53 @@ def stream_response(client, thread_id: str, agent_id: str):
                 _start_spinner(f"running {tc.function.name}...")
                 result = _execute_tool_call(tool_map, tc.function.name, tc.function.arguments)
                 _stop_spinner()
-                tool_outputs.append(ToolOutput(
-                    tool_call_id=tc.id,
-                    output=result,
-                ))
+                tool_outputs.append(ToolOutput(tool_call_id=tc.id, output=result))
 
-        pending_tool_calls = None  # reset before checking again
-
-        # Submit tool outputs and get updated run
+        # Submit results and poll for next state
         _start_spinner("thinking...")
         try:
-            run = client.runs.submit_tool_outputs(
-                thread_id=thread_id,
-                run_id=run_id,
-                tool_outputs=tool_outputs,
-            )
+            client.runs.submit_tool_outputs(thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs)
+            run = _poll_run(run_id)
         except Exception as e:
             _stop_spinner()
             _render_error(str(e), "Tool Submit Failed")
             tool_phase_ok = False
             break
-
-        # Poll until the run reaches a terminal state or requires_action
-        while run.status in ("queued", "in_progress"):
-            time.sleep(0.5)
-            run = client.runs.get(thread_id=thread_id, run_id=run.id)
-
         _stop_spinner()
 
         if run.status == "requires_action":
             pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
-            continue  # another round of tool execution
+            continue
         elif run.status == "completed":
-            break  # done — fetch messages below
+            break
         else:
-            _render_error(
-                str(getattr(run, "last_error", run.status)),
-                f"Run {run.status.title()}",
-            )
+            _render_error(str(getattr(run, "last_error", run.status)), f"Run {run.status.title()}")
             tool_phase_ok = False
             break
 
     # ── Phase 3: Render the response ──────────────────────────
     # Phase 1 text was already rendered live. If tools ran in Phase 2,
     # fetch the assistant's final message from the thread.
+    full_text = "".join(text_chunks)
     if not full_text.strip() and run_id and tool_phase_ok:
-        # Text was generated after tool execution — fetch from thread
+        # Text came from post-tool execution — fetch from thread
         try:
             messages = client.messages.list(thread_id=thread_id)
-            # Handle both paginated (.data) and plain list returns
             msg_list = getattr(messages, "data", None) or list(messages)
-            # Find the latest assistant message (API usually returns newest first)
             for msg in msg_list:
                 if msg.role == "assistant":
                     parts = []
-                    for content_item in msg.content:
-                        if hasattr(content_item, "text"):
-                            txt = content_item.text
-                            text_val = getattr(txt, "value", None) or str(txt)
-                            if text_val.strip():
-                                parts.append(text_val.strip())
+                    for item in msg.content:
+                        if hasattr(item, "text"):
+                            val = getattr(item.text, "value", None) or str(item.text)
+                            if val.strip():
+                                parts.append(val.strip())
                     if parts:
                         full_text = "\n\n".join(parts)
                         console.print(Markdown(full_text), highlight=False)
                     break
         except Exception:
-            pass  # graceful — the tool output was still submitted
+            pass
 
     console.print()
     return full_text
@@ -388,7 +341,6 @@ def chat():
 
     agent_id = get_agent_id()
     client = get_client()
-    setup_toolset()
     thread = client.threads.create()
 
     show_welcome(AGENT_VERSION)
@@ -552,7 +504,6 @@ def run(prompt: str):
     """Run a single prompt and print the response."""
     agent_id = get_agent_id()
     client = get_client()
-    setup_toolset()
     thread = client.threads.create()
     client.messages.create(thread_id=thread.id, role="user", content=prompt)
     stream_response(client, thread.id, agent_id)
