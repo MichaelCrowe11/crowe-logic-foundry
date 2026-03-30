@@ -93,7 +93,16 @@ def _center(text: str, width: int) -> str:
     return " " * pad + text
 
 
-def welcome_screen(version: str = "0.1.0"):
+def _get_avatar_seq(width: int = 8) -> str:
+    """Get the centered avatar inline image sequence, or empty string."""
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+    if not _is_iterm_compatible() or not os.path.exists(icon_path):
+        return ""
+    avatar_path = _prepare_avatar(icon_path)
+    return _inline_image_seq(avatar_path, width=width)
+
+
+def welcome_screen(version: str = "0.1.0", avatar_seq: str = ""):
     tw = min(_term_width(), 72)
     bar = f"{GOLD}{'━' * tw}{RESET}"
     thin = f"{GOLD}{DIM}{'─' * tw}{RESET}"
@@ -130,15 +139,23 @@ def welcome_screen(version: str = "0.1.0"):
     )
     version_tag = _center(f"v{version}", tw)
 
-    tagline_text = f"Universal AI Agent  ---  Crowe Logic, Inc."
+    tagline_text = "Universal AI Agent  ---  Crowe Logic, Inc."
     centered_tagline = _center(tagline_text, tw)
 
     cmd_line1 = "Type naturally --- the agent selects tools automatically."
     cmd_line2 = "/tools  /status  /clear  /help  /exit"
 
+    # Avatar sits centered inside the banner, right above the ASCII art
+    # iTerm2 inline images are zero-width in the escape sequence, so we
+    # center them with leading spaces matching the logo block.
+    if avatar_seq:
+        avatar_line = f"{' ' * max(0, (tw - 8) // 2)}{avatar_seq}"
+    else:
+        avatar_line = ""
+
     return f"""
 {bar}
-
+{avatar_line}
 {centered_logo}
 
 {centered_logic}
@@ -154,17 +171,9 @@ def welcome_screen(version: str = "0.1.0"):
 
 
 def show_welcome(version: str = "0.1.0"):
-    """Print the full welcome: avatar + banner."""
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
-
-    if _is_iterm_compatible():
-        avatar_path = _prepare_avatar(icon_path)
-        seq = _inline_image_seq(avatar_path, width=10)
-        if seq:
-            sys.stdout.write(seq + "\n")
-            sys.stdout.flush()
-
-    print(welcome_screen(version))
+    """Print the full welcome: avatar inside the banner."""
+    avatar_seq = _get_avatar_seq(width=8)
+    print(welcome_screen(version, avatar_seq=avatar_seq))
 
 
 # ── Legacy compat ─────────────────────────────────────────────

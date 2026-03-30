@@ -244,7 +244,37 @@ def stream_response(client, thread_id: str, agent_id: str):
     # ── Phase 2: Tool execution loop ──────────────────────────
     # If the run entered requires_action, execute tools and submit results.
     # Loop in case the agent chains multiple rounds of tool calls.
+    tool_phase_ok = True  # tracks whether Phase 2 completed without error
     while pending_tool_calls and run_id:
+        # Confirm the run has actually reached requires_action on the server.
+        # The stream event can arrive before the server fully commits the state.
+        _start_spinner("preparing tools...")
+        try:
+            run = client.runs.get(thread_id=thread_id, run_id=run_id)
+            wait_start = time.time()
+            while run.status in ("queued", "in_progress") and time.time() - wait_start < 15:
+                time.sleep(0.5)
+                run = client.runs.get(thread_id=thread_id, run_id=run_id)
+            _stop_spinner()
+
+            if run.status != "requires_action":
+                # Run moved past requires_action on its own (completed, failed, etc.)
+                if run.status not in ("completed",):
+                    _render_error(
+                        str(getattr(run, "last_error", run.status)),
+                        f"Run {run.status.title()}",
+                    )
+                    tool_phase_ok = False
+                break
+
+            # Re-read tool calls from the confirmed server state
+            pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
+        except Exception as e:
+            _stop_spinner()
+            _render_error(str(e), "Run Status Error")
+            tool_phase_ok = False
+            break
+
         # Execute each pending tool call
         tool_outputs = []
         for tc in pending_tool_calls:
@@ -260,7 +290,7 @@ def stream_response(client, thread_id: str, agent_id: str):
 
         pending_tool_calls = None  # reset before checking again
 
-        # Submit tool outputs (non-streaming) and get updated run
+        # Submit tool outputs and get updated run
         _start_spinner("thinking...")
         try:
             run = client.runs.submit_tool_outputs(
@@ -271,6 +301,7 @@ def stream_response(client, thread_id: str, agent_id: str):
         except Exception as e:
             _stop_spinner()
             _render_error(str(e), "Tool Submit Failed")
+            tool_phase_ok = False
             break
 
         # Poll until the run reaches a terminal state or requires_action
@@ -290,12 +321,13 @@ def stream_response(client, thread_id: str, agent_id: str):
                 str(getattr(run, "last_error", run.status)),
                 f"Run {run.status.title()}",
             )
+            tool_phase_ok = False
             break
 
     # ── Phase 3: Render the response ──────────────────────────
     # Phase 1 text was already rendered live. If tools ran in Phase 2,
     # fetch the assistant's final message from the thread.
-    if not full_text.strip() and run_id:
+    if not full_text.strip() and run_id and tool_phase_ok:
         # Text was generated after tool execution — fetch from thread
         try:
             messages = client.messages.list(thread_id=thread_id)
