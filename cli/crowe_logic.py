@@ -165,6 +165,24 @@ def stream_response(client, thread_id: str, agent_id: str):
             spinner = None
 
     # ── Phase 1: Initial streaming run ────────────────────────
+    # Use a Live display so Markdown renders progressively as text arrives.
+    text_live = None  # Rich Live for streaming text
+
+    def _start_text_live():
+        nonlocal text_live
+        if text_live is None:
+            text_live = Live(Markdown(""), console=console, refresh_per_second=8, vertical_overflow="visible")
+            text_live.start()
+
+    def _stop_text_live():
+        nonlocal text_live
+        if text_live:
+            # Final render with complete text
+            if full_text.strip():
+                text_live.update(Markdown(full_text.strip()))
+            text_live.stop()
+            text_live = None
+
     try:
         _start_spinner("thinking...")
 
@@ -174,20 +192,26 @@ def stream_response(client, thread_id: str, agent_id: str):
                     if not streaming_started:
                         _stop_spinner()
                         streaming_started = True
+                        _start_text_live()
                     if event_data.text:
                         full_text += event_data.text
+                        if text_live:
+                            text_live.update(Markdown(full_text.strip()))
 
                 elif isinstance(event_data, ThreadRun):
                     run_id = event_data.id
                     if event_data.status == "requires_action":
+                        _stop_text_live()
                         _stop_spinner()
                         pending_tool_calls = (
                             event_data.required_action.submit_tool_outputs.tool_calls
                         )
                     elif event_data.status == "failed":
+                        _stop_text_live()
                         _stop_spinner()
                         _render_error(str(event_data.last_error), "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
+                        _stop_text_live()
                         _stop_spinner()
                         _render_error(f"Run {event_data.status}.", "Run Stopped")
 
@@ -197,6 +221,7 @@ def stream_response(client, thread_id: str, agent_id: str):
                         if step_id not in tool_calls_shown:
                             tool_calls_shown.add(step_id)
                             tools = _extract_tool_info(event_data.step_details)
+                            _stop_text_live()
                             _stop_spinner()
                             for t in tools:
                                 _render_tool_card(t)
@@ -206,12 +231,14 @@ def stream_response(client, thread_id: str, agent_id: str):
                         _stop_spinner()
 
                 elif event_type == AgentStreamEvent.ERROR:
+                    _stop_text_live()
                     _stop_spinner()
                     _render_error(str(event_data))
 
                 elif event_type == AgentStreamEvent.DONE:
                     break
     finally:
+        _stop_text_live()
         _stop_spinner()
 
     # ── Phase 2: Tool execution loop ──────────────────────────
@@ -266,11 +293,9 @@ def stream_response(client, thread_id: str, agent_id: str):
             break
 
     # ── Phase 3: Render the response ──────────────────────────
-    # If we streamed text in Phase 1, render it. Otherwise, fetch
-    # the assistant's final message from the thread (post-tool response).
-    if full_text.strip():
-        console.print(Markdown(full_text.strip()), highlight=False)
-    elif run_id:
+    # Phase 1 text was already rendered live. If tools ran in Phase 2,
+    # fetch the assistant's final message from the thread.
+    if not full_text.strip() and run_id:
         # Text was generated after tool execution — fetch from thread
         try:
             messages = client.messages.list(thread_id=thread_id)

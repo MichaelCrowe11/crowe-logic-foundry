@@ -116,11 +116,17 @@ def welcome_screen(version: str = "0.1.0"):
         "╚══════╝ ╚═════╝  ╚═════╝ ╚═╝ ╚═════╝",
     ]
 
+    # Center as a BLOCK (align to widest line), not per-line
+    crowe_max = max(len(l) for l in crowe_lines)
+    logic_max = max(len(l) for l in logic_lines)
+    crowe_pad = max(0, (tw - crowe_max) // 2)
+    logic_pad = max(0, (tw - logic_max) // 2)
+
     centered_logo = "\n".join(
-        f"{GOLD}{BOLD}{_center(l, tw)}{RESET}" for l in crowe_lines
+        f"{GOLD}{BOLD}{' ' * crowe_pad}{l}{RESET}" for l in crowe_lines
     )
     centered_logic = "\n".join(
-        f"{GOLD}{BOLD}{_center(l, tw)}{RESET}" for l in logic_lines
+        f"{GOLD}{BOLD}{' ' * logic_pad}{l}{RESET}" for l in logic_lines
     )
     version_tag = _center(f"v{version}", tw)
 
