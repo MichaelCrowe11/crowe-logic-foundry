@@ -40,6 +40,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.28.0",
     "beautifulsoup4>=4.12.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -67,7 +68,8 @@ Repository = "https://github.com/MichaelCrowe11/crowe-logic-foundry"
 crowe-logic = "cli.crowe_logic:main"
 
 [tool.setuptools.packages.find]
-include = ["cli*", "tools*", "config*", "scripts*"]
+include = ["cli*", "tools*", "config*", "scripts*", "crowe_synapse*"]
 
 [tool.setuptools.package-data]
 cli = ["icon.png", "icons/*.icns"]
+crowe_synapse = ["templates/*.yaml"]
