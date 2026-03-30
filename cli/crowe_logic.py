@@ -182,24 +182,8 @@ def stream_response(client, thread_id: str, agent_id: str):
             spinner = None
 
     # ── Phase 1: Initial streaming run ────────────────────────
-    # Use a Live display so Markdown renders progressively as text arrives.
-    text_live = None  # Rich Live for streaming text
-
-    def _start_text_live():
-        nonlocal text_live
-        if text_live is None:
-            text_live = Live(Markdown(""), console=console, refresh_per_second=8, vertical_overflow="visible")
-            text_live.start()
-
-    def _stop_text_live():
-        nonlocal text_live
-        if text_live:
-            # Final render with complete text
-            if full_text.strip():
-                text_live.update(Markdown(full_text.strip()))
-            text_live.stop()
-            text_live = None
-
+    # Stream raw text to stdout for real-time output (no duplication).
+    # Markdown is rendered once at the end for clean formatting.
     try:
         _start_spinner("thinking...")
 
@@ -209,30 +193,22 @@ def stream_response(client, thread_id: str, agent_id: str):
                     if not streaming_started:
                         _stop_spinner()
                         streaming_started = True
-                        _start_text_live()
                     if event_data.text:
                         full_text += event_data.text
-                        if text_live:
-                            text_live.update(Markdown(full_text.strip()))
+                        sys.stdout.write(event_data.text)
+                        sys.stdout.flush()
 
                 elif isinstance(event_data, ThreadRun):
                     run_id = event_data.id
                     if event_data.status == "requires_action":
-                        _stop_text_live()
                         _stop_spinner()
                         pending_tool_calls = (
                             event_data.required_action.submit_tool_outputs.tool_calls
                         )
                     elif event_data.status == "failed":
-                        _stop_text_live()
                         _stop_spinner()
-                        error_info = str(event_data.last_error)
-                        # Re-raise transient server errors so the retry loop catches them
-                        if "server_error" in error_info or "something went wrong" in error_info.lower():
-                            raise RuntimeError(error_info)
-                        _render_error(error_info, "Run Failed")
+                        _render_error(str(event_data.last_error), "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
-                        _stop_text_live()
                         _stop_spinner()
                         _render_error(f"Run {event_data.status}.", "Run Stopped")
 
@@ -242,7 +218,6 @@ def stream_response(client, thread_id: str, agent_id: str):
                         if step_id not in tool_calls_shown:
                             tool_calls_shown.add(step_id)
                             tools = _extract_tool_info(event_data.step_details)
-                            _stop_text_live()
                             _stop_spinner()
                             for t in tools:
                                 _render_tool_card(t)
@@ -252,15 +227,18 @@ def stream_response(client, thread_id: str, agent_id: str):
                         _stop_spinner()
 
                 elif event_type == AgentStreamEvent.ERROR:
-                    _stop_text_live()
                     _stop_spinner()
                     _render_error(str(event_data))
 
                 elif event_type == AgentStreamEvent.DONE:
                     break
     finally:
-        _stop_text_live()
         _stop_spinner()
+
+    # End the streamed text block with a newline
+    if streaming_started:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
     # ── Phase 2: Tool execution loop ──────────────────────────
     # If the run entered requires_action, execute tools and submit results.
