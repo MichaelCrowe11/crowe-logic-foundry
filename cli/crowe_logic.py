@@ -56,13 +56,15 @@ def get_client():
     return AgentsClient(endpoint=PROJECT_ENDPOINT, credential=DefaultAzureCredential())
 
 
-def setup_toolset(client):
+def setup_toolset():
+    """Build the toolset definition (for agent creation reference only).
+    We do NOT call enable_auto_function_calls — tool execution is handled
+    manually in stream_response() Phase 2 to avoid race conditions."""
     from azure.ai.agents.models import FunctionTool, ToolSet, CodeInterpreterTool
     from tools import user_functions
     toolset = ToolSet()
     toolset.add(FunctionTool(user_functions))
     toolset.add(CodeInterpreterTool())
-    client.enable_auto_function_calls(toolset)
     return toolset
 
 
@@ -111,6 +113,21 @@ def _render_error(msg: str, title: str = "Error"):
         border_style="red",
         padding=(0, 1),
     ))
+
+
+def _cancel_active_runs(client, thread_id: str):
+    """Cancel any active (queued/in_progress/requires_action) runs on the thread."""
+    try:
+        runs = client.runs.list(thread_id=thread_id)
+        run_list = getattr(runs, "data", None) or list(runs)
+        for run in run_list:
+            if run.status in ("queued", "in_progress", "requires_action"):
+                try:
+                    client.runs.cancel(thread_id=thread_id, run_id=run.id)
+                except Exception:
+                    pass  # best-effort cancellation
+    except Exception:
+        pass  # thread may have no runs yet
 
 
 def _build_tool_map():
@@ -209,7 +226,11 @@ def stream_response(client, thread_id: str, agent_id: str):
                     elif event_data.status == "failed":
                         _stop_text_live()
                         _stop_spinner()
-                        _render_error(str(event_data.last_error), "Run Failed")
+                        error_info = str(event_data.last_error)
+                        # Re-raise transient server errors so the retry loop catches them
+                        if "server_error" in error_info or "something went wrong" in error_info.lower():
+                            raise RuntimeError(error_info)
+                        _render_error(error_info, "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
                         _stop_text_live()
                         _stop_spinner()
@@ -252,19 +273,36 @@ def stream_response(client, thread_id: str, agent_id: str):
         try:
             run = client.runs.get(thread_id=thread_id, run_id=run_id)
             wait_start = time.time()
-            while run.status in ("queued", "in_progress") and time.time() - wait_start < 15:
+            while run.status in ("queued", "in_progress") and time.time() - wait_start < 60:
                 time.sleep(0.5)
                 run = client.runs.get(thread_id=thread_id, run_id=run_id)
             _stop_spinner()
 
-            if run.status != "requires_action":
-                # Run moved past requires_action on its own (completed, failed, etc.)
-                if run.status not in ("completed",):
+            if run.status == "completed":
+                # Run completed on its own (server-side tool execution)
+                break
+            elif run.status == "in_progress":
+                # Still processing — keep polling until it finishes
+                while run.status == "in_progress":
+                    time.sleep(1)
+                    run = client.runs.get(thread_id=thread_id, run_id=run_id)
+                if run.status == "requires_action":
+                    pass  # fall through to re-read tool calls below
+                elif run.status == "completed":
+                    break
+                else:
                     _render_error(
                         str(getattr(run, "last_error", run.status)),
                         f"Run {run.status.title()}",
                     )
                     tool_phase_ok = False
+                    break
+            elif run.status != "requires_action":
+                _render_error(
+                    str(getattr(run, "last_error", run.status)),
+                    f"Run {run.status.title()}",
+                )
+                tool_phase_ok = False
                 break
 
             # Re-read tool calls from the confirmed server state
@@ -372,7 +410,7 @@ def chat():
 
     agent_id = get_agent_id()
     client = get_client()
-    setup_toolset(client)
+    setup_toolset()
     thread = client.threads.create()
 
     show_welcome(AGENT_VERSION)
@@ -412,21 +450,49 @@ def chat():
             continue
 
         try:
+            # Cancel any stale runs before sending a new message
+            _cancel_active_runs(client, thread.id)
             client.messages.create(thread_id=thread.id, role="user", content=user_input)
             console.print()
             sys.stdout.write(f"  {favicon} ")
             sys.stdout.flush()
             console.print("[bold #bfa669]crowe-logic[/bold #bfa669]")
-            stream_response(client, thread.id, agent_id)
+
+            # Retry on transient server errors (up to 3 attempts)
+            last_error = None
+            for attempt in range(3):
+                try:
+                    stream_response(client, thread.id, agent_id)
+                    last_error = None
+                    break
+                except Exception as stream_err:
+                    error_msg = str(stream_err)
+                    if "server_error" in error_msg or "Sorry, something went wrong" in error_msg:
+                        last_error = error_msg
+                        if attempt < 2:
+                            wait = (attempt + 1) * 2
+                            console.print(f"  [dim]Server error — retrying in {wait}s (attempt {attempt + 2}/3)...[/dim]")
+                            time.sleep(wait)
+                            _cancel_active_runs(client, thread.id)
+                            continue
+                    else:
+                        raise
+            if last_error:
+                _render_error(last_error, "Run Failed (after 3 attempts)")
+
             console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
         except Exception as e:
             error_msg = str(e)
             if "while a run" in error_msg and "is active" in error_msg:
-                _render_error(
-                    "Agent is still thinking — wait a moment and try again.",
-                    "Busy",
-                )
-                time.sleep(3)
+                # Force-cancel the blocking run and retry once
+                _cancel_active_runs(client, thread.id)
+                console.print("  [dim]Cancelled stale run — retrying...[/dim]")
+                time.sleep(1)
+                try:
+                    stream_response(client, thread.id, agent_id)
+                    console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+                except Exception as retry_err:
+                    _render_error(str(retry_err))
             else:
                 _render_error(error_msg)
 
@@ -508,7 +574,7 @@ def run(prompt: str):
     """Run a single prompt and print the response."""
     agent_id = get_agent_id()
     client = get_client()
-    setup_toolset(client)
+    setup_toolset()
     thread = client.threads.create()
     client.messages.create(thread_id=thread.id, role="user", content=prompt)
     stream_response(client, thread.id, agent_id)

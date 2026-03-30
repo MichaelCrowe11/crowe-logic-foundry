@@ -145,17 +145,16 @@ def welcome_screen(version: str = "0.1.0", avatar_seq: str = ""):
     cmd_line1 = "Type naturally --- the agent selects tools automatically."
     cmd_line2 = "/tools  /status  /clear  /help  /exit"
 
-    # Avatar sits centered inside the banner, right above the ASCII art
-    # iTerm2 inline images are zero-width in the escape sequence, so we
-    # center them with leading spaces matching the logo block.
+    # Avatar sits centered inside the banner, right above the ASCII art.
+    # Only include the avatar line if we have an actual inline image.
     if avatar_seq:
-        avatar_line = f"{' ' * max(0, (tw - 8) // 2)}{avatar_seq}"
+        avatar_block = f"\n{' ' * max(0, (tw - 8) // 2)}{avatar_seq}"
     else:
-        avatar_line = ""
+        avatar_block = ""
 
     return f"""
-{bar}
-{avatar_line}
+{bar}{avatar_block}
+
 {centered_logo}
 
 {centered_logic}
