@@ -1,63 +1,135 @@
 """
-Playwright browser automation tool — full browser control via MCP.
-Wraps the @playwright/mcp server as a locally callable tool.
+Playwright browser automation — headless browser control.
+Uses Playwright's sync API directly for reliable browser automation.
 """
 
 import json
-import subprocess
+import os
+
+# Lazy-loaded browser instance (shared across calls in the same session)
+_browser = None
+_page = None
+
+
+def _get_page():
+    """Get or create a headless browser page."""
+    global _browser, _page
+    if _page and not _page.is_closed():
+        return _page
+
+    try:
+        from playwright.sync_api import sync_playwright
+        pw = sync_playwright().start()
+        _browser = pw.chromium.launch(headless=True)
+        _page = _browser.new_page()
+        return _page
+    except ImportError:
+        return None
+    except Exception:
+        return None
 
 
 def browser_navigate(url: str) -> str:
     """
-    Navigate the browser to a URL and return the page accessibility snapshot.
-    Opens a browser if one isn't already running.
+    Navigate the browser to a URL and return the page content summary.
 
     :param url: The URL to navigate to.
-    :return: JSON with page title and accessibility tree snapshot.
+    :return: JSON with page title, URL, and text content excerpt.
     :rtype: str
     """
-    return _run_playwright_action("browser_navigate", {"url": url})
+    page = _get_page()
+    if not page:
+        return json.dumps({"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"})
+
+    try:
+        response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        title = page.title()
+        text = page.inner_text("body")[:5000]
+        return json.dumps({
+            "url": page.url,
+            "title": title,
+            "status": response.status if response else None,
+            "text": text,
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
-def browser_click(element: str, ref: str = "") -> str:
+def browser_click(selector: str) -> str:
     """
-    Click an element on the current page. Use the element description
-    or the ref ID from a previous snapshot.
+    Click an element on the current page using a CSS selector or text.
 
-    :param element: Description of the element to click (e.g. "Submit button", "Login link").
-    :param ref: Optional element ref from accessibility snapshot.
+    :param selector: CSS selector or text content to click (e.g. "text=Submit", "#login-btn").
     :return: JSON result of the click action.
     :rtype: str
     """
-    args = {"element": element}
-    if ref:
-        args["ref"] = ref
-    return _run_playwright_action("browser_click", args)
+    page = _get_page()
+    if not page:
+        return json.dumps({"error": "Playwright not installed."})
+
+    try:
+        page.click(selector, timeout=10000)
+        page.wait_for_load_state("domcontentloaded", timeout=10000)
+        return json.dumps({"clicked": selector, "url": page.url, "title": page.title()})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
-def browser_type_text(element: str, text: str, submit: bool = False) -> str:
+def browser_type_text(selector: str, text: str, submit: bool = False) -> str:
     """
     Type text into an input field on the page.
 
-    :param element: Description of the input field (e.g. "Search box", "Email field").
+    :param selector: CSS selector for the input field (e.g. "#search", "input[name='q']").
     :param text: The text to type.
     :param submit: Whether to press Enter after typing (default False).
     :return: JSON result of the type action.
     :rtype: str
     """
-    args = {"element": element, "text": text, "submit": submit}
-    return _run_playwright_action("browser_type", args)
+    page = _get_page()
+    if not page:
+        return json.dumps({"error": "Playwright not installed."})
+
+    try:
+        page.fill(selector, text, timeout=10000)
+        if submit:
+            page.press(selector, "Enter")
+            page.wait_for_load_state("domcontentloaded", timeout=10000)
+        return json.dumps({"typed": text, "selector": selector, "submitted": submit, "url": page.url})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 def browser_snapshot() -> str:
     """
-    Get the current page's accessibility tree snapshot. This shows all
-    interactive elements, text content, and their ref IDs for clicking.
+    Get the current page's text content and interactive elements.
 
-    :return: JSON with the full page accessibility snapshot.
+    :return: JSON with page URL, title, text content, and links.
     :rtype: str
     """
-    return _run_playwright_action("browser_snapshot", {})
+    page = _get_page()
+    if not page:
+        return json.dumps({"error": "Playwright not installed."})
+
+    try:
+        title = page.title()
+        text = page.inner_text("body")[:10000]
+        links = page.eval_on_selector_all(
+            "a[href]",
+            "els => els.slice(0, 50).map(e => ({text: e.innerText.trim().slice(0, 80), href: e.href}))"
+        )
+        inputs = page.eval_on_selector_all(
+            "input, textarea, select, button",
+            "els => els.slice(0, 30).map(e => ({tag: e.tagName, type: e.type, name: e.name, id: e.id, text: e.innerText?.trim().slice(0, 40) || ''}))"
+        )
+        return json.dumps({
+            "url": page.url,
+            "title": title,
+            "text": text,
+            "links": links,
+            "interactive_elements": inputs,
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 def browser_screenshot(filename: str = "/tmp/screenshot.png") -> str:
@@ -65,37 +137,20 @@ def browser_screenshot(filename: str = "/tmp/screenshot.png") -> str:
     Take a screenshot of the current browser page.
 
     :param filename: Path to save the screenshot (default /tmp/screenshot.png).
-    :return: JSON with the screenshot file path.
+    :return: JSON with the screenshot file path and page info.
     :rtype: str
     """
-    return _run_playwright_action("browser_take_screenshot", {"raw": True})
+    page = _get_page()
+    if not page:
+        return json.dumps({"error": "Playwright not installed."})
 
-
-def _run_playwright_action(tool_name: str, arguments: dict) -> str:
-    """Bridge to the Playwright MCP server via npx."""
     try:
-        # Use the MCP server's stdio interface via a subprocess
-        mcp_input = json.dumps({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {"name": tool_name, "arguments": arguments}
+        page.screenshot(path=filename, full_page=True)
+        return json.dumps({
+            "screenshot": filename,
+            "url": page.url,
+            "title": page.title(),
+            "size_bytes": os.path.getsize(filename),
         })
-
-        result = subprocess.run(
-            ["npx", "-y", "@playwright/mcp@latest", "--headless"],
-            input=mcp_input,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd="/Users/crowelogic/Projects/crowe-logic-foundry",
-        )
-
-        if result.stdout:
-            return result.stdout[:50000]
-        return json.dumps({"note": "Action sent to Playwright", "tool": tool_name, "args": arguments})
-
-    except subprocess.TimeoutExpired:
-        return json.dumps({"error": f"Playwright action timed out: {tool_name}"})
     except Exception as e:
         return json.dumps({"error": str(e)})
