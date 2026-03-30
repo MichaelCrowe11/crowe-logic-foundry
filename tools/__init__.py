@@ -32,6 +32,10 @@ from tools.talon_music import (
 # Quantum computing
 from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_execute
 
+# MCP ecosystem (5,800+ servers on demand)
+from tools.mcp_registry import mcp_search
+from tools.mcp_client import mcp_list_tools, mcp_call_tool, mcp_stop_server
+
 # All user-facing functions the agent can call
 user_functions = {
     # Filesystem
@@ -54,4 +58,6 @@ user_functions = {
     talon_transform, talon_export,
     # Quantum
     run_quantum_circuit, synapse_evaluate, qubit_flow_execute,
+    # MCP ecosystem
+    mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
 }
