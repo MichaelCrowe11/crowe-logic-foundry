@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crowe-logic"
+version = "0.1.0"
+description = "Crowe Logic — Universal AI Agent powered by gpt-oss-120b on Azure AI Foundry"
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Michael Crowe", email = "michael@crowelogic.com"},
+]
+maintainers = [
+    {name = "Michael Crowe", email = "michael@crowelogic.com"},
+]
+keywords = ["ai", "agent", "azure", "llm", "biotech", "quantum", "tool-calling", "mycology", "mushroom"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+    "azure-ai-agents>=1.1.0",
+    "azure-identity>=1.25.0",
+    "azure-ai-projects>=2.0.0",
+    "opentelemetry-sdk>=1.40.0",
+    "azure-core-tracing-opentelemetry>=1.0.0b12",
+    "click>=8.1.0",
+    "rich>=14.0.0",
+    "prompt-toolkit>=3.0.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.28.0",
+    "beautifulsoup4>=4.12.0",
+]
+
+[project.optional-dependencies]
+quantum = [
+    "qiskit>=1.0.0",
+    "qiskit-aer>=0.15.0",
+    "cirq>=1.4.0",
+    "pennylane>=0.39.0",
+    "synapse-lang>=2.0.0",
+    "synapse-qubit-flow>=1.0.0",
+]
+nvidia = [
+    "nvidia-cuda-runtime-cu12",
+    "cupy-cuda12x",
+]
+all = [
+    "crowe-logic[quantum,nvidia]",
+]
+
+[project.urls]
+Homepage = "https://crowelogic.com"
+Repository = "https://github.com/MichaelCrowe11/crowe-logic-foundry"
+
+[project.scripts]
+crowe-logic = "cli.crowe_logic:main"
+
+[tool.setuptools.packages.find]
+include = ["cli*", "tools*", "config*", "scripts*"]
+
+[tool.setuptools.package-data]
+cli = ["icon.png", "icons/*.icns"]

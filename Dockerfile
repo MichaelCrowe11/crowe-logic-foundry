@@ -1,0 +1,62 @@
+FROM python:3.12-slim AS base
+
+LABEL maintainer="michael@crowelogic.com"
+LABEL org.opencontainers.image.title="Crowe Logic Agent"
+LABEL org.opencontainers.image.description="Universal AI Agent powered by gpt-oss-120b on Azure AI Foundry"
+LABEL org.opencontainers.image.vendor="Crowe Logic, Inc."
+
+WORKDIR /app
+
+# System dependencies for playwright and ripgrep
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ripgrep \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js for MCP servers
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# MCP servers
+COPY package.json package-lock.json* ./
+RUN npm install --production
+
+# Application code
+COPY . .
+
+# Install crowe-logic CLI
+RUN pip install --no-cache-dir -e .
+
+# Default: interactive chat
+ENTRYPOINT ["crowe-logic"]
+CMD ["chat"]
+
+# ── GPU variant for fine-tuning ─────────────────
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS gpu
+
+LABEL maintainer="michael@crowelogic.com"
+LABEL org.opencontainers.image.title="Crowe Logic Agent (GPU)"
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3-pip git ripgrep curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir qiskit qiskit-aer cirq pennylane \
+    synapse-lang synapse-qubit-flow \
+    torch --index-url https://download.pytorch.org/whl/cu124
+
+COPY . .
+RUN pip install --no-cache-dir -e ".[quantum]"
+
+ENTRYPOINT ["crowe-logic"]
+CMD ["chat"]

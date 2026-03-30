@@ -1,0 +1,12 @@
+data/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.env
+.agent_id
+.chat_history
+cli/icons/crowe-logic.iconset/
+cli/icons/crowe-logic.icns
+*.egg-info/
+build/

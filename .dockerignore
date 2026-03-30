@@ -1,0 +1,14 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.agent_id
+.chat_history
+node_modules/
+data/azure-ft/
+data/crowelm-*/
+.git/
+*.egg-info/
+dist/
+build/

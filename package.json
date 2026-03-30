@@ -1,0 +1,41 @@
+{
+  "name": "crowe-logic",
+  "version": "0.1.0",
+  "description": "Crowe Logic — Universal AI Agent powered by gpt-oss-120b on Azure AI Foundry",
+  "main": "npm/index.js",
+  "bin": {
+    "crowe-logic": "npm/bin.js"
+  },
+  "scripts": {
+    "start": "node npm/bin.js chat",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "azure",
+    "llm",
+    "biotech",
+    "quantum",
+    "tool-calling",
+    "crowe-logic"
+  ],
+  "author": {
+    "name": "Michael Crowe",
+    "email": "michael@crowelogic.com",
+    "url": "https://crowelogic.com"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://crowelogic.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MichaelCrowe11/crowe-logic-foundry"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@modelcontextprotocol/server-filesystem": "^2026.1.14",
+    "@modelcontextprotocol/server-github": "^2025.4.8",
+    "@playwright/mcp": "^0.0.68"
+  }
+}

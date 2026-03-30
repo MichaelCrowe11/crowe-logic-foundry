@@ -1,0 +1,57 @@
+"""
+Crowe Logic Agent — Complete Tool Suite
+
+All functions are registered as FunctionTool with Azure AI Agent Service.
+The agent auto-selects and executes them based on the conversation.
+"""
+
+# Core tools (filesystem, shell, web)
+from tools.filesystem import read_file, write_file, edit_file, list_directory
+from tools.shell import execute_shell
+from tools.search import web_search, grep_search
+from tools.browser import browse_url
+
+# macOS automation
+from tools.applescript import run_applescript, open_application, send_notification
+
+# Git operations
+from tools.git_ops import git_status, git_diff, git_log, git_commit, git_clone
+
+# Browser automation (Playwright)
+from tools.playwright_browser import (
+    browser_navigate, browser_click, browser_type_text,
+    browser_snapshot, browser_screenshot,
+)
+
+# Talon Music Engine
+from tools.talon_music import (
+    talon_compose, talon_import_midi, talon_analyze,
+    talon_transform, talon_export,
+)
+
+# Quantum computing
+from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_execute
+
+# All user-facing functions the agent can call
+user_functions = {
+    # Filesystem
+    read_file, write_file, edit_file, list_directory,
+    # Shell
+    execute_shell,
+    # Search
+    web_search, grep_search,
+    # Web browsing
+    browse_url,
+    # macOS
+    run_applescript, open_application, send_notification,
+    # Git
+    git_status, git_diff, git_log, git_commit, git_clone,
+    # Playwright browser
+    browser_navigate, browser_click, browser_type_text,
+    browser_snapshot, browser_screenshot,
+    # Talon Music
+    talon_compose, talon_import_midi, talon_analyze,
+    talon_transform, talon_export,
+    # Quantum
+    run_quantum_circuit, synapse_evaluate, qubit_flow_execute,
+}
