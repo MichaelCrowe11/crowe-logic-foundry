@@ -62,7 +62,7 @@ TESTS = [
     },
     {
         "name": "web_search",
-        "prompt": "Search the web for 'gpt-oss-120b benchmark results'",
+        "prompt": "Search the web for 'gpt-oss120-120b benchmark results'",
         "expect_tool": "web_search",
         "domain": "web",
     },

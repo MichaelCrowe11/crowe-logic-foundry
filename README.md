@@ -1,6 +1,6 @@
 # Crowe Logic
 
-Universal AI agent powered by gpt-oss-120b on Azure AI Foundry.
+Universal AI agent powered by gpt-oss120-120b on Azure AI Foundry.
 
 ## Install
 
@@ -10,7 +10,7 @@ pip install crowe-logic
 
 ## Setup
 
-1. Deploy gpt-oss-120b on [Azure AI Foundry](https://ai.azure.com)
+1. Deploy gpt-oss120-120b on [Azure AI Foundry](https://ai.azure.com)
 2. Configure credentials:
 ```bash
 cp .env.example .env
@@ -47,7 +47,7 @@ crowe-logic tools        # List available tools
 ## Requirements
 
 - Python 3.10+
-- Azure AI Foundry account with gpt-oss-120b deployment
+- Azure AI Foundry account with gpt-oss120-120b deployment
 - Azure CLI (`az login`) for authentication
 
 ## Author

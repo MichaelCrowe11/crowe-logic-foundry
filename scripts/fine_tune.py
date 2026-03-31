@@ -3,7 +3,7 @@
 Crowe Logic Agent — Fine-Tuning Pipeline
 
 Converts CroweLM unified datasets to Azure AI Foundry format and
-initiates fine-tuning of gpt-oss-120b with domain knowledge:
+initiates fine-tuning of gpt-oss120-120b with domain knowledge:
   - Biotech / Pharma / Drug Discovery
   - Mycology / Mushroom Cultivation
   - Molecular Biology / Gene/RNA/Protein
@@ -197,10 +197,10 @@ def cmd_upload(args):
 def cmd_train(args):
     """Start fine-tuning job on Azure (placeholder — requires Azure ML or OpenAI FT API)."""
     print(f"\n{'='*60}")
-    print(f"  FINE-TUNING — gpt-oss-120b + CroweLM Data")
+    print(f"  FINE-TUNING — gpt-oss120-120b + CroweLM Data")
     print(f"{'='*60}\n")
 
-    print("  NOTE: gpt-oss-120b fine-tuning options:")
+    print("  NOTE: gpt-oss120-120b fine-tuning options:")
     print()
     print("  1. Azure AI Foundry Managed Fine-Tuning:")
     print("     az ml job create --file training_config.yaml")

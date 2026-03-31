@@ -28,7 +28,7 @@ crowe-synapse/ (Framework Layer)
     |
     v
 Foundation (Phase 1)
-    ├── Azure AI Foundry (gpt-oss-120b)
+    ├── Azure AI Foundry (gpt-oss120-120b)
     ├── 33 built-in tools + 5,800 MCP servers
     └── Talon Music Engine + Synapse/Qubit-Flow quantum packages
 ```
@@ -116,7 +116,7 @@ Sub-agents are YAML configuration files:
 # agents/music.yaml
 name: music
 description: "Talon composition specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - talon_*
   - read_file
@@ -142,7 +142,7 @@ The orchestrator routes tasks through three paths:
 
 ### Sub-Agent Execution
 
-Sub-agents do NOT get their own Azure agent deployments. They reuse the same gpt-oss-120b model with specialized system prompts injected contextually. One model, many personas. The framework swaps instructions per delegation:
+Sub-agents do NOT get their own Azure agent deployments. They reuse the same gpt-oss120-120b model with specialized system prompts injected contextually. One model, many personas. The framework swaps instructions per delegation:
 
 - Creates a new Azure thread (or reuses an existing one for the domain)
 - Injects the sub-agent's system prompt

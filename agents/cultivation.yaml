@@ -1,6 +1,6 @@
 name: cultivation
 description: "Mycology knowledge and growing protocol specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - web_search
   - browse_url

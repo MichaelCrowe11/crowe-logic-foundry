@@ -968,7 +968,7 @@ Create `agents/code.yaml`:
 ```yaml
 name: code
 description: "Code editing, refactoring, and debugging specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - read_file
   - write_file
@@ -994,7 +994,7 @@ Create `agents/research.yaml`:
 ```yaml
 name: research
 description: "Web research and information gathering specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - web_search
   - browse_url
@@ -1014,7 +1014,7 @@ Create `agents/music.yaml`:
 ```yaml
 name: music
 description: "Talon composition specialist — generates MIDI, orchestrates tracks, analyzes audio"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - talon_*
   - read_file
@@ -1038,7 +1038,7 @@ Create `agents/quantum.yaml`:
 ```yaml
 name: quantum
 description: "Quantum circuit design and evaluation specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - run_quantum_circuit
   - synapse_evaluate
@@ -1056,7 +1056,7 @@ Create `agents/cultivation.yaml`:
 ```yaml
 name: cultivation
 description: "Mycology knowledge and growing protocol specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - web_search
   - browse_url
@@ -1079,7 +1079,7 @@ Create `crowe_synapse/agent_registry.py`:
 Crowe-Synapse Agent Registry — load and manage YAML-defined sub-agents.
 
 Each agent is a persona: a system prompt override, a tool subset, and
-optional pipeline templates. Agents reuse the same model (gpt-oss-120b)
+optional pipeline templates. Agents reuse the same model (gpt-oss120-120b)
 with different instructions.
 """
 
@@ -1094,7 +1094,7 @@ import yaml
 class AgentConfig:
     name: str
     description: str = ""
-    model: str = "gpt-oss-120b"
+    model: str = "gpt-oss120-120b"
     tools: list[str] = field(default_factory=list)
     prompt_override: str = ""
     pipelines: list[str] = field(default_factory=list)
@@ -1117,7 +1117,7 @@ class AgentRegistry:
                     agent = AgentConfig(
                         name=data["name"],
                         description=data.get("description", ""),
-                        model=data.get("model", "gpt-oss-120b"),
+                        model=data.get("model", "gpt-oss120-120b"),
                         tools=data.get("tools", []),
                         prompt_override=data.get("prompt_override", ""),
                         pipelines=data.get("pipelines", []),

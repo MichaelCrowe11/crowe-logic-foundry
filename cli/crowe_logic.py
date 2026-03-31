@@ -349,7 +349,7 @@ def stream_response(client, thread_id: str, agent_id: str):
 @click.version_option(version=AGENT_VERSION, prog_name="crowe-logic")
 @click.pass_context
 def main(ctx):
-    """Crowe Logic — Universal AI Agent powered by gpt-oss-120b"""
+    """Crowe Logic — Universal AI Agent powered by gpt-oss120-120b"""
     if ctx.invoked_subcommand is None:
         ctx.invoke(chat)
 

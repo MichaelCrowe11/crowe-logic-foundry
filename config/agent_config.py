@@ -11,7 +11,7 @@ load_dotenv()
 
 # Azure AI Foundry
 PROJECT_ENDPOINT = os.environ.get("PROJECT_ENDPOINT", "https://crowelogicos-7858-resource.services.ai.azure.com/api/projects/crowelogicos-7858")
-MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-oss-120b")
+MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-oss120-120b")
 
 # Connections (optional — leave empty to skip those tools)
 BING_CONNECTION_ID = os.environ.get("AZURE_BING_CONNECTION_ID", "")
@@ -81,6 +81,6 @@ You write clean, production-quality code. You think before you act.
 Never use emojis in your responses. Keep output clean and professional.
 
 You operate from: /Users/crowelogic
-Current model: gpt-oss-120b (OpenAI open-weight, Apache 2.0)
+Current model: gpt-oss120-120b (OpenAI open-weight, Apache 2.0)
 Platform: Azure AI Foundry
 """

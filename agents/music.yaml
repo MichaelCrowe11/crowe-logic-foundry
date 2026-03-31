@@ -1,6 +1,6 @@
 name: music
 description: "Talon composition specialist — generates MIDI, orchestrates tracks, analyzes audio"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - talon_*
   - read_file

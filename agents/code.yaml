@@ -1,6 +1,6 @@
 name: code
 description: "Code editing, refactoring, and debugging specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - read_file
   - write_file

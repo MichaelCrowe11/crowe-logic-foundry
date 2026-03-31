@@ -1,6 +1,6 @@
 name: quantum
 description: "Quantum circuit design and evaluation specialist"
-model: gpt-oss-120b
+model: gpt-oss120-120b
 tools:
   - run_quantum_circuit
   - synapse_evaluate

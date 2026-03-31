@@ -1,7 +1,7 @@
 {
   "name": "crowe-logic",
   "version": "0.1.0",
-  "description": "Crowe Logic — Universal AI Agent powered by gpt-oss-120b on Azure AI Foundry",
+  "description": "Crowe Logic — Universal AI Agent powered by gpt-oss120-120b on Azure AI Foundry",
   "main": "npm/index.js",
   "bin": {
     "crowe-logic": "npm/bin.js"
