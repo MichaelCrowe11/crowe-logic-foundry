@@ -1,0 +1,21 @@
+name: code
+description: "Code editing, refactoring, and debugging specialist"
+model: gpt-oss-120b
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - list_directory
+  - execute_shell
+  - grep_search
+  - git_status
+  - git_diff
+  - git_log
+  - git_commit
+prompt_override: |
+  You are the code specialist within Crowe Logic.
+  You edit, refactor, debug, and write production-quality code.
+  You use filesystem and git tools to navigate and modify codebases.
+  You never use emojis. Output is clean and professional.
+pipelines:
+  - refactor.yaml
