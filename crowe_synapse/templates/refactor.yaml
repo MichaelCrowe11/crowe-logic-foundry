@@ -1,0 +1,13 @@
+name: refactor
+description: "Search, read, edit, and commit code changes"
+trigger: "refactor|rename|extract method|clean up"
+steps:
+  - tool: grep_search
+    input_from: task.target
+  - tool: read_file
+    input_from: previous.file
+  - tool: edit_file
+    input_from: task.changes
+  - tool: git_diff
+  - tool: git_commit
+    input_from: task.message

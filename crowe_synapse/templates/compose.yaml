@@ -1,0 +1,10 @@
+name: compose
+description: "Generate a full multi-track composition"
+trigger: "compose|write music|generate.*track|create.*song"
+steps:
+  - tool: talon_generate_chords
+    input_from: task.params
+  - tool: talon_generate_melody
+    input_from: task.params
+  - tool: talon_generate_drums
+    input_from: task.params
