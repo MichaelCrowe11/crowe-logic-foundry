@@ -129,6 +129,21 @@ def _get_tool_map() -> dict:
     return _tool_map_cache
 
 
+_orchestrator = None
+
+def _get_orchestrator():
+    """Lazy-loaded Crowe-Synapse orchestrator."""
+    global _orchestrator
+    if _orchestrator is None:
+        from crowe_synapse import Orchestrator
+        _orchestrator = Orchestrator(
+            db_path=os.path.expanduser("~/.crowe-logic/memory.db"),
+            agents_dir=os.path.join(PROJECT_ROOT, "agents"),
+            templates_dir=os.path.join(PROJECT_ROOT, "crowe_synapse", "templates"),
+        )
+    return _orchestrator
+
+
 def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
     """Execute a single tool function by name and return the result as a string."""
     func = tool_map.get(name)
@@ -269,8 +284,15 @@ def stream_response(client, thread_id: str, agent_id: str):
             if tc.type == "function":
                 _render_tool_card({"name": tc.function.name, "args": tc.function.arguments})
                 _start_spinner(f"running {tc.function.name}...")
+                _tool_start = time.monotonic()
                 result = _execute_tool_call(tool_map, tc.function.name, tc.function.arguments)
                 _stop_spinner()
+                _get_orchestrator().record_execution(
+                    tool_name=tc.function.name,
+                    arguments=tc.function.arguments,
+                    output=result[:10000],
+                    duration_ms=int((time.monotonic() - _tool_start) * 1000),
+                )
                 tool_outputs.append(ToolOutput(tool_call_id=tc.id, output=result))
 
         # Submit results and poll for next state
@@ -343,6 +365,9 @@ def chat():
     client = get_client()
     thread = client.threads.create()
 
+    orch = _get_orchestrator()
+    session_id = orch.start_session(thread_id=thread.id)
+
     show_welcome(AGENT_VERSION)
 
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
@@ -355,6 +380,7 @@ def chat():
         try:
             user_input = session.prompt(prompt_html, multiline=False)
         except (EOFError, KeyboardInterrupt):
+            orch.end_session(summary="Session ended by user")
             console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
 
@@ -362,6 +388,7 @@ def chat():
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
+            orch.end_session(summary="Session ended by user")
             console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
 
@@ -380,6 +407,9 @@ def chat():
             continue
 
         try:
+            # Orchestrator context preparation
+            ctx = orch.prepare(user_input, thread_id=thread.id)
+
             # Cancel any stale runs before sending a new message
             _cancel_active_runs(client, thread.id)
             client.messages.create(thread_id=thread.id, role="user", content=user_input)
@@ -527,6 +557,142 @@ def status():
 def tools():
     """List all available tools."""
     _list_tools_inline()
+
+
+@main.command()
+def agents():
+    """List registered sub-agents."""
+    orch = _get_orchestrator()
+    agent_list = orch.list_agents()
+    if not agent_list:
+        console.print("  [dim]No agents configured[/dim]")
+        return
+    table = Table(
+        title="Sub-Agents",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        header_style="bold white",
+        padding=(0, 1),
+    )
+    table.add_column("Agent", style="#bfa669", min_width=14)
+    table.add_column("Description", style="white")
+    table.add_column("Tools", style="dim")
+    for a in agent_list:
+        tools_str = ", ".join(a.tools[:4])
+        if len(a.tools) > 4:
+            tools_str += f" +{len(a.tools) - 4}"
+        table.add_row(a.name, a.description, tools_str)
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@main.command()
+def pipelines():
+    """List available pipeline templates."""
+    orch = _get_orchestrator()
+    pipe_list = orch.list_pipelines()
+    if not pipe_list:
+        console.print("  [dim]No pipelines configured[/dim]")
+        return
+    table = Table(
+        title="Pipeline Templates",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        header_style="bold white",
+        padding=(0, 1),
+    )
+    table.add_column("Pipeline", style="#bfa669", min_width=14)
+    table.add_column("Description", style="white")
+    table.add_column("Trigger", style="dim")
+    for p in pipe_list:
+        table.add_row(p.name, p.description, p.trigger or "")
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@main.command()
+@click.option("--limit", default=10, help="Number of sessions to show")
+def history(limit: int):
+    """Show recent chat sessions."""
+    orch = _get_orchestrator()
+    sessions = orch.get_history(limit=limit)
+    if not sessions:
+        console.print("  [dim]No session history yet[/dim]")
+        return
+    table = Table(
+        title="Session History",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        header_style="bold white",
+        padding=(0, 1),
+    )
+    table.add_column("Started", style="#bfa669", min_width=20)
+    table.add_column("Thread", style="dim", max_width=20)
+    table.add_column("Summary", style="white")
+    for s in sessions:
+        started = s.get("started_at", "")[:19]
+        thread = s.get("thread_id", "")[:16] + "..."
+        summary = (s.get("summary") or "[dim]no summary[/dim]")[:60]
+        table.add_row(started, thread, summary)
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@main.command()
+def resume():
+    """Resume the last chat session with context."""
+    orch = _get_orchestrator()
+    sessions = orch.get_history(limit=1)
+    if not sessions:
+        console.print("  [dim]No previous sessions to resume[/dim]")
+        return
+    last = sessions[0]
+    thread_id = last["thread_id"]
+    console.print(f"  [#bfa669]Resuming session:[/#bfa669] {last.get('summary', 'no summary')}")
+    console.print(f"  [dim]Thread: {thread_id}[/dim]")
+    # Start a new session linked to the previous context
+    agent_id = get_agent_id()
+    client = get_client()
+    orch.start_session(thread_id=thread_id)
+    # Proceed to chat loop using the existing thread
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.formatted_text import HTML
+    history_file = os.path.join(PROJECT_ROOT, ".chat_history")
+    session = PromptSession(history=FileHistory(history_file))
+    prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
+    favicon = get_favicon()
+    while True:
+        try:
+            user_input = session.prompt(prompt_html, multiline=False)
+        except (EOFError, KeyboardInterrupt):
+            orch.end_session(summary="Resumed session ended by user")
+            console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
+            break
+        user_input = user_input.strip()
+        if not user_input:
+            continue
+        if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
+            orch.end_session(summary="Resumed session ended by user")
+            console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
+            break
+        try:
+            _cancel_active_runs(client, thread_id)
+            client.messages.create(thread_id=thread_id, role="user", content=user_input)
+            console.print()
+            sys.stdout.write(f"  {favicon} ")
+            sys.stdout.flush()
+            console.print("[bold #bfa669]crowe-logic[/bold #bfa669]")
+            stream_response(client, thread_id, agent_id)
+            console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+        except Exception as e:
+            _render_error(str(e))
 
 
 if __name__ == "__main__":
