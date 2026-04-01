@@ -2,9 +2,11 @@
 Crowe-Synapse Quantum Bridge — pluggable decision points.
 
 Any routing decision, pipeline step, or parameter selection can optionally
-flow through Synapse-Lang or Qubit-Flow quantum evaluation. When quantum
-packages aren't installed, all decisions use classical defaults. Zero overhead
-when quantum isn't active.
+flow through Crowe Quantum evaluation. When quantum packages aren't installed,
+all decisions use classical defaults. Zero overhead when quantum isn't active.
+
+Uses the published crowe-quantum-core, crowe-qubit-flow, and crowe-synapse
+PyPI packages from the Crowe Quantum Platform.
 """
 
 import random
@@ -12,17 +14,17 @@ from dataclasses import dataclass, field
 
 
 # Check quantum availability once at import time
-_synapse_available = False
+_core_available = False
 _qubit_flow_available = False
 
 try:
-    from synapse_lang import SynapseLang
-    _synapse_available = True
+    from crowe_quantum_core import StateVector, standard_gates
+    _core_available = True
 except ImportError:
     pass
 
 try:
-    from qubit_flow_lang import QubitFlowInterpreter
+    from crowe_qubit_flow import Parser as QFParser, Interpreter as QFInterpreter
     _qubit_flow_available = True
 except ImportError:
     pass
@@ -39,24 +41,22 @@ class DecisionPoint:
 
 class QuantumBridge:
     def __init__(self):
-        self._synapse = SynapseLang() if _synapse_available else None
-        self._qubit_flow = QubitFlowInterpreter() if _qubit_flow_available else None
+        self._qf_interpreter = QFInterpreter() if _qubit_flow_available else None
 
     @property
     def quantum_available(self) -> bool:
-        return _synapse_available or _qubit_flow_available
+        return _core_available or _qubit_flow_available
 
     def status(self) -> dict:
         return {
             "available": self.quantum_available,
-            "synapse_lang": _synapse_available,
-            "qubit_flow": _qubit_flow_available,
+            "crowe_quantum_core": _core_available,
+            "crowe_qubit_flow": _qubit_flow_available,
         }
 
     def decide(self, dp: DecisionPoint) -> str:
         """Evaluate a decision point. Uses quantum if available, classical otherwise."""
-        # Try quantum evaluation first
-        if dp.quantum_evaluator and self._synapse:
+        if dp.quantum_evaluator and _core_available:
             try:
                 result = self._quantum_evaluate(dp)
                 if result in dp.candidates:
@@ -64,15 +64,29 @@ class QuantumBridge:
             except Exception:
                 pass  # fall through to classical
 
-        # Classical: use weights if provided, otherwise return default
         if dp.weights:
             return self._weighted_choice(dp)
         return dp.classical_default
 
     def _quantum_evaluate(self, dp: DecisionPoint) -> str:
-        """Run a Synapse-Lang expression to pick a candidate."""
-        result = self._synapse.evaluate(dp.quantum_evaluator)
-        return str(result)
+        """Use quantum measurement to pick a candidate.
+
+        Creates a superposition over candidates and measures to collapse
+        to a single choice — true quantum randomness when available.
+        """
+        import numpy as np
+        n_candidates = len(dp.candidates)
+        # Use enough qubits to cover all candidates
+        num_qubits = max(1, int(np.ceil(np.log2(n_candidates))))
+        state = StateVector(num_qubits)
+        # Apply Hadamard to all qubits for uniform superposition
+        h_gate = standard_gates.get_gate("H")
+        for q in range(num_qubits):
+            state.apply_gate(h_gate.matrix(), [q])
+        # Measure and map to candidate
+        outcome = state.measure()
+        idx = outcome % n_candidates
+        return dp.candidates[idx]
 
     def _weighted_choice(self, dp: DecisionPoint) -> str:
         """Weighted random selection from candidates using provided weights."""
