@@ -38,6 +38,17 @@ from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_exec
 from tools.mcp_registry import mcp_search
 from tools.mcp_client import mcp_list_tools, mcp_call_tool, mcp_stop_server
 
+# iTerm2 terminal control
+from tools.iterm2_control import (
+    iterm_create_window, iterm_create_tab, iterm_split_pane,
+    iterm_send_text, iterm_read_screen, iterm_inject_output,
+    iterm_list_sessions, iterm_focus_session, iterm_set_fullscreen,
+    iterm_get_theme, iterm_set_profile_colors, iterm_set_badge,
+    iterm_broadcast, iterm_stop_broadcast,
+    iterm_alert, iterm_prompt_input,
+    iterm_set_variable, iterm_get_variable,
+)
+
 # All user-facing functions the agent can call
 user_functions = {
     # Filesystem
@@ -64,4 +75,12 @@ user_functions = {
     run_quantum_circuit, synapse_evaluate, qubit_flow_execute,
     # MCP ecosystem
     mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
+    # iTerm2 terminal control
+    iterm_create_window, iterm_create_tab, iterm_split_pane,
+    iterm_send_text, iterm_read_screen, iterm_inject_output,
+    iterm_list_sessions, iterm_focus_session, iterm_set_fullscreen,
+    iterm_get_theme, iterm_set_profile_colors, iterm_set_badge,
+    iterm_broadcast, iterm_stop_broadcast,
+    iterm_alert, iterm_prompt_input,
+    iterm_set_variable, iterm_get_variable,
 }
