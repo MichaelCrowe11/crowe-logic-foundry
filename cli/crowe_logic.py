@@ -225,7 +225,10 @@ def stream_response(client, thread_id: str, agent_id: str):
                     elif event_data.status == "failed":
                         _stop_md_live()
                         _stop_spinner()
-                        _render_error(str(event_data.last_error), "Run Failed")
+                        err_str = str(event_data.last_error)
+                        if is_rate_limit_error(err_str):
+                            session_state["api_status"] = "throttled"
+                        _render_error(err_str, "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
                         _stop_md_live()
                         _stop_spinner()
@@ -239,8 +242,7 @@ def stream_response(client, thread_id: str, agent_id: str):
                             tools = _extract_tool_info(event_data.step_details)
                             _stop_md_live()
                             _stop_spinner()
-                            for t in tools:
-                                render_tool_card(console, t["name"], t.get("args", ""), status="running")
+                            # Only show spinner — Phase 2 renders the full hybrid cards
                             names = [t["name"] for t in tools] if tools else ["tools"]
                             _start_spinner(f"running {', '.join(names)}...")
                     elif event_data.status == "completed":
@@ -288,14 +290,13 @@ def stream_response(client, thread_id: str, agent_id: str):
         tool_outputs = []
         for tc in pending_tool_calls:
             if tc.type == "function":
-                render_tool_card(console, tc.function.name, tc.function.arguments, status="running")
                 _start_spinner(f"running {tc.function.name}...")
                 _tool_start = time.monotonic()
                 result = _execute_tool_call(tool_map, tc.function.name, tc.function.arguments)
                 duration_ms = int((time.monotonic() - _tool_start) * 1000)
                 _stop_spinner()
 
-                # Render completed hybrid card
+                # Render completed hybrid card (single display per tool)
                 failed = result.startswith('{"error"')
                 render_tool_card(
                     console, tc.function.name, tc.function.arguments,
