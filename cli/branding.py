@@ -406,7 +406,7 @@ def build_toolbar():
     )
 
     # Pad middle to push right content to the edge
-    return HTML(f' {left}  <style fg="gray">{"&nbsp;" * 4}</style>  {right} ')
+    return HTML(f' {left}      {right} ')
 
 
 # ── Slash command completer ──────────────────────────────────
