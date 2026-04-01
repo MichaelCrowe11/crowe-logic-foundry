@@ -25,6 +25,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
 ]
@@ -45,12 +47,11 @@ dependencies = [
 
 [project.optional-dependencies]
 quantum = [
+    "crowe-quantum-trinity>=2.0.0",
     "qiskit>=1.0.0",
     "qiskit-aer>=0.15.0",
     "cirq>=1.4.0",
     "pennylane>=0.39.0",
-    "synapse-lang>=2.0.0",
-    "synapse-qubit-flow>=1.0.0",
 ]
 nvidia = [
     "nvidia-cuda-runtime-cu12",
@@ -68,7 +69,7 @@ Repository = "https://github.com/MichaelCrowe11/crowe-logic-foundry"
 crowe-logic = "cli.crowe_logic:main"
 
 [tool.setuptools.packages.find]
-include = ["cli*", "tools*", "config*", "scripts*", "crowe_synapse*"]
+include = ["cli*", "tools*", "config*", "scripts*", "crowe_synapse*", "iterm*"]
 
 [tool.setuptools.package-data]
 cli = ["icon.png", "icons/*.icns"]
