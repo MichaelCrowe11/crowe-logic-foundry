@@ -30,7 +30,13 @@ from rich import box
 from dotenv import load_dotenv
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
-from cli.branding import welcome_screen, show_welcome, show_inline_image, get_favicon
+from cli.branding import (
+    welcome_screen, show_welcome, show_inline_image, get_favicon,
+    session_state, reset_session_state,
+    render_tool_card, summarize_tool_result,
+    show_retry_countdown, is_rate_limit_error,
+    build_toolbar, SlashCompleter, create_chat_keybindings,
+)
 from config.agent_config import AGENT_VERSION
 
 console = Console()
@@ -75,21 +81,9 @@ def _extract_tool_info(step_details) -> list[dict]:
     return tools
 
 
-def _render_tool_card(tool_info: dict):
-    """Print a styled tool call indicator."""
-    name = tool_info["name"]
-    args = tool_info.get("args", "")
-
-    # Truncate long args for display
-    if args and len(args) > 80:
-        args = args[:77] + "..."
-
-    label = Text()
-    label.append("  > ", style="dim #bfa669")
-    label.append(name, style="bold #bfa669")
-    if args:
-        label.append(f"  {args}", style="dim")
-    console.print(label)
+def _render_tool_card_old(tool_info: dict):
+    """Legacy tool card — replaced by hybrid cards from branding module."""
+    render_tool_card(console, tool_info["name"], tool_info.get("args", ""), status="running")
 
 
 def _render_error(msg: str, title: str = "Error"):
@@ -165,33 +159,41 @@ def stream_response(client, thread_id: str, agent_id: str):
     from rich.live import Live
 
     tool_map = _get_tool_map()
-    text_chunks = []  # accumulate chunks, join once at the end
+    text_chunks = []
     tool_calls_shown = set()
     spinner = None
-    live = None
+    spin_live = None
+    md_live = None
     streaming_started = False
 
-    # Track requires_action state from the stream
     run_id = None
-    pending_tool_calls = None  # set when run enters requires_action
+    pending_tool_calls = None
 
     def _start_spinner(label: str):
-        nonlocal spinner, live
+        nonlocal spinner, spin_live
         _stop_spinner()
         spinner = Spinner("dots", text=f"  [#bfa669]{label}[/#bfa669]", style="#bfa669")
-        live = Live(spinner, console=console, refresh_per_second=12, transient=True)
-        live.start()
+        spin_live = Live(spinner, console=console, refresh_per_second=12, transient=True)
+        spin_live.start()
 
     def _stop_spinner():
-        nonlocal spinner, live
-        if live:
-            live.stop()
-            live = None
+        nonlocal spinner, spin_live
+        if spin_live:
+            spin_live.stop()
+            spin_live = None
             spinner = None
 
-    # ── Phase 1: Initial streaming run ────────────────────────
-    # Stream raw text to stdout for real-time output (no duplication).
-    # Markdown is rendered once at the end for clean formatting.
+    def _stop_md_live():
+        nonlocal md_live
+        if md_live:
+            # Final render with complete text
+            full = "".join(text_chunks)
+            if full.strip():
+                md_live.update(Markdown(full))
+            md_live.stop()
+            md_live = None
+
+    # ── Phase 1: Streaming with Live Markdown ─────────────────
     try:
         _start_spinner("thinking...")
 
@@ -201,22 +203,31 @@ def stream_response(client, thread_id: str, agent_id: str):
                     if not streaming_started:
                         _stop_spinner()
                         streaming_started = True
+                        md_live = Live(
+                            Markdown(""),
+                            console=console,
+                            refresh_per_second=8,
+                            vertical_overflow="visible",
+                        )
+                        md_live.start()
                     if event_data.text:
                         text_chunks.append(event_data.text)
-                        sys.stdout.write(event_data.text)
-                        sys.stdout.flush()
+                        md_live.update(Markdown("".join(text_chunks)))
 
                 elif isinstance(event_data, ThreadRun):
                     run_id = event_data.id
                     if event_data.status == "requires_action":
+                        _stop_md_live()
                         _stop_spinner()
                         pending_tool_calls = (
                             event_data.required_action.submit_tool_outputs.tool_calls
                         )
                     elif event_data.status == "failed":
+                        _stop_md_live()
                         _stop_spinner()
                         _render_error(str(event_data.last_error), "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
+                        _stop_md_live()
                         _stop_spinner()
                         _render_error(f"Run {event_data.status}.", "Run Stopped")
 
@@ -226,31 +237,28 @@ def stream_response(client, thread_id: str, agent_id: str):
                         if step_id not in tool_calls_shown:
                             tool_calls_shown.add(step_id)
                             tools = _extract_tool_info(event_data.step_details)
+                            _stop_md_live()
                             _stop_spinner()
                             for t in tools:
-                                _render_tool_card(t)
+                                render_tool_card(console, t["name"], t.get("args", ""), status="running")
                             names = [t["name"] for t in tools] if tools else ["tools"]
                             _start_spinner(f"running {', '.join(names)}...")
                     elif event_data.status == "completed":
                         _stop_spinner()
 
                 elif event_type == AgentStreamEvent.ERROR:
+                    _stop_md_live()
                     _stop_spinner()
                     _render_error(str(event_data))
 
                 elif event_type == AgentStreamEvent.DONE:
                     break
     finally:
+        _stop_md_live()
         _stop_spinner()
-
-    # End the streamed text block with a newline
-    if streaming_started:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
 
     # ── Phase 2: Tool execution loop ──────────────────────────
     def _poll_run(rid):
-        """Poll until run leaves queued/in_progress. Returns the run."""
         r = client.runs.get(thread_id=thread_id, run_id=rid)
         while r.status in ("queued", "in_progress"):
             time.sleep(0.5)
@@ -259,7 +267,6 @@ def stream_response(client, thread_id: str, agent_id: str):
 
     tool_phase_ok = True
     while pending_tool_calls and run_id:
-        # Wait for server to commit requires_action state
         _start_spinner("preparing tools...")
         try:
             run = _poll_run(run_id)
@@ -277,25 +284,35 @@ def stream_response(client, thread_id: str, agent_id: str):
             tool_phase_ok = False
             break
 
-        # Execute tool calls from confirmed server state
         pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
         tool_outputs = []
         for tc in pending_tool_calls:
             if tc.type == "function":
-                _render_tool_card({"name": tc.function.name, "args": tc.function.arguments})
+                render_tool_card(console, tc.function.name, tc.function.arguments, status="running")
                 _start_spinner(f"running {tc.function.name}...")
                 _tool_start = time.monotonic()
                 result = _execute_tool_call(tool_map, tc.function.name, tc.function.arguments)
+                duration_ms = int((time.monotonic() - _tool_start) * 1000)
                 _stop_spinner()
+
+                # Render completed hybrid card
+                failed = result.startswith('{"error"')
+                render_tool_card(
+                    console, tc.function.name, tc.function.arguments,
+                    status="fail" if failed else "ok",
+                    result=result,
+                    duration_ms=duration_ms,
+                )
+                session_state["tool_count"] += 1
+
                 _get_orchestrator().record_execution(
                     tool_name=tc.function.name,
                     arguments=tc.function.arguments,
                     output=result[:10000],
-                    duration_ms=int((time.monotonic() - _tool_start) * 1000),
+                    duration_ms=duration_ms,
                 )
                 tool_outputs.append(ToolOutput(tool_call_id=tc.id, output=result))
 
-        # Submit results and poll for next state
         _start_spinner("thinking...")
         try:
             client.runs.submit_tool_outputs(thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs)
@@ -317,12 +334,9 @@ def stream_response(client, thread_id: str, agent_id: str):
             tool_phase_ok = False
             break
 
-    # ── Phase 3: Render the response ──────────────────────────
-    # Phase 1 text was already rendered live. If tools ran in Phase 2,
-    # fetch the assistant's final message from the thread.
+    # ── Phase 3: Post-tool response ───────────────────────────
     full_text = "".join(text_chunks)
     if not full_text.strip() and run_id and tool_phase_ok:
-        # Text came from post-tool execution — fetch from thread
         try:
             messages = client.messages.list(thread_id=thread_id)
             msg_list = getattr(messages, "data", None) or list(messages)
@@ -367,11 +381,18 @@ def chat():
 
     orch = _get_orchestrator()
     session_id = orch.start_session(thread_id=thread.id)
+    reset_session_state()
 
     show_welcome(AGENT_VERSION)
 
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
-    session = PromptSession(history=FileHistory(history_file))
+    kb = create_chat_keybindings()
+    session = PromptSession(
+        history=FileHistory(history_file),
+        completer=SlashCompleter(),
+        key_bindings=kb,
+        bottom_toolbar=build_toolbar,
+    )
 
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
@@ -407,10 +428,7 @@ def chat():
             continue
 
         try:
-            # Orchestrator context preparation
             ctx = orch.prepare(user_input, thread_id=thread.id)
-
-            # Cancel any stale runs before sending a new message
             _cancel_active_runs(client, thread.id)
             client.messages.create(thread_id=thread.id, role="user", content=user_input)
             console.print()
@@ -418,33 +436,33 @@ def chat():
             sys.stdout.flush()
             console.print("[bold #bfa669]crowe-logic[/bold #bfa669]")
 
-            # Retry on transient server errors (up to 3 attempts)
+            # Retry with countdown bar on rate limits
             last_error = None
             for attempt in range(3):
                 try:
                     stream_response(client, thread.id, agent_id)
+                    session_state["api_status"] = "ok"
                     last_error = None
                     break
                 except Exception as stream_err:
                     error_msg = str(stream_err)
-                    if "server_error" in error_msg or "Sorry, something went wrong" in error_msg:
+                    if is_rate_limit_error(error_msg):
                         last_error = error_msg
                         if attempt < 2:
                             wait = (attempt + 1) * 2
-                            console.print(f"  [dim]Server error — retrying in {wait}s (attempt {attempt + 2}/3)...[/dim]")
-                            time.sleep(wait)
+                            show_retry_countdown(console, wait, attempt + 2, 3)
                             _cancel_active_runs(client, thread.id)
                             continue
                     else:
                         raise
             if last_error:
+                session_state["api_status"] = "down"
                 _render_error(last_error, "Run Failed (after 3 attempts)")
 
             console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
         except Exception as e:
             error_msg = str(e)
             if "while a run" in error_msg and "is active" in error_msg:
-                # Force-cancel the blocking run and retry once
                 _cancel_active_runs(client, thread.id)
                 console.print("  [dim]Cancelled stale run — retrying...[/dim]")
                 time.sleep(1)
@@ -523,6 +541,9 @@ def _show_help():
     table.add_row("/clear", "Clear screen")
     table.add_row("/help", "Show this help")
     table.add_row("/exit", "Quit")
+    table.add_row("", "")
+    table.add_row("[dim]Ctrl+E[/dim]", "[dim]Multi-line editor[/dim]")
+    table.add_row("[dim]Tab[/dim]", "[dim]Complete / commands[/dim]")
     console.print()
     console.print(table)
     console.print()
@@ -647,6 +668,10 @@ def history(limit: int):
 @main.command()
 def resume():
     """Resume the last chat session with context."""
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.formatted_text import HTML
+
     orch = _get_orchestrator()
     sessions = orch.get_history(limit=1)
     if not sessions:
@@ -656,18 +681,23 @@ def resume():
     thread_id = last["thread_id"]
     console.print(f"  [#bfa669]Resuming session:[/#bfa669] {last.get('summary', 'no summary')}")
     console.print(f"  [dim]Thread: {thread_id}[/dim]")
-    # Start a new session linked to the previous context
+
     agent_id = get_agent_id()
     client = get_client()
     orch.start_session(thread_id=thread_id)
-    # Proceed to chat loop using the existing thread
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.history import FileHistory
-    from prompt_toolkit.formatted_text import HTML
+    reset_session_state()
+
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
-    session = PromptSession(history=FileHistory(history_file))
+    kb = create_chat_keybindings()
+    session = PromptSession(
+        history=FileHistory(history_file),
+        completer=SlashCompleter(),
+        key_bindings=kb,
+        bottom_toolbar=build_toolbar,
+    )
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
+
     while True:
         try:
             user_input = session.prompt(prompt_html, multiline=False)
@@ -689,10 +719,43 @@ def resume():
             sys.stdout.write(f"  {favicon} ")
             sys.stdout.flush()
             console.print("[bold #bfa669]crowe-logic[/bold #bfa669]")
-            stream_response(client, thread_id, agent_id)
+
+            last_error = None
+            for attempt in range(3):
+                try:
+                    stream_response(client, thread_id, agent_id)
+                    session_state["api_status"] = "ok"
+                    last_error = None
+                    break
+                except Exception as stream_err:
+                    error_msg = str(stream_err)
+                    if is_rate_limit_error(error_msg):
+                        last_error = error_msg
+                        if attempt < 2:
+                            wait = (attempt + 1) * 2
+                            show_retry_countdown(console, wait, attempt + 2, 3)
+                            _cancel_active_runs(client, thread_id)
+                            continue
+                    else:
+                        raise
+            if last_error:
+                session_state["api_status"] = "down"
+                _render_error(last_error, "Run Failed (after 3 attempts)")
+
             console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
         except Exception as e:
-            _render_error(str(e))
+            error_msg = str(e)
+            if "while a run" in error_msg and "is active" in error_msg:
+                _cancel_active_runs(client, thread_id)
+                console.print("  [dim]Cancelled stale run — retrying...[/dim]")
+                time.sleep(1)
+                try:
+                    stream_response(client, thread_id, agent_id)
+                    console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+                except Exception as retry_err:
+                    _render_error(str(retry_err))
+            else:
+                _render_error(error_msg)
 
 
 if __name__ == "__main__":
