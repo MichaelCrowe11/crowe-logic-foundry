@@ -10,3 +10,5 @@ cli/icons/crowe-logic.iconset/
 cli/icons/crowe-logic.icns
 *.egg-info/
 build/
+.superpowers/
+.pytest_cache/
