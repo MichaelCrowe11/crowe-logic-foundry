@@ -20,13 +20,13 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(
-    "crowe-logic-ai",
+    "crowe-logic",
     instructions="Crowe Logic — mycology expertise, photo analysis, grow logs, and SOP generation",
 )
 
 
 def _request(method: str, path: str, **kwargs) -> dict:
-    """Send an authenticated request to the Crowe Logic AI platform."""
+    """Send an authenticated request to the Crowe Logic platform."""
     url = os.environ.get("CROWE_LOGIC_URL", "https://ai.southwestmushrooms.com")
     key = os.environ.get("CROWE_LOGIC_KEY", "")
 
