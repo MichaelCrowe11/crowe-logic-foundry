@@ -32,7 +32,21 @@ from tools.talon_music import (
 )
 
 # Quantum computing
-from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_execute
+from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline
+
+# Vision
+from tools.vision import analyze_image, screenshot_and_analyze
+
+# CroweLM training data
+from tools.crowelm import (
+    crowelm_list_datasets, crowelm_dataset_stats, crowelm_search_examples,
+    crowelm_inspect_config,
+    crowelm_add_example, crowelm_remove_example, crowelm_export_curated,
+    crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
+)
+
+# Crowe Logic platform
+from tools.crowe_logic_ai import crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop
 
 # MCP ecosystem (5,800+ servers on demand)
 from tools.mcp_registry import mcp_search
@@ -72,7 +86,16 @@ user_functions = {
     talon_full_composition, talon_import_midi, talon_analyze,
     talon_list_grooves, talon_list_emotions,
     # Quantum
-    run_quantum_circuit, synapse_evaluate, qubit_flow_execute,
+    run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline,
+    # Vision
+    analyze_image, screenshot_and_analyze,
+    # CroweLM training data
+    crowelm_list_datasets, crowelm_dataset_stats, crowelm_search_examples,
+    crowelm_inspect_config,
+    crowelm_add_example, crowelm_remove_example, crowelm_export_curated,
+    crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
+    # Crowe Logic platform
+    crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop,
     # MCP ecosystem
     mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
     # iTerm2 terminal control

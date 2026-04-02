@@ -1,7 +1,7 @@
-"""Tests for crowe_synapse.quantum_bridge — pluggable quantum decisions."""
+"""Tests for crowe_synapse_engine.quantum_bridge — pluggable quantum decisions."""
 
 import pytest
-from crowe_synapse.quantum_bridge import DecisionPoint, QuantumBridge
+from crowe_synapse_engine.quantum_bridge import DecisionPoint, QuantumBridge
 
 
 @pytest.fixture

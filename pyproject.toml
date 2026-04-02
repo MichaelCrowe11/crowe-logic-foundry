@@ -69,8 +69,8 @@ Repository = "https://github.com/MichaelCrowe11/crowe-logic-foundry"
 crowe-logic = "cli.crowe_logic:main"
 
 [tool.setuptools.packages.find]
-include = ["cli*", "tools*", "config*", "scripts*", "crowe_synapse*", "iterm*"]
+include = ["cli*", "tools*", "config*", "scripts*", "crowe_synapse_engine*", "iterm*"]
 
 [tool.setuptools.package-data]
 cli = ["icon.png", "icons/*.icns"]
-crowe_synapse = ["templates/*.yaml"]
+crowe_synapse_engine = ["templates/*.yaml"]

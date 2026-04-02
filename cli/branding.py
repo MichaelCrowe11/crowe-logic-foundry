@@ -192,6 +192,7 @@ session_state = {
     "tool_count": 0,
     "api_status": "ok",       # ok | throttled | down
     "retry_seconds": 0,
+    "active_model": "",       # current model label for toolbar
 }
 
 def reset_session_state():
@@ -199,6 +200,7 @@ def reset_session_state():
     session_state["tool_count"] = 0
     session_state["api_status"] = "ok"
     session_state["retry_seconds"] = 0
+    session_state["active_model"] = ""
 
 
 # ── Tool result summarizer ───────────────────────────────────
@@ -396,11 +398,15 @@ def build_toolbar():
     else:  # down
         status_html = '<style fg="#bf6f6f">API DOWN</style>'
 
+    model_label = session_state.get("active_model", "")
+    model_html = f' <style fg="gray">\u00b7</style> <style fg="#8fa4bf">{model_label}</style>' if model_label else ""
+
     left = f'<style fg="#bfa669">crowe-logic v{AGENT_VERSION}</style>'
     right = (
         f'<style fg="#bfa669">{duration}</style>'
         f' <style fg="gray">\u00b7</style> '
         f'<style fg="#bfa669">{tool_count} tools</style>'
+        f'{model_html}'
         f' <style fg="gray">\u00b7</style> '
         f'{status_html}'
     )

@@ -1,8 +1,8 @@
-"""Tests for crowe_synapse.agent_registry — YAML agent loading."""
+"""Tests for crowe_synapse_engine.agent_registry — YAML agent loading."""
 
 import os
 import pytest
-from crowe_synapse.agent_registry import AgentRegistry, AgentConfig
+from crowe_synapse_engine.agent_registry import AgentRegistry, AgentConfig
 
 
 @pytest.fixture

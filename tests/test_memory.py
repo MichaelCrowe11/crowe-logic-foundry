@@ -1,9 +1,9 @@
-"""Tests for crowe_synapse.memory — SQLite memory store."""
+"""Tests for crowe_synapse_engine.memory — SQLite memory store."""
 
 import os
 import tempfile
 import pytest
-from crowe_synapse.memory import MemoryStore
+from crowe_synapse_engine.memory import MemoryStore
 
 
 @pytest.fixture

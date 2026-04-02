@@ -1,15 +1,15 @@
-"""Tests for crowe_synapse.pipeline — step execution engine."""
+"""Tests for crowe_synapse_engine.pipeline — step execution engine."""
 
 import json
 import os
 import tempfile
 import pytest
-from crowe_synapse.pipeline import PipelineEngine, PipelineStep, PipelineRun, PipelineTemplate
+from crowe_synapse_engine.pipeline import PipelineEngine, PipelineStep, PipelineRun, PipelineTemplate
 
 
 @pytest.fixture
 def engine(tmp_path):
-    templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "crowe_synapse", "templates")
+    templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "crowe_synapse_engine", "templates")
     return PipelineEngine(templates_dir=templates_dir)
 
 

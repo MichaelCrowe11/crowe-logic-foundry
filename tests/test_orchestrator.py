@@ -1,17 +1,17 @@
-"""Tests for crowe_synapse.orchestrator — the central coordinator."""
+"""Tests for crowe_synapse_engine.orchestrator — the central coordinator."""
 
 import json
 import os
 import tempfile
 import pytest
-from crowe_synapse.orchestrator import Orchestrator
+from crowe_synapse_engine.orchestrator import Orchestrator
 
 
 @pytest.fixture
 def orch(tmp_path):
     db_path = os.path.join(str(tmp_path), "test.db")
     agents_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agents")
-    templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "crowe_synapse", "templates")
+    templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "crowe_synapse_engine", "templates")
     return Orchestrator(db_path=db_path, agents_dir=agents_dir, templates_dir=templates_dir)
 
 

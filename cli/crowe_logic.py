@@ -37,19 +37,121 @@ from cli.branding import (
     show_retry_countdown, is_rate_limit_error,
     build_toolbar, SlashCompleter, create_chat_keybindings,
 )
-from config.agent_config import AGENT_VERSION
+from config.agent_config import AGENT_VERSION, MODEL_CHAIN
+from iterm import iterm_set_var, install_iterm, uninstall_iterm, iterm_status
 
 console = Console()
 AGENT_ID_FILE = os.path.join(PROJECT_ROOT, ".agent_id")
 
+# Smart routing state — tracks current model position in the chain
+_model_state = {
+    "chain_index": 0,         # current position in MODEL_CHAIN
+    "active_model": None,     # deployment name of the currently active model
+    "failures": {},           # model_name -> consecutive failure count
+    "agent_id": None,         # cached agent ID (may change on fallback)
+    "openrouter_provider": None,  # OpenRouterProvider instance (reused for conversation)
+}
+
+
+def _current_model() -> dict:
+    """Get the current model config from the chain."""
+    idx = _model_state["chain_index"]
+    if idx < len(MODEL_CHAIN):
+        return MODEL_CHAIN[idx]
+    return MODEL_CHAIN[0]  # wrap around to primary
+
+
+def _advance_model() -> dict | None:
+    """Move to the next model in the fallback chain. Returns new model or None if exhausted."""
+    _model_state["chain_index"] += 1
+    if _model_state["chain_index"] >= len(MODEL_CHAIN):
+        _model_state["chain_index"] = 0  # reset to primary for next attempt
+        return None
+    return _current_model()
+
+
+def _reset_model_chain():
+    """Reset to the primary model (e.g., at session start)."""
+    _model_state["chain_index"] = 0
+    _model_state["failures"] = {}
+    _model_state["openrouter_provider"] = None
+
+
+def _get_openrouter_provider(model_name: str):
+    """Get or create an OpenRouterProvider for the given model."""
+    from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, SYSTEM_INSTRUCTIONS
+    from providers.openrouter import OpenRouterProvider
+
+    current = _model_state.get("openrouter_provider")
+    if current and current.model == model_name:
+        return current
+
+    provider = OpenRouterProvider(
+        api_key=OPENROUTER_API_KEY,
+        base_url=OPENROUTER_BASE_URL,
+        model=model_name,
+        system_instructions=SYSTEM_INSTRUCTIONS,
+    )
+    _model_state["openrouter_provider"] = provider
+    return provider
+
+
+def _is_model_error(error_str: str) -> bool:
+    """Detect errors that indicate the model itself is failing (not user error)."""
+    indicators = [
+        "server_error", "Sorry, something went wrong",
+        "InternalServerError", "502", "503", "504",
+        "model_error", "overloaded", "capacity",
+        "The server had an error", "run failed",
+    ]
+    lower = error_str.lower()
+    return any(ind.lower() in lower for ind in indicators)
+
+
+def _deploy_with_model(client, model_name: str) -> str:
+    """Create a new agent with the specified model and return the agent ID."""
+    from azure.ai.agents.models import CodeInterpreterTool, FunctionTool, ToolSet
+    from config.agent_config import SYSTEM_INSTRUCTIONS, AGENT_NAME
+    from tools import user_functions
+
+    toolset = ToolSet()
+    toolset.add(FunctionTool(user_functions))
+    toolset.add(CodeInterpreterTool())
+    client.enable_auto_function_calls(toolset)
+
+    agent = client.create_agent(
+        model=model_name,
+        name=AGENT_NAME,
+        instructions=SYSTEM_INSTRUCTIONS,
+        toolset=toolset,
+    )
+
+    # Persist agent ID
+    with open(AGENT_ID_FILE, "w") as f:
+        json.dump({
+            "agent_id": agent.id,
+            "name": AGENT_NAME,
+            "version": AGENT_VERSION,
+            "model": model_name,
+        }, f, indent=2)
+
+    _model_state["agent_id"] = agent.id
+    _model_state["active_model"] = model_name
+    return agent.id
+
 
 def get_agent_id() -> str:
+    if _model_state["agent_id"]:
+        return _model_state["agent_id"]
     if not os.path.exists(AGENT_ID_FILE):
         console.print("\n  [bold red]No agent found.[/bold red] Run: [bold]crowe-logic deploy[/bold]\n")
         sys.exit(1)
     try:
         with open(AGENT_ID_FILE) as f:
-            return json.load(f)["agent_id"]
+            data = json.load(f)
+            _model_state["agent_id"] = data["agent_id"]
+            _model_state["active_model"] = data.get("model", "unknown")
+            return data["agent_id"]
     except (json.JSONDecodeError, KeyError):
         console.print("\n  [bold red]Corrupt agent file.[/bold red] Run: [bold]crowe-logic deploy[/bold]\n")
         sys.exit(1)
@@ -129,11 +231,11 @@ def _get_orchestrator():
     """Lazy-loaded Crowe-Synapse orchestrator."""
     global _orchestrator
     if _orchestrator is None:
-        from crowe_synapse import Orchestrator
+        from crowe_synapse_engine import Orchestrator
         _orchestrator = Orchestrator(
             db_path=os.path.expanduser("~/.crowe-logic/memory.db"),
             agents_dir=os.path.join(PROJECT_ROOT, "agents"),
-            templates_dir=os.path.join(PROJECT_ROOT, "crowe_synapse", "templates"),
+            templates_dir=os.path.join(PROJECT_ROOT, "crowe_synapse_engine", "templates"),
         )
     return _orchestrator
 
@@ -228,6 +330,9 @@ def stream_response(client, thread_id: str, agent_id: str):
                         err_str = str(event_data.last_error)
                         if is_rate_limit_error(err_str):
                             session_state["api_status"] = "throttled"
+                            iterm_set_var("crowe_logic_api", "throttled")
+                        if _is_model_error(err_str):
+                            raise RuntimeError(f"model_error: {err_str}")
                         _render_error(err_str, "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
                         _stop_md_live()
@@ -305,6 +410,7 @@ def stream_response(client, thread_id: str, agent_id: str):
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
+                iterm_set_var("crowe_logic_tools", str(session_state["tool_count"]))
 
                 _get_orchestrator().record_execution(
                     tool_name=tc.function.name,
@@ -364,7 +470,7 @@ def stream_response(client, thread_id: str, agent_id: str):
 @click.version_option(version=AGENT_VERSION, prog_name="crowe-logic")
 @click.pass_context
 def main(ctx):
-    """Crowe Logic — Universal AI Agent powered by gpt-oss-120b"""
+    """Crowe Logic — Universal AI Agent with smart model routing"""
     if ctx.invoked_subcommand is None:
         ctx.invoke(chat)
 
@@ -383,6 +489,9 @@ def chat():
     orch = _get_orchestrator()
     session_id = orch.start_session(thread_id=thread.id)
     reset_session_state()
+    _reset_model_chain()
+    iterm_set_var("crowe_logic_active", "1")
+    session_state["active_model"] = _current_model()["label"]
 
     show_welcome(AGENT_VERSION)
 
@@ -400,8 +509,16 @@ def chat():
 
     while True:
         try:
+            # Update iTerm2 duration variable
+            elapsed = time.monotonic() - session_state["started_at"]
+            minutes = int(elapsed) // 60
+            seconds = int(elapsed) % 60
+            dur_str = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
+            iterm_set_var("crowe_logic_duration", dur_str)
+
             user_input = session.prompt(prompt_html, multiline=False)
         except (EOFError, KeyboardInterrupt):
+            iterm_set_var("crowe_logic_active", "0")
             orch.end_session(summary="Session ended by user")
             console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -410,6 +527,7 @@ def chat():
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
+            iterm_set_var("crowe_logic_active", "0")
             orch.end_session(summary="Session ended by user")
             console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -427,38 +545,103 @@ def chat():
         if user_input.lower() == "/help":
             _show_help()
             continue
+        if user_input.lower().startswith("/model"):
+            parts = user_input.strip().split(maxsplit=1)
+            if len(parts) == 1:
+                # Show current model and available chain
+                _show_models()
+            else:
+                # Switch to specified model
+                target = parts[1].strip()
+                _switch_model(client, target)
+                agent_id = _model_state["agent_id"] or get_agent_id()
+            continue
 
         try:
+            model_cfg = _current_model()
             ctx = orch.prepare(user_input, thread_id=thread.id)
-            _cancel_active_runs(client, thread.id)
-            client.messages.create(thread_id=thread.id, role="user", content=user_input)
             console.print()
             sys.stdout.write(f"  {favicon} ")
             sys.stdout.flush()
-            console.print("[bold #bfa669]crowe-logic[/bold #bfa669]")
+            console.print(f"[bold #bfa669]crowe-logic[/bold #bfa669] [dim]({model_cfg['label']})[/dim]")
 
-            # Retry with countdown bar on rate limits
-            last_error = None
-            for attempt in range(3):
-                try:
-                    stream_response(client, thread.id, agent_id)
-                    session_state["api_status"] = "ok"
-                    last_error = None
-                    break
-                except Exception as stream_err:
-                    error_msg = str(stream_err)
-                    if is_rate_limit_error(error_msg):
-                        last_error = error_msg
-                        if attempt < 2:
-                            wait = (attempt + 1) * 2
-                            show_retry_countdown(console, wait, attempt + 2, 3)
+            # Smart routing: try current model, fallback on failure
+            succeeded = False
+            while not succeeded:
+                model_cfg = _current_model()
+                last_error = None
+
+                for attempt in range(2):
+                    try:
+                        if model_cfg.get("provider") == "openrouter":
+                            # ── OpenRouter path (Chat Completions) ──
+                            provider = _get_openrouter_provider(model_cfg["name"])
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
+                        else:
+                            # ── Azure Agent Service path ──
                             _cancel_active_runs(client, thread.id)
-                            continue
-                    else:
-                        raise
-            if last_error:
-                session_state["api_status"] = "down"
-                _render_error(last_error, "Run Failed (after 3 attempts)")
+                            if attempt == 0:
+                                client.messages.create(
+                                    thread_id=thread.id, role="user", content=user_input,
+                                )
+                            stream_response(client, thread.id, agent_id)
+
+                        session_state["api_status"] = "ok"
+                        iterm_set_var("crowe_logic_api", "ok")
+                        session_state["active_model"] = model_cfg["label"]
+                        iterm_set_var("crowe_logic_model", model_cfg["label"])
+                        succeeded = True
+                        break
+                    except Exception as stream_err:
+                        error_msg = str(stream_err)
+                        if is_rate_limit_error(error_msg):
+                            last_error = error_msg
+                            if attempt < 1:
+                                wait = 3
+                                show_retry_countdown(console, wait, attempt + 2, 2)
+                                if model_cfg.get("provider") == "azure":
+                                    _cancel_active_runs(client, thread.id)
+                                continue
+                        elif _is_model_error(error_msg):
+                            last_error = error_msg
+                            break
+                        else:
+                            raise
+
+                if succeeded:
+                    break
+
+                # Model failed — record and try next in the chain
+                _model_state["failures"][model_cfg["name"]] = (
+                    _model_state["failures"].get(model_cfg["name"], 0) + 1
+                )
+                next_model = _advance_model()
+                if next_model is None:
+                    session_state["api_status"] = "down"
+                    iterm_set_var("crowe_logic_api", "down")
+                    _render_error(
+                        f"{last_error}\n\nAll models in the fallback chain failed.",
+                        "All Models Failed",
+                    )
+                    break
+
+                console.print(
+                    f"  [dim #bfa669]Model failed — switching to "
+                    f"{next_model['label']}...[/dim #bfa669]"
+                )
+
+                # If switching to Azure, deploy a new agent
+                if next_model.get("provider") == "azure":
+                    try:
+                        agent_id = _deploy_with_model(client, next_model["name"])
+                        _cancel_active_runs(client, thread.id)
+                        thread = client.threads.create()
+                    except Exception as deploy_err:
+                        console.print(f"  [dim red]Fallback deploy failed: {deploy_err}[/dim red]")
+                        continue
 
             console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
         except Exception as e:
@@ -526,6 +709,78 @@ def _show_status_inline():
     console.print()
 
 
+def _show_models():
+    """Display the model chain with current selection highlighted."""
+    table = Table(
+        title="Model Chain",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        header_style="bold white",
+        show_lines=False,
+        padding=(0, 1),
+    )
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Provider", style="#8fa4bf", min_width=10)
+    table.add_column("Model", style="white", min_width=20)
+    table.add_column("Label", style="#bfa669", min_width=18)
+    table.add_column("Status", min_width=8)
+
+    for i, m in enumerate(MODEL_CHAIN):
+        is_active = i == _model_state["chain_index"]
+        status = "[bold #6fbf73]ACTIVE[/bold #6fbf73]" if is_active else "[dim]standby[/dim]"
+        failures = _model_state["failures"].get(m["name"], 0)
+        if failures > 0:
+            status = f"[#bf6f6f]{failures} fails[/#bf6f6f]"
+        provider = m.get("provider", "azure").upper()
+        table.add_row(str(i + 1), provider, m["name"], m["label"], status)
+
+    console.print()
+    console.print(table)
+    console.print("  [dim]Switch: /model <number or name>[/dim]")
+    console.print()
+
+
+def _switch_model(client, target: str):
+    """Manually switch to a model by index (1-based) or deployment name."""
+
+    def _activate(model, idx):
+        _model_state["chain_index"] = idx
+        console.print(f"  [#bfa669]Switching to {model['label']}...[/#bfa669]")
+        if model.get("provider") == "openrouter":
+            # OpenRouter — just update state, provider is created on demand
+            _model_state["openrouter_provider"] = None
+            session_state["active_model"] = model["label"]
+            console.print(f"  [#6fbf73]Now using {model['label']} (OpenRouter)[/#6fbf73]")
+        else:
+            # Azure — deploy a new agent
+            try:
+                _deploy_with_model(client, model["name"])
+                session_state["active_model"] = model["label"]
+                console.print(f"  [#6fbf73]Now using {model['label']} (Azure)[/#6fbf73]")
+            except Exception as e:
+                console.print(f"  [red]Failed to deploy {model['label']}: {e}[/red]")
+        iterm_set_var("crowe_logic_model", model["label"])
+
+    # Try numeric index first
+    try:
+        idx = int(target) - 1
+        if 0 <= idx < len(MODEL_CHAIN):
+            _activate(MODEL_CHAIN[idx], idx)
+            return
+    except ValueError:
+        pass
+
+    # Try matching by name or label
+    for i, m in enumerate(MODEL_CHAIN):
+        if target.lower() in m["name"].lower() or target.lower() in m["label"].lower():
+            _activate(m, i)
+            return
+
+    console.print(f"  [red]Model not found: {target}[/red]")
+    console.print("  [dim]Use /model to see available models[/dim]")
+
+
 def _show_help():
     table = Table(
         title="Commands",
@@ -535,9 +790,11 @@ def _show_help():
         show_header=False,
         padding=(0, 1),
     )
-    table.add_column("Command", style="#bfa669 bold", min_width=12)
+    table.add_column("Command", style="#bfa669 bold", min_width=16)
     table.add_column("Action", style="white")
     table.add_row("/tools", "List available tools")
+    table.add_row("/model", "Show model chain and active model")
+    table.add_row("/model <n>", "Switch to model by number or name")
     table.add_row("/status", "Show agent info")
     table.add_row("/clear", "Clear screen")
     table.add_row("/help", "Show this help")
@@ -687,6 +944,7 @@ def resume():
     client = get_client()
     orch.start_session(thread_id=thread_id)
     reset_session_state()
+    iterm_set_var("crowe_logic_active", "1")
 
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
     kb = create_chat_keybindings()
@@ -701,8 +959,16 @@ def resume():
 
     while True:
         try:
+            # Update iTerm2 duration variable
+            elapsed = time.monotonic() - session_state["started_at"]
+            minutes = int(elapsed) // 60
+            seconds = int(elapsed) % 60
+            dur_str = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
+            iterm_set_var("crowe_logic_duration", dur_str)
+
             user_input = session.prompt(prompt_html, multiline=False)
         except (EOFError, KeyboardInterrupt):
+            iterm_set_var("crowe_logic_active", "0")
             orch.end_session(summary="Resumed session ended by user")
             console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -710,6 +976,7 @@ def resume():
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
+            iterm_set_var("crowe_logic_active", "0")
             orch.end_session(summary="Resumed session ended by user")
             console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -757,6 +1024,64 @@ def resume():
                     _render_error(str(retry_err))
             else:
                 _render_error(error_msg)
+
+
+@main.group()
+def iterm():
+    """Manage iTerm2 native integration."""
+    pass
+
+
+@iterm.command()
+def install():
+    """Install the iTerm2 companion daemon and Crowe Logic profile."""
+    success, msg = install_iterm()
+    if success:
+        console.print(f"\n  [#6fbf73]{msg}[/#6fbf73]\n")
+    else:
+        console.print(f"\n  [bold red]{msg}[/bold red]\n")
+        if "Python API" in msg:
+            console.print("  [dim]Enable at: Preferences > General > Magic > Enable Python API[/dim]\n")
+
+
+@iterm.command()
+def uninstall():
+    """Remove the iTerm2 companion daemon."""
+    success, msg = uninstall_iterm()
+    if success:
+        console.print(f"\n  [#6fbf73]{msg}[/#6fbf73]\n")
+    else:
+        console.print(f"\n  [bold red]{msg}[/bold red]\n")
+
+
+@iterm.command(name="status")
+def iterm_status_cmd():
+    """Show iTerm2 integration status."""
+    from rich.table import Table
+    from rich import box
+
+    info = iterm_status()
+    table = Table(
+        title="iTerm2 Integration",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        show_header=False,
+        padding=(0, 1),
+    )
+    table.add_column("Check", style="#bfa669 bold", min_width=18)
+    table.add_column("Status", style="white")
+
+    def _yn(val):
+        return "[#6fbf73]yes[/#6fbf73]" if val else "[#bf6f6f]no[/#bf6f6f]"
+
+    table.add_row("iTerm2 detected", _yn(info["iterm_detected"]))
+    table.add_row("Daemon installed", _yn(info["daemon_installed"]))
+    table.add_row("Venv exists", _yn(info["venv_exists"]))
+
+    console.print()
+    console.print(table)
+    console.print()
 
 
 if __name__ == "__main__":

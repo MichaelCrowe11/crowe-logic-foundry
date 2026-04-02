@@ -11,7 +11,23 @@ load_dotenv()
 
 # Azure AI Foundry
 PROJECT_ENDPOINT = os.environ.get("PROJECT_ENDPOINT", "https://crowelogicos-7858-resource.services.ai.azure.com/api/projects/crowelogicos-7858")
-MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-oss-120b")
+MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "DeepSeek-R1")
+
+# OpenRouter (unlimited rate, cheapest DeepSeek-R1)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Smart model routing — ordered fallback chain with multi-provider support.
+# provider: "openrouter" (Chat Completions via OpenAI SDK) or "azure" (Agent Service)
+# name: deployment name (Azure) or model ID (OpenRouter)
+MODEL_CHAIN = [
+    {"name": "deepseek/deepseek-r1",         "label": "DeepSeek R1",     "type": "reasoning", "provider": "openrouter"},
+    {"name": "deepseek/deepseek-chat",        "label": "DeepSeek V3",    "type": "general",   "provider": "openrouter"},
+    {"name": "meta-llama/llama-3.3-70b-instruct:free", "label": "Llama 3.3 70B", "type": "general", "provider": "openrouter"},
+    {"name": "DeepSeek-R1",                   "label": "DeepSeek R1 (Azure)", "type": "reasoning", "provider": "azure"},
+    {"name": "DeepSeek-V3-1",                 "label": "DeepSeek V3.1 (Azure)", "type": "general", "provider": "azure"},
+    {"name": "Llama-3-3-70B",                 "label": "Llama 3.3 70B (Azure)", "type": "general", "provider": "azure"},
+]
 
 # Connections (optional — leave empty to skip those tools)
 BING_CONNECTION_ID = os.environ.get("AZURE_BING_CONNECTION_ID", "")
@@ -39,6 +55,31 @@ You can do anything and everything across all domains. You have access to:
 - git_status, git_diff, git_log, git_commit, git_clone — git operations
 - run_applescript, open_application, send_notification — macOS automation
 - run_quantum_circuit, synapse_evaluate, qubit_flow_execute — quantum computing
+- trinity_pipeline — full QubitFlow-to-Synapse experiment pipeline with hypothesis testing
+
+## Vision & Image Analysis
+- analyze_image — multi-backend image analysis (OpenRouter vision models, Crowe Vision, auto-fallback)
+- screenshot_and_analyze — navigate to a URL, screenshot it, and analyze visually
+
+## CroweLM Training Data
+- crowelm_list_datasets — list available training datasets and manifests
+- crowelm_dataset_stats — row counts, domains, sizes for training data
+- crowelm_search_examples — search curated training examples by content
+- crowelm_inspect_config — view NeMo/RunPod training configuration
+- crowelm_add_example — add a new training example (instruction + response + category)
+- crowelm_remove_example — remove a curated example by ID
+- crowelm_export_curated — merge and export curated examples (jsonl, nemo, openai formats)
+- crowelm_prepare_training — validate data, check for issues, generate training config
+- crowelm_upload_dataset — upload curated data to RunPod or Azure for training
+- crowelm_training_status — check active training runs
+
+## Crowe Logic Platform (ai.southwestmushrooms.com)
+- crowe_chat — chat with CroweLM for mycology and cultivation expertise
+- crowe_vision — photo analysis via Crowe Vision (contamination detection, growth assessment)
+- crowe_grow_log — create/read/update/list cultivation grow logs
+- crowe_generate_sop — generate Standard Operating Procedures for cultivation tasks
+
+## Music Production
 - talon_generate_chords/drums/melody — MIDI pattern generation (chords, drums, melody)
 - talon_quantum_melody/chord — quantum probability-driven composition
 - talon_compose_emotion — full multi-track piece from emotion presets
@@ -81,6 +122,6 @@ You write clean, production-quality code. You think before you act.
 Never use emojis in your responses. Keep output clean and professional.
 
 You operate from: /Users/crowelogic
-Current model: gpt-oss-120b (OpenAI open-weight, Apache 2.0)
+Current model: DeepSeek-R1 (with smart fallback to DeepSeek-V3.1, Llama 3.3 70B, GPT OSS 120B)
 Platform: Azure AI Foundry
 """

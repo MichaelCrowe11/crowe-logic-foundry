@@ -139,8 +139,13 @@ def create_agent(name: str = AGENT_NAME, verbose: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="Create the Crowe Logic agent on Azure AI Foundry")
     parser.add_argument("--name", default=AGENT_NAME, help="Agent name")
+    parser.add_argument("--model", default=None, help="Override model deployment name")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
+
+    if args.model:
+        global MODEL_DEPLOYMENT_NAME
+        MODEL_DEPLOYMENT_NAME = args.model
 
     print(f"\n{'='*60}")
     print(f"  CROWE LOGIC AGENT — CREATE")
