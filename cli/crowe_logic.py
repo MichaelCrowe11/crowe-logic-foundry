@@ -1091,6 +1091,7 @@ def iterm_status_cmd():
         return "[#6fbf73]yes[/#6fbf73]" if val else "[#bf6f6f]no[/#bf6f6f]"
 
     table.add_row("iTerm2 detected", _yn(info["iterm_detected"]))
+    table.add_row("Python API enabled", _yn(info["python_api_enabled"]))
     table.add_row("Daemon installed", _yn(info["daemon_installed"]))
     table.add_row("Venv exists", _yn(info["venv_exists"]))
 

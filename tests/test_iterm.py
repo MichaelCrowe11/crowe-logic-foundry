@@ -130,17 +130,21 @@ class TestItermStatus(unittest.TestCase):
 
     @patch.dict(os.environ, {"TERM_PROGRAM": "iTerm.app"})
     @patch("iterm.os.path.exists", return_value=True)
-    def test_status_all_installed(self, mock_exists):
+    @patch("iterm._is_python_api_enabled", return_value=True)
+    def test_status_all_installed(self, mock_api, mock_exists):
         from iterm import iterm_status
         status = iterm_status()
         assert status["iterm_detected"] is True
         assert status["daemon_installed"] is True
+        assert status["python_api_enabled"] is True
 
     @patch.dict(os.environ, {"TERM_PROGRAM": "Apple_Terminal"})
-    def test_status_not_iterm(self):
+    @patch("iterm._is_python_api_enabled", return_value=False)
+    def test_status_not_iterm(self, mock_api):
         from iterm import iterm_status
         status = iterm_status()
         assert status["iterm_detected"] is False
+        assert status["python_api_enabled"] is False
 
 
 if __name__ == "__main__":

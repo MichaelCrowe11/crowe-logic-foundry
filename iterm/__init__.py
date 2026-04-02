@@ -53,6 +53,9 @@ def install_iterm() -> tuple[bool, str]:
     if os.environ.get("TERM_PROGRAM") != "iTerm.app":
         return False, "Not running in iTerm2. Install must be run from iTerm2."
 
+    # 0. Enable Python API programmatically (requires restart to take effect)
+    _enable_python_api()
+
     # 1. Create the isolated venv for the daemon
     if not os.path.exists(ITERM_VENV):
         os.makedirs(os.path.dirname(ITERM_VENV), exist_ok=True)
@@ -79,6 +82,36 @@ def install_iterm() -> tuple[bool, str]:
     os.chmod(DAEMON_DEST, 0o755)
 
     return True, "Installed. Restart iTerm2 to activate the Crowe Logic integration."
+
+
+def _enable_python_api() -> None:
+    """Enable iTerm2's Python API via defaults if not already enabled."""
+    try:
+        result = subprocess.run(
+            ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"],
+            capture_output=True, text=True,
+        )
+        if result.stdout.strip() == "1":
+            return  # already enabled
+    except Exception:
+        pass
+
+    subprocess.run(
+        ["defaults", "write", "com.googlecode.iterm2", "EnableAPIServer", "-bool", "true"],
+        capture_output=True,
+    )
+
+
+def _is_python_api_enabled() -> bool:
+    """Check if iTerm2's Python API is enabled."""
+    try:
+        result = subprocess.run(
+            ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"],
+            capture_output=True, text=True,
+        )
+        return result.stdout.strip() == "1"
+    except Exception:
+        return False
 
 
 def _write_daemon_with_shebang(source: str, dest: str, python_path: str) -> None:
@@ -122,10 +155,11 @@ def uninstall_iterm() -> tuple[bool, str]:
 def iterm_status() -> dict:
     """Check the status of the iTerm2 integration.
 
-    Returns a dict with keys: iterm_detected, daemon_installed, venv_exists.
+    Returns a dict with keys: iterm_detected, daemon_installed, venv_exists, python_api_enabled.
     """
     return {
         "iterm_detected": os.environ.get("TERM_PROGRAM") == "iTerm.app",
         "daemon_installed": os.path.exists(DAEMON_DEST),
         "venv_exists": os.path.exists(ITERM_VENV),
+        "python_api_enabled": _is_python_api_enabled(),
     }
