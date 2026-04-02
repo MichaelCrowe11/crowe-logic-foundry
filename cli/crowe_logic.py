@@ -825,6 +825,21 @@ def deploy(name: str):
     from scripts.create_agent import create_agent
     create_agent(name=name, verbose=True)
 
+    # iTerm2 integration prompt
+    if os.environ.get("TERM_PROGRAM") == "iTerm.app":
+        from iterm import DAEMON_DEST
+        if not os.path.exists(DAEMON_DEST):
+            console.print()
+            console.print("  [#bfa669]iTerm2 detected.[/#bfa669] Enable native terminal integration?")
+            console.print("  [dim](status bar, session titles, Crowe Logic profile)[/dim]")
+            response = input("  [y/N]: ").strip().lower()
+            if response in ("y", "yes"):
+                success, msg = install_iterm()
+                if success:
+                    console.print(f"  [#6fbf73]{msg}[/#6fbf73]")
+                else:
+                    console.print(f"  [bold red]{msg}[/bold red]")
+
 
 @main.command()
 def status():

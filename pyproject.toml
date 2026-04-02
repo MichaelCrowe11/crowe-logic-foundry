@@ -74,3 +74,4 @@ include = ["cli*", "tools*", "config*", "scripts*", "crowe_synapse_engine*", "it
 [tool.setuptools.package-data]
 cli = ["icon.png", "icons/*.icns"]
 crowe_synapse_engine = ["templates/*.yaml"]
+iterm = ["daemon.py"]
