@@ -1,5 +1,5 @@
 {
-  "name": "crowe-logic",
+  "name": "@michaelcrowe11/crowe-logic",
   "version": "1.0.0",
   "description": "Crowe Logic — Universal AI Agent powered by gpt-oss-120b on Azure AI Foundry",
   "main": "npm/index.js",
@@ -30,6 +30,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/MichaelCrowe11/crowe-logic-foundry"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "type": "commonjs",
   "dependencies": {
