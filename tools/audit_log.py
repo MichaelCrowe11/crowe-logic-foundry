@@ -7,8 +7,11 @@ Every agent action is logged for forensic reconstruction.
 
 import json
 import os
+import re
 import time
 import uuid
+
+_SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 LOGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -21,6 +24,8 @@ def log_action(agent_id: str, action: str, details: dict = None, run_id: str = N
 
     Returns the log entry dict with id, timestamp, agent_id, action, run_id, details.
     """
+    if not agent_id or not _SAFE_ID.match(agent_id):
+        raise ValueError(f"Invalid agent_id: {agent_id!r}")
     os.makedirs(LOGS_DIR, exist_ok=True)
     entry = {
         "id": str(uuid.uuid4())[:8],
