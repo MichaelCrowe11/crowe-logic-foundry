@@ -45,6 +45,11 @@ from tools.crowelm import (
     crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
 )
 
+# CroweLM pipeline infrastructure
+from tools.audit_log import crowelm_audit_log
+from tools.staging_pipeline import crowelm_list_staging, crowelm_promote_approved
+from tools.agent_runner import crowelm_run_agent
+
 # Crowe Logic platform
 from tools.crowe_logic_ai import crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop
 
@@ -94,6 +99,8 @@ user_functions = {
     crowelm_inspect_config,
     crowelm_add_example, crowelm_remove_example, crowelm_export_curated,
     crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
+    # CroweLM pipeline infrastructure
+    crowelm_audit_log, crowelm_list_staging, crowelm_promote_approved, crowelm_run_agent,
     # Crowe Logic platform
     crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop,
     # MCP ecosystem
