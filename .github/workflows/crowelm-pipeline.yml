@@ -1,0 +1,79 @@
+# .github/workflows/crowelm-pipeline.yml
+name: CroweLM Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: 'Agent to run (e.g. crowelm_gen_mycology)'
+        required: true
+        type: string
+      task:
+        description: 'Task description for the agent'
+        required: true
+        type: string
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create staging directories
+        run: mkdir -p data/crowelm-unified/staging/{pending,approved,review,rejected} data/crowelm-unified/logs data/crowelm-unified/reports
+
+      - name: Run pipeline agent
+        env:
+          AGENT_NAME: ${{ inputs.agent }}
+          AGENT_TASK: ${{ inputs.task }}
+        run: |
+          python -c "
+          import os
+          from tools.agent_runner import run_agent
+          import json, sys
+          result = run_agent(os.environ['AGENT_NAME'], os.environ['AGENT_TASK'], mode='local')
+          print(json.dumps(result, indent=2))
+          if result.get('status') == 'error':
+              sys.exit(1)
+          "
+
+      - name: Promote approved examples
+        run: |
+          python -c "
+          from tools.staging_pipeline import promote_approved
+          import json
+          result = promote_approved()
+          print(json.dumps(result, indent=2))
+          "
+
+      - name: Create PR with approved examples
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT_NAME: ${{ inputs.agent }}
+        run: |
+          git config user.name "CroweLM Pipeline"
+          git config user.email "crowelm@crowelogic.com"
+          BRANCH="crowelm/batch-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add data/crowelm-unified/curated/ data/crowelm-unified/logs/ data/crowelm-unified/reports/ || true
+          if git diff --cached --quiet; then
+            echo "No new examples to commit"
+          else
+            git commit -m "feat(crowelm): approved training examples from pipeline run"
+            git push origin "$BRANCH"
+            gh pr create \
+              --title "CroweLM: New approved training examples" \
+              --body "Automated pipeline run for agent: $AGENT_NAME. Review examples before merging." \
+              --base main
+          fi
