@@ -9,10 +9,13 @@ Agents never write directly to curated data.
 
 import json
 import os
+import re
 import time
 import uuid
 
 import tools.audit_log as _audit
+
+_SAFE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 STAGING_DIR = os.environ.get(
     "CROWELM_STAGING_DIR",
@@ -34,6 +37,8 @@ def ensure_staging_dirs():
 
 def stage_item(agent_id: str, item: dict, run_id: str = None) -> dict:
     """Write an item to staging/pending/ with metadata."""
+    if not agent_id or not _SAFE_NAME.match(agent_id):
+        raise ValueError(f"Invalid agent_id: {agent_id!r}")
     ensure_staging_dirs()
     item_id = str(uuid.uuid4())[:8]
     staged = {
@@ -58,6 +63,8 @@ def apply_gate(item_id: str, score: float) -> dict:
     >= 0.50 -> review
     <  0.50 -> rejected
     """
+    if not item_id or not _SAFE_NAME.match(item_id):
+        return {"error": f"Invalid item_id: {item_id!r}"}
     pending_path = os.path.join(STAGING_DIR, "pending", f"{item_id}.jsonl")
     if not os.path.exists(pending_path):
         return {"error": f"Item {item_id} not found in pending"}
@@ -114,6 +121,8 @@ def promote_approved() -> dict:
             item = json.loads(f.read().strip())
         data = item.get("data", {})
         category = data.get("category", "general")
+        if not category or not _SAFE_NAME.match(category):
+            category = "general"
         example = {
             "id": item["id"],
             "instruction": data.get("instruction", ""),

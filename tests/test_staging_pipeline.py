@@ -34,6 +34,14 @@ class TestStageItem:
         pending = staging_env / "staging" / "pending" / f"{item['id']}.jsonl"
         assert pending.exists()
 
+    def test_stage_item_rejects_invalid_agent_id(self, staging_env):
+        with pytest.raises(ValueError, match="Invalid agent_id"):
+            staging_mod.stage_item("../../etc/evil", {"instruction": "q"})
+        with pytest.raises(ValueError, match="Invalid agent_id"):
+            staging_mod.stage_item("", {"instruction": "q"})
+        with pytest.raises(ValueError, match="Invalid agent_id"):
+            staging_mod.stage_item("has spaces", {"instruction": "q"})
+
     def test_returns_metadata(self, staging_env):
         item = staging_mod.stage_item("gen-agent", {"instruction": "q"}, run_id="run-1")
         assert "id" in item
@@ -91,6 +99,16 @@ class TestApplyGate:
         result = staging_mod.apply_gate("nonexistent", 0.9)
         assert "error" in result
 
+    def test_apply_gate_rejects_invalid_item_id(self, staging_env):
+        staging_mod.ensure_staging_dirs()
+        result = staging_mod.apply_gate("../../etc/evil", 0.9)
+        assert "error" in result
+        assert "Invalid item_id" in result["error"]
+        result2 = staging_mod.apply_gate("", 0.9)
+        assert "error" in result2
+        result3 = staging_mod.apply_gate("has spaces", 0.9)
+        assert "error" in result3
+
 
 class TestListStaged:
     def test_lists_pending_items(self, staging_env):
@@ -123,6 +141,20 @@ class TestPromoteApproved:
         staging_mod.apply_gate(staged["id"], 0.9)
         staging_mod.promote_approved()
         assert len(list((staging_env / "staging" / "approved").iterdir())) == 0
+
+    def test_promote_sanitizes_invalid_category(self, staging_env):
+        staged = staging_mod.stage_item("agent", {
+            "instruction": "Test traversal",
+            "response": "Should land in general.",
+            "category": "../../etc/evil",
+        })
+        staging_mod.apply_gate(staged["id"], 0.9)
+        result = staging_mod.promote_approved()
+        assert result["promoted"] == 1
+        curated = staging_env / "curated" / "general.jsonl"
+        assert curated.exists()
+        evil = staging_env / "curated" / "..%2F..%2Fetc%2Fevil.jsonl"
+        assert not evil.exists()
 
     def test_returns_zero_when_empty(self, staging_env):
         staging_mod.ensure_staging_dirs()
