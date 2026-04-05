@@ -1,0 +1,34 @@
+services:
+  # ── CroweLM Agent (background worker for API/webhooks) ───
+  - type: worker
+    name: crowelm-agent
+    runtime: docker
+    repo: https://github.com/MichaelCrowe11/crowe-logic-foundry.git
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    region: oregon
+    envVars:
+      - key: PROJECT_ENDPOINT
+        sync: false
+      - key: MODEL_DEPLOYMENT_NAME
+        sync: false
+      - key: AZURE_BING_CONNECTION_ID
+        sync: false
+      - key: AI_AZURE_AI_CONNECTION_ID
+        sync: false
+      - key: AI_SEARCH_INDEX_NAME
+        sync: false
+      - key: AZURE_SUBSCRIPTION_ID
+        sync: false
+      - key: AZURE_RESOURCE_GROUP
+        sync: false
+      - key: APPLICATIONINSIGHTS_CONNECTION_STRING
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: CROWE_LOGIC_URL
+        sync: false
+      - key: CROWE_LOGIC_KEY
+        sync: false
