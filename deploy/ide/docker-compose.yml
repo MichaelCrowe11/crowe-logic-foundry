@@ -7,12 +7,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.code-server
-      args:
-        - REQUIREMENTS_FILE=requirements.txt
     container_name: crowe-ide-admin
     restart: unless-stopped
     ports:
-      - "10000:8080"
+      - "127.0.0.1:10000:8080"
     volumes:
       - /opt/crowe-logic-foundry:/workspace/crowe-logic-foundry
       - admin-data:/home/coder/.local
