@@ -8,7 +8,7 @@
 ## First-time Setup
 
 1. SSH into the VM
-2. Run bootstrap: `curl -sSL <raw-url>/setup.sh | sudo bash`
+2. Copy setup.sh to VM and run: `sudo bash /tmp/setup.sh`
 3. Copy deployment files: `scp -r deploy/ide/* user@vm:/opt/crowe-ide/`
 4. Install Session Router deps: `cd /opt/crowe-ide/session-router && npm install`
 5. Configure environment: `cp /opt/crowe-ide/session-router/.env.example /opt/crowe-ide/session-router/.env` and fill in values
@@ -19,7 +19,8 @@
 
 ## Updating
 
-1. Pull latest: `cd /opt/crowe-logic-foundry && git pull`
-2. Copy new files: `scp -r deploy/ide/* user@vm:/opt/crowe-ide/`
-3. Rebuild image: `cd /opt/crowe-ide && sudo docker compose build`
-4. Restart: `sudo systemctl restart crowe-ide-router && sudo docker compose up -d`
+1. SSH into the VM
+2. Pull latest foundry: `cd /opt/crowe-logic-foundry && git pull`
+3. Copy deploy files: `cp -r /opt/crowe-logic-foundry/deploy/ide/* /opt/crowe-ide/`
+4. Rebuild image: `cd /opt/crowe-ide && sudo docker compose build`
+5. Restart: `sudo systemctl restart crowe-ide-router && sudo docker compose up -d`

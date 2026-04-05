@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 # setup.sh — Bootstrap Azure VM for Crowe Logic IDE
-# Run as root on a fresh Ubuntu 24.04 LTS VM:
-#   curl -sSL <raw-url>/setup.sh | sudo bash
+# Copy to VM and run: sudo bash setup.sh
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "ERROR: This script must be run as root (or with sudo)." >&2
+  exit 1
+fi
 
 echo "=== Crowe Logic IDE — VM Bootstrap ==="
 
 # 1. System updates
+export DEBIAN_FRONTEND=noninteractive
 apt-get update && apt-get upgrade -y
 
 # 2. Install Docker Engine
 apt-get install -y ca-certificates curl gnupg
 install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
@@ -36,9 +41,11 @@ apt-get install -y nodejs
 mkdir -p /opt/crowe-ide/session-router
 mkdir -p /opt/crowe-ide/sandbox-template
 mkdir -p /opt/crowe-ide/nginx
+mkdir -p /opt/crowe-ide/systemd
 
 # 7. Create non-root service user
 useradd -r -s /bin/false crowe-ide || true
+chown -R crowe-ide:crowe-ide /opt/crowe-ide
 
 # 8. Clone crowe-logic-foundry (for admin bind mount)
 if [ ! -d /opt/crowe-logic-foundry ]; then
