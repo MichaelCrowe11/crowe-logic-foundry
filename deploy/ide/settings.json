@@ -1,0 +1,12 @@
+{
+  "workbench.colorTheme": "Dracula",
+  "editor.fontSize": 14,
+  "editor.tabSize": 4,
+  "editor.formatOnSave": true,
+  "editor.minimap.enabled": false,
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "workbench.startupEditor": "readme"
+}

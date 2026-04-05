@@ -1,0 +1,41 @@
+# deploy/ide/Dockerfile.code-server
+FROM codercom/code-server:latest
+
+USER root
+
+# System dependencies for crowe-logic-foundry
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    git \
+    ripgrep \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create Python venv (avoids PEP 668 externally-managed-environment error)
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install crowe-logic-foundry Python dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+# Install VS Code extensions
+COPY extensions.txt /tmp/extensions.txt
+RUN while IFS= read -r ext || [ -n "$ext" ]; do \
+      ext=$(echo "$ext" | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//'); \
+      [ -z "$ext" ] && continue; \
+      code-server --install-extension "$ext" || true; \
+    done < /tmp/extensions.txt && rm /tmp/extensions.txt
+
+# Default VS Code settings
+COPY settings.json /home/coder/.local/share/code-server/User/settings.json
+
+# Fix ownership
+RUN chown -R coder:coder /home/coder/.local
+
+USER coder
+
+WORKDIR /workspace

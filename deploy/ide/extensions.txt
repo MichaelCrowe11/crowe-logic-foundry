@@ -1,0 +1,8 @@
+# deploy/ide/extensions.txt
+# VS Code extensions to pre-install in code-server
+ms-python.python
+ms-python.debugpy
+ms-toolsai.jupyter
+eamodio.gitlens
+esbenp.prettier-vscode
+dracula-theme.theme-dracula
