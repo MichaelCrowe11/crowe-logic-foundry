@@ -9,12 +9,16 @@ Runs agent tasks with isolation:
 
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import uuid
 
 import tools.audit_log as _audit
 import tools.staging_pipeline as _staging
+
+_SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -29,6 +33,12 @@ AGENTS_DIR = os.path.join(
 
 def run_agent(agent_id: str, task: str, mode: str = "local") -> dict:
     """Run a pipeline agent task with isolation."""
+    if not _SAFE_ID.match(agent_id):
+        return {"status": "error", "message": f"Invalid agent_id: {agent_id!r}"}
+
+    if mode not in ("local", "docker"):
+        return {"status": "error", "message": f"Unknown mode: {mode}", "run_id": None}
+
     run_id = str(uuid.uuid4())[:8]
     _staging.ensure_staging_dirs()
     _audit.log_action(agent_id, "run_start", {"task": task, "mode": mode}, run_id)
@@ -36,10 +46,8 @@ def run_agent(agent_id: str, task: str, mode: str = "local") -> dict:
     try:
         if mode == "local":
             result = _run_local(agent_id, task, run_id)
-        elif mode == "docker":
-            result = _run_docker(agent_id, task, run_id)
         else:
-            return {"error": f"Unknown mode: {mode}", "run_id": run_id}
+            result = _run_docker(agent_id, task, run_id)
 
         _audit.log_action(agent_id, "run_complete", {
             "status": result.get("status"),
@@ -57,7 +65,7 @@ def _run_local(agent_id, task, run_id):
     """Run agent as subprocess with restricted environment."""
     safe_env = {
         "PATH": os.environ.get("PATH", ""),
-        "HOME": os.environ.get("HOME", ""),
+        "HOME": tempfile.gettempdir(),
         "CROWELM_DATA_DIR": DATA_DIR,
         "CROWELM_STAGING_DIR": _staging.STAGING_DIR,
         "CROWELM_AGENT_ID": agent_id,

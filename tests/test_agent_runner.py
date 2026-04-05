@@ -70,9 +70,14 @@ class TestRunAgent:
         assert "run_start" in actions
         assert "run_complete" in actions
 
+    def test_rejects_invalid_agent_id(self, runner_env):
+        result = runner_mod.run_agent("../../etc/evil", "task")
+        assert result["status"] == "error"
+        assert "Invalid" in result["message"]
+
     def test_unknown_mode_returns_error(self, runner_env):
         result = runner_mod.run_agent("x", "task", mode="quantum")
-        assert "error" in result
+        assert result["status"] == "error"
 
 
 class TestRunLocal:
@@ -105,7 +110,7 @@ class TestRunLocal:
 
 class TestRunDocker:
     def test_docker_command_has_isolation_flags(self, runner_env):
-        with patch("subprocess.run") as mock_run:
+        with patch("tools.agent_runner.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout='{"status": "complete", "items_staged": 0}',
