@@ -1,0 +1,38 @@
+# deploy/ide/docker-compose.yml
+# Defines the base code-server image build and the admin container.
+# Subscriber containers are created dynamically by the Session Router.
+
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.code-server
+      args:
+        - REQUIREMENTS_FILE=requirements.txt
+    container_name: crowe-ide-admin
+    restart: unless-stopped
+    ports:
+      - "10000:8080"
+    volumes:
+      - /opt/crowe-logic-foundry:/workspace/crowe-logic-foundry
+      - admin-data:/home/coder/.local
+    environment:
+      - DOCKER_USER=coder
+    command:
+      - --bind-addr=0.0.0.0:8080
+      - --auth=none
+      - --disable-telemetry
+    cpus: 2.0
+    mem_limit: 2g
+    networks:
+      - ide-admin
+
+networks:
+  ide-admin:
+    driver: bridge
+  ide-subscribers:
+    driver: bridge
+    internal: true  # No external network access for subscriber containers
+
+volumes:
+  admin-data:
