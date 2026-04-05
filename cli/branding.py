@@ -193,6 +193,9 @@ session_state = {
     "api_status": "ok",       # ok | throttled | down
     "retry_seconds": 0,
     "active_model": "",       # current model label for toolbar
+    "last_tokens": 0,         # tokens from last response
+    "last_tps": 0.0,          # tokens/sec from last response
+    "total_tokens": 0,        # cumulative tokens this session
 }
 
 def reset_session_state():
@@ -201,6 +204,9 @@ def reset_session_state():
     session_state["api_status"] = "ok"
     session_state["retry_seconds"] = 0
     session_state["active_model"] = ""
+    session_state["last_tokens"] = 0
+    session_state["last_tps"] = 0.0
+    session_state["total_tokens"] = 0
 
 
 # ── Tool result summarizer ───────────────────────────────────
@@ -390,28 +396,39 @@ def build_toolbar():
     api_status = session_state["api_status"]
 
     if api_status == "ok":
-        status_html = '<style fg="#6fbf73">API OK</style>'
+        status_html = '<style fg="#6fbf73">LIVE</style>'
     elif api_status == "throttled":
         retry = session_state["retry_seconds"]
         retry_str = f" retry {retry}s" if retry > 0 else ""
         status_html = f'<style fg="#d4a645">THROTTLED{retry_str}</style>'
     else:  # down
-        status_html = '<style fg="#bf6f6f">API DOWN</style>'
+        status_html = '<style fg="#bf6f6f">DOWN</style>'
 
     model_label = session_state.get("active_model", "")
     model_html = f' <style fg="gray">\u00b7</style> <style fg="#8fa4bf">{model_label}</style>' if model_label else ""
 
-    left = f'<style fg="#bfa669">crowe-logic v{AGENT_VERSION}</style>'
+    # Token stats from last response
+    tokens = session_state.get("last_tokens", 0)
+    tps = session_state.get("last_tps", 0)
+    token_html = ""
+    if tokens > 0:
+        tps_str = f"{tps:.0f}" if tps >= 10 else f"{tps:.1f}"
+        token_html = (
+            f' <style fg="gray">\u00b7</style> '
+            f'<style fg="#bfa669">{tokens} tok @ {tps_str}/s</style>'
+        )
+
+    left = f'<style fg="#bfa669">CroweLM v{AGENT_VERSION}</style>'
     right = (
         f'<style fg="#bfa669">{duration}</style>'
         f' <style fg="gray">\u00b7</style> '
         f'<style fg="#bfa669">{tool_count} tools</style>'
+        f'{token_html}'
         f'{model_html}'
         f' <style fg="gray">\u00b7</style> '
         f'{status_html}'
     )
 
-    # Pad middle to push right content to the edge
     return HTML(f' {left}      {right} ')
 
 
@@ -423,6 +440,8 @@ class SlashCompleter(Completer):
 
     COMMANDS = {
         "/tools":  "List available tools",
+        "/model":  "Show/switch models",
+        "/data":   "CroweLM training data telemetry",
         "/status": "Show agent info",
         "/clear":  "Clear screen",
         "/help":   "Show commands",

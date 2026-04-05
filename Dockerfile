@@ -7,11 +7,12 @@ LABEL org.opencontainers.image.vendor="Crowe Logic, Inc."
 
 WORKDIR /app
 
-# System dependencies for playwright and ripgrep
+# System dependencies (build-essential for C extensions, ripgrep for search)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ripgrep \
     curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js for MCP servers

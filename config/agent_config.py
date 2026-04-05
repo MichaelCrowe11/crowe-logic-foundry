@@ -9,24 +9,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Azure AI Foundry
+# Azure AI Foundry (7858 resource — has working DeepSeek-R1, V3.1, Llama deployments)
 PROJECT_ENDPOINT = os.environ.get("PROJECT_ENDPOINT", "https://crowelogicos-7858-resource.services.ai.azure.com/api/projects/crowelogicos-7858")
-MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "DeepSeek-R1")
+MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "crowe-logic-4.6")
 
-# OpenRouter (unlimited rate, cheapest DeepSeek-R1)
+# OpenRouter (unlimited rate)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
+# Ollama (local inference)
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+# NVIDIA Enterprise (NIM / DGX Cloud — production inference)
+NVIDIA_NIM_ENDPOINT = os.environ.get("NVIDIA_NIM_ENDPOINT", "")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+
 # Smart model routing — ordered fallback chain with multi-provider support.
-# provider: "openrouter" (Chat Completions via OpenAI SDK) or "azure" (Agent Service)
-# name: deployment name (Azure) or model ID (OpenRouter)
+# provider: "nvidia" (NIM/DGX), "ollama" (local), "openrouter", "azure"
+# name: model ID on the target provider
 MODEL_CHAIN = [
-    {"name": "deepseek/deepseek-r1",         "label": "DeepSeek R1",     "type": "reasoning", "provider": "openrouter"},
-    {"name": "deepseek/deepseek-chat",        "label": "DeepSeek V3",    "type": "general",   "provider": "openrouter"},
-    {"name": "meta-llama/llama-3.3-70b-instruct:free", "label": "Llama 3.3 70B", "type": "general", "provider": "openrouter"},
-    {"name": "DeepSeek-R1",                   "label": "DeepSeek R1 (Azure)", "type": "reasoning", "provider": "azure"},
-    {"name": "DeepSeek-V3-1",                 "label": "DeepSeek V3.1 (Azure)", "type": "general", "provider": "azure"},
-    {"name": "Llama-3-3-70B",                 "label": "Llama 3.3 70B (Azure)", "type": "general", "provider": "azure"},
+    {"name": "moonshotai/kimi-k2.5",          "label": "CroweLM Pro",             "type": "reasoning", "provider": "nvidia"},
+    {"name": "gpt-oss-120b:latest",           "label": "CroweLM 120B",            "type": "reasoning", "provider": "ollama"},
+    {"name": "zhipu-ai/glm-4.6",             "label": "CroweLM Cloud",           "type": "reasoning", "provider": "nvidia"},
+    {"name": "kimi-k2.5:cloud",               "label": "CroweLM Pro (local)",     "type": "reasoning", "provider": "ollama"},
+    {"name": "glm-4.6:cloud",                 "label": "CroweLM Cloud (local)",   "type": "reasoning", "provider": "ollama"},
 ]
 
 # Connections (optional — leave empty to skip those tools)
@@ -37,6 +43,10 @@ AI_SEARCH_INDEX_NAME = os.environ.get("AI_SEARCH_INDEX_NAME", "crowe-logic-kb")
 # Azure
 SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
 RESOURCE_GROUP = os.environ.get("AZURE_RESOURCE_GROUP", "rg-crowelogicos-7858")
+
+# Neon Postgres — CroweLM platform database
+NEON_DATABASE_URL = os.environ.get("NEON_DATABASE_URL", "")
+NEON_API_KEY = os.environ.get("NEON_API_KEY", "")
 
 # Agent identity
 AGENT_NAME = "crowe-logic"
@@ -122,6 +132,6 @@ You write clean, production-quality code. You think before you act.
 Never use emojis in your responses. Keep output clean and professional.
 
 You operate from: /Users/crowelogic
-Current model: DeepSeek-R1 (with smart fallback to DeepSeek-V3.1, Llama 3.3 70B, GPT OSS 120B)
-Platform: Azure AI Foundry
+Current model: CroweLM (proprietary model stack by Crowe Logic Inc.)
+Platform: Crowe Logic Foundry
 """

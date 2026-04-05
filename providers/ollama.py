@@ -1,8 +1,8 @@
 """
-OpenRouter provider — Chat Completions with streaming and tool calling.
+Ollama provider — Chat Completions with streaming and tool calling.
 
-Uses the OpenAI Python SDK pointed at OpenRouter's API.
-Works with any OpenAI-compatible endpoint (Together AI, Fireworks, Groq, etc).
+Uses the OpenAI Python SDK pointed at Ollama's OpenAI-compatible API.
+Supports both local (localhost:11434) and remote (cloud GPU) Ollama instances.
 """
 
 import json
@@ -60,14 +60,16 @@ def _build_tool_schemas(user_functions: set) -> list[dict]:
     return tools
 
 
-class OpenRouterProvider:
-    """Chat Completions provider for OpenRouter (or any OpenAI-compatible API)."""
+class OllamaProvider:
+    """Chat Completions provider for Ollama (local or remote)."""
 
-    def __init__(self, api_key: str, base_url: str, model: str, system_instructions: str,
+    def __init__(self, model: str, system_instructions: str,
+                 base_url: str = "http://localhost:11434/v1",
                  label: str = "CroweLM"):
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = OpenAI(api_key="ollama", base_url=base_url)
         self.model = model
         self.label = label
+        self.base_url = base_url
         self.system_instructions = system_instructions
         self.messages = [{"role": "system", "content": system_instructions}]
         self._tool_schemas = None
@@ -88,14 +90,14 @@ class OpenRouterProvider:
         """
         Stream a response with tool calling loop.
 
-        Yields text chunks for live display. Handles tool calls automatically,
-        executing them and feeding results back until the model is done.
+        Same interface as OpenRouterProvider — drop-in compatible with
+        the CLI's smart routing.
         """
         from cli.renderer import StreamRenderer
 
         tool_schemas, tool_map = self._get_tools()
         favicon = session_state.get("favicon", "")
-        renderer = StreamRenderer(console, self.label, "OPENROUTER", favicon=favicon)
+        renderer = StreamRenderer(console, self.label, "OLLAMA", favicon=favicon)
 
         max_rounds = 10
         full_response = ""
@@ -109,17 +111,25 @@ class OpenRouterProvider:
                 else:
                     renderer.set_spinner("thinking...")
 
-                stream = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self.messages,
-                    tools=tool_schemas if tool_schemas else None,
-                    stream=True,
-                )
+                create_kwargs = {
+                    "model": self.model,
+                    "messages": self.messages,
+                    "stream": True,
+                }
+                if tool_schemas:
+                    create_kwargs["tools"] = tool_schemas
+
+                stream = self.client.chat.completions.create(**create_kwargs)
 
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if not delta:
                         continue
+
+                    # Ollama thinking models put reasoning in a separate field
+                    reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+                    if reasoning:
+                        renderer.feed_reasoning(reasoning)
 
                     if delta.content:
                         renderer.feed(delta.content)

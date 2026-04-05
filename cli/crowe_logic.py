@@ -16,8 +16,8 @@ import sys
 import json
 import time
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_ROOT)
+_PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PACKAGE_ROOT)
 
 import click
 from rich.console import Console
@@ -28,7 +28,10 @@ from rich.panel import Panel
 from rich import box
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_dotenv(os.path.join(_PACKAGE_ROOT, ".env"))
+
+# Resolve the real project root (handles pipx installs where __file__ is in site-packages)
+PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 
 from cli.branding import (
     welcome_screen, show_welcome, show_inline_image, get_favicon,
@@ -74,10 +77,12 @@ def _reset_model_chain():
     """Reset to the primary model (e.g., at session start)."""
     _model_state["chain_index"] = 0
     _model_state["failures"] = {}
+    _model_state["nvidia_provider"] = None
     _model_state["openrouter_provider"] = None
+    _model_state["ollama_provider"] = None
 
 
-def _get_openrouter_provider(model_name: str):
+def _get_openrouter_provider(model_name: str, label: str = "CroweLM"):
     """Get or create an OpenRouterProvider for the given model."""
     from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, SYSTEM_INSTRUCTIONS
     from providers.openrouter import OpenRouterProvider
@@ -91,8 +96,48 @@ def _get_openrouter_provider(model_name: str):
         base_url=OPENROUTER_BASE_URL,
         model=model_name,
         system_instructions=SYSTEM_INSTRUCTIONS,
+        label=label,
     )
     _model_state["openrouter_provider"] = provider
+    return provider
+
+
+def _get_ollama_provider(model_name: str, label: str = "CroweLM"):
+    """Get or create an OllamaProvider for the given model."""
+    from config.agent_config import OLLAMA_BASE_URL, SYSTEM_INSTRUCTIONS
+    from providers.ollama import OllamaProvider
+
+    current = _model_state.get("ollama_provider")
+    if current and current.model == model_name:
+        return current
+
+    provider = OllamaProvider(
+        model=model_name,
+        system_instructions=SYSTEM_INSTRUCTIONS,
+        base_url=OLLAMA_BASE_URL,
+        label=label,
+    )
+    _model_state["ollama_provider"] = provider
+    return provider
+
+
+def _get_nvidia_provider(model_name: str, label: str = "CroweLM"):
+    """Get or create a NvidiaProvider for the given model."""
+    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, SYSTEM_INSTRUCTIONS
+    from providers.nvidia import NvidiaProvider
+
+    current = _model_state.get("nvidia_provider")
+    if current and current.model == model_name:
+        return current
+
+    provider = NvidiaProvider(
+        model=model_name,
+        system_instructions=SYSTEM_INSTRUCTIONS,
+        endpoint=NVIDIA_NIM_ENDPOINT,
+        api_key=NVIDIA_API_KEY,
+        label=label,
+    )
+    _model_state["nvidia_provider"] = provider
     return provider
 
 
@@ -506,6 +551,7 @@ def chat():
 
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
+    session_state["favicon"] = favicon
 
     while True:
         try:
@@ -545,6 +591,9 @@ def chat():
         if user_input.lower() == "/help":
             _show_help()
             continue
+        if user_input.lower() == "/data":
+            _show_data_telemetry()
+            continue
         if user_input.lower().startswith("/model"):
             parts = user_input.strip().split(maxsplit=1)
             if len(parts) == 1:
@@ -561,9 +610,6 @@ def chat():
             model_cfg = _current_model()
             ctx = orch.prepare(user_input, thread_id=thread.id)
             console.print()
-            sys.stdout.write(f"  {favicon} ")
-            sys.stdout.flush()
-            console.print(f"[bold #bfa669]crowe-logic[/bold #bfa669] [dim]({model_cfg['label']})[/dim]")
 
             # Smart routing: try current model, fallback on failure
             succeeded = False
@@ -573,9 +619,23 @@ def chat():
 
                 for attempt in range(2):
                     try:
-                        if model_cfg.get("provider") == "openrouter":
+                        if model_cfg.get("provider") == "nvidia":
+                            # ── NVIDIA NIM path (production CroweLM) ──
+                            provider = _get_nvidia_provider(model_cfg["name"], model_cfg["label"])
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
+                        elif model_cfg.get("provider") == "openrouter":
                             # ── OpenRouter path (Chat Completions) ──
-                            provider = _get_openrouter_provider(model_cfg["name"])
+                            provider = _get_openrouter_provider(model_cfg["name"], model_cfg["label"])
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
+                        elif model_cfg.get("provider") == "ollama":
+                            # ── Ollama path (local CroweLM fallback) ──
+                            provider = _get_ollama_provider(model_cfg["name"], model_cfg["label"])
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
@@ -684,26 +744,53 @@ def _list_tools_inline():
 
 
 def _show_status_inline():
-    if not os.path.exists(AGENT_ID_FILE):
-        console.print("  [dim]No agent deployed[/dim]")
-        return
-    with open(AGENT_ID_FILE) as f:
-        data = json.load(f)
+    model_cfg = _current_model()
+    elapsed = time.monotonic() - session_state["started_at"]
+    minutes = int(elapsed) // 60
+    seconds = int(elapsed) % 60
+    dur_str = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
 
     table = Table(
-        title="Agent Status",
+        title="CroweLM Agent Status",
         box=box.ROUNDED,
         border_style="#bfa669",
         title_style="bold #bfa669",
         show_header=False,
         padding=(0, 1),
     )
-    table.add_column("Key", style="#bfa669 bold", min_width=10)
+    table.add_column("Key", style="#bfa669 bold", min_width=18)
     table.add_column("Value", style="white")
-    table.add_row("Agent ID", data.get("agent_id", "unknown"))
-    table.add_row("Name", data.get("name", "unknown"))
-    table.add_row("Model", data.get("model", "unknown"))
-    table.add_row("Version", data.get("version", "unknown"))
+    table.add_row("Active Model", model_cfg["label"])
+    table.add_row("Session Duration", dur_str)
+    table.add_row("Tools Executed", str(session_state["tool_count"]))
+    table.add_row("API Status", session_state["api_status"].upper())
+    table.add_row("Version", AGENT_VERSION)
+
+    # CroweLM training data summary
+    try:
+        manifest_path = os.path.join(PROJECT_ROOT, "data", "crowelm-unified", "DATASET_MANIFEST.json")
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            summary = manifest.get("summary", {})
+            table.add_row("", "")
+            table.add_row("[dim]Training Data[/dim]", "")
+            table.add_row("Raw Samples", f"{summary.get('total_raw_samples', 0):,}")
+            table.add_row("Training Entries", f"{summary.get('crowelm_training_entries', 0):,}")
+            table.add_row("Dataset Size", f"{summary.get('total_size_gb', 0):.2f} GB")
+            table.add_row("Domains", summary.get("domains", ""))
+    except Exception:
+        pass
+
+    # Model chain overview
+    table.add_row("", "")
+    table.add_row("[dim]CroweLM Models[/dim]", "")
+    for i, m in enumerate(MODEL_CHAIN):
+        marker = "[bold #6fbf73]>[/bold #6fbf73] " if i == _model_state["chain_index"] else "  "
+        fails = _model_state["failures"].get(m["name"], 0)
+        fail_str = f"  [#bf6f6f]({fails} fails)[/#bf6f6f]" if fails > 0 else ""
+        table.add_row(f"{marker}{m['label']}", f"{m.get('type', 'general')}{fail_str}")
+
     console.print()
     console.print(table)
     console.print()
@@ -712,7 +799,7 @@ def _show_status_inline():
 def _show_models():
     """Display the model chain with current selection highlighted."""
     table = Table(
-        title="Model Chain",
+        title="CroweLM Models",
         box=box.ROUNDED,
         border_style="#bfa669",
         title_style="bold #bfa669",
@@ -721,9 +808,8 @@ def _show_models():
         padding=(0, 1),
     )
     table.add_column("#", style="dim", width=3)
-    table.add_column("Provider", style="#8fa4bf", min_width=10)
-    table.add_column("Model", style="white", min_width=20)
-    table.add_column("Label", style="#bfa669", min_width=18)
+    table.add_column("Model", style="#bfa669", min_width=22)
+    table.add_column("Type", style="dim", min_width=10)
     table.add_column("Status", min_width=8)
 
     for i, m in enumerate(MODEL_CHAIN):
@@ -732,8 +818,7 @@ def _show_models():
         failures = _model_state["failures"].get(m["name"], 0)
         if failures > 0:
             status = f"[#bf6f6f]{failures} fails[/#bf6f6f]"
-        provider = m.get("provider", "azure").upper()
-        table.add_row(str(i + 1), provider, m["name"], m["label"], status)
+        table.add_row(str(i + 1), m["label"], m.get("type", "general"), status)
 
     console.print()
     console.print(table)
@@ -747,19 +832,19 @@ def _switch_model(client, target: str):
     def _activate(model, idx):
         _model_state["chain_index"] = idx
         console.print(f"  [#bfa669]Switching to {model['label']}...[/#bfa669]")
-        if model.get("provider") == "openrouter":
-            # OpenRouter — just update state, provider is created on demand
-            _model_state["openrouter_provider"] = None
+        provider = model.get("provider")
+        if provider in ("nvidia", "openrouter", "ollama"):
+            _model_state[f"{provider}_provider"] = None
             session_state["active_model"] = model["label"]
-            console.print(f"  [#6fbf73]Now using {model['label']} (OpenRouter)[/#6fbf73]")
+            console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
         else:
             # Azure — deploy a new agent
             try:
                 _deploy_with_model(client, model["name"])
                 session_state["active_model"] = model["label"]
-                console.print(f"  [#6fbf73]Now using {model['label']} (Azure)[/#6fbf73]")
+                console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
             except Exception as e:
-                console.print(f"  [red]Failed to deploy {model['label']}: {e}[/red]")
+                console.print(f"  [red]Failed to activate {model['label']}: {e}[/red]")
         iterm_set_var("crowe_logic_model", model["label"])
 
     # Try numeric index first
@@ -781,6 +866,84 @@ def _switch_model(client, target: str):
     console.print("  [dim]Use /model to see available models[/dim]")
 
 
+def _show_data_telemetry():
+    """Display CroweLM training dataset telemetry."""
+    manifest_path = os.path.join(PROJECT_ROOT, "data", "crowelm-unified", "DATASET_MANIFEST.json")
+    if not os.path.exists(manifest_path):
+        console.print("  [dim]No dataset manifest found[/dim]")
+        return
+
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    summary = manifest.get("summary", {})
+    top_domains = manifest.get("top_domains", {})
+    datasets = manifest.get("datasets_acquired", {})
+
+    # Header table
+    header = Table(
+        title="CroweLM Training Data",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        show_header=False,
+        padding=(0, 1),
+    )
+    header.add_column("Key", style="#bfa669 bold", min_width=20)
+    header.add_column("Value", style="white")
+    header.add_row("Raw Samples", f"{summary.get('total_raw_samples', 0):,}")
+    header.add_row("Training Entries", f"{summary.get('crowelm_training_entries', 0):,}")
+    header.add_row("Dataset Size", f"{summary.get('total_size_gb', 0):.2f} GB")
+    header.add_row("Domains", summary.get("domains", ""))
+
+    # Datasets table
+    if datasets:
+        header.add_row("", "")
+        header.add_row("[dim]Acquired Datasets[/dim]", "")
+        for name, desc in datasets.items():
+            header.add_row(f"  {name}", str(desc))
+
+    console.print()
+    console.print(header)
+
+    # Domain distribution — top 10 as horizontal bars
+    if top_domains:
+        domain_table = Table(
+            title="Domain Distribution (top 10)",
+            box=box.ROUNDED,
+            border_style="#bfa669",
+            title_style="bold #bfa669",
+            header_style="bold white",
+            show_lines=False,
+            padding=(0, 1),
+        )
+        domain_table.add_column("Domain", style="#bfa669", min_width=14)
+        domain_table.add_column("Count", style="white", min_width=8, justify="right")
+        domain_table.add_column("Distribution", style="#8fa4bf", min_width=30)
+
+        sorted_domains = sorted(top_domains.items(), key=lambda x: x[1], reverse=True)[:10]
+        max_count = sorted_domains[0][1] if sorted_domains else 1
+
+        for domain, count in sorted_domains:
+            bar_width = int((count / max_count) * 25)
+            bar = "\u2588" * bar_width + "\u2591" * (25 - bar_width)
+            domain_table.add_row(domain, f"{count:,}", bar)
+
+        console.print()
+        console.print(domain_table)
+
+    # Curated examples count
+    try:
+        from tools.crowelm import _count_curated_examples
+        curated = _count_curated_examples()
+        if curated > 0:
+            console.print(f"\n  [#bfa669]Curated examples:[/#bfa669] {curated:,}")
+    except Exception:
+        pass
+
+    console.print()
+
+
 def _show_help():
     table = Table(
         title="Commands",
@@ -795,6 +958,7 @@ def _show_help():
     table.add_row("/tools", "List available tools")
     table.add_row("/model", "Show model chain and active model")
     table.add_row("/model <n>", "Switch to model by number or name")
+    table.add_row("/data", "CroweLM training data telemetry")
     table.add_row("/status", "Show agent info")
     table.add_row("/clear", "Clear screen")
     table.add_row("/help", "Show this help")
@@ -819,26 +983,147 @@ def run(prompt: str):
 
 
 @main.command()
-@click.option("--name", default="crowe-logic", help="Agent name")
-def deploy(name: str):
-    """Create or recreate the Crowe Logic agent."""
-    from scripts.create_agent import create_agent
-    create_agent(name=name, verbose=True)
+def deploy():
+    """Verify all CroweLM providers and run health checks."""
+    from openai import OpenAI
+    from config.agent_config import (
+        MODEL_CHAIN, OLLAMA_BASE_URL, NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY,
+        OPENROUTER_API_KEY, OPENROUTER_BASE_URL, NEON_DATABASE_URL,
+        AGENT_NAME, AGENT_VERSION,
+    )
+    import requests
 
-    # iTerm2 integration prompt
-    if os.environ.get("TERM_PROGRAM") == "iTerm.app":
-        from iterm import DAEMON_DEST
-        if not os.path.exists(DAEMON_DEST):
-            console.print()
-            console.print("  [#bfa669]iTerm2 detected.[/#bfa669] Enable native terminal integration?")
-            console.print("  [dim](status bar, session titles, Crowe Logic profile)[/dim]")
-            response = input("  [y/N]: ").strip().lower()
-            if response in ("y", "yes"):
-                success, msg = install_iterm()
-                if success:
-                    console.print(f"  [#6fbf73]{msg}[/#6fbf73]")
+    console.print(f"\n{'='*60}")
+    console.print(f"  CROWE LOGIC — DEPLOY HEALTH CHECK")
+    console.print(f"  {AGENT_NAME} v{AGENT_VERSION}")
+    console.print(f"{'='*60}\n")
+
+    test_msg = [
+        {"role": "system", "content": "You are helpful. Be brief."},
+        {"role": "user", "content": "Reply with exactly: OK"},
+    ]
+
+    results = []
+
+    for model in MODEL_CHAIN:
+        name = model["name"]
+        label = model["label"]
+        provider = model.get("provider", "unknown")
+        status = "skip"
+        latency = 0
+
+        try:
+            import time
+            start = time.monotonic()
+
+            if provider == "nvidia":
+                if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
+                    status = "no credentials"
                 else:
-                    console.print(f"  [bold red]{msg}[/bold red]")
+                    client = OpenAI(api_key=NVIDIA_API_KEY, base_url=f"{NVIDIA_NIM_ENDPOINT.rstrip('/')}/v1")
+                    resp = client.chat.completions.create(
+                        model=name, messages=test_msg, max_tokens=50,
+                    )
+                    content = (resp.choices[0].message.content or "").strip()
+                    status = "live" if resp.choices else "empty"
+
+            elif provider == "ollama":
+                client = OpenAI(api_key="ollama", base_url=OLLAMA_BASE_URL)
+                resp = client.chat.completions.create(
+                    model=name, messages=test_msg, max_tokens=50,
+                )
+                content = (resp.choices[0].message.content or "").strip()
+                status = "live" if resp.choices else "empty"
+
+            elif provider == "openrouter":
+                if not OPENROUTER_API_KEY:
+                    status = "no key"
+                else:
+                    client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
+                    resp = client.chat.completions.create(
+                        model=name, messages=test_msg, max_tokens=50,
+                    )
+                    content = (resp.choices[0].message.content or "").strip()
+                    status = "live" if resp.choices else "empty"
+
+            else:
+                status = "unknown provider"
+
+            latency = int((time.monotonic() - start) * 1000)
+
+        except Exception as e:
+            err = str(e)[:60]
+            if "404" in err or "not found" in err.lower():
+                status = "not found"
+            elif "401" in err or "auth" in err.lower():
+                status = "auth failed"
+            elif "connection" in err.lower() or "refused" in err.lower():
+                status = "offline"
+            else:
+                status = f"error"
+
+        results.append((label, status, latency))
+
+    # Display results
+    table = Table(
+        title="CroweLM Model Health",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        header_style="bold white",
+        show_lines=False,
+        padding=(0, 1),
+    )
+    table.add_column("Model", style="#bfa669", min_width=22)
+    table.add_column("Status", min_width=12)
+    table.add_column("Latency", style="dim", min_width=8)
+
+    for label, status, latency in results:
+        if status == "live":
+            status_fmt = "[bold #6fbf73]LIVE[/bold #6fbf73]"
+        elif status in ("not found", "offline"):
+            status_fmt = f"[#bf6f6f]{status}[/#bf6f6f]"
+        elif status in ("no credentials", "no key", "auth failed"):
+            status_fmt = f"[yellow]{status}[/yellow]"
+        else:
+            status_fmt = f"[red]{status}[/red]"
+
+        lat_str = f"{latency}ms" if latency > 0 else "-"
+        table.add_row(label, status_fmt, lat_str)
+
+    console.print(table)
+
+    # Check Neon DB
+    console.print()
+    if NEON_DATABASE_URL:
+        try:
+            resp = requests.head(NEON_DATABASE_URL, timeout=5)
+            if resp.status_code < 500:
+                console.print("  [#6fbf73]Neon Postgres[/#6fbf73]  [dim]connected[/dim]")
+            else:
+                console.print(f"  [#bf6f6f]Neon Postgres[/#bf6f6f]  [dim]HTTP {resp.status_code}[/dim]")
+        except Exception:
+            console.print("  [#bf6f6f]Neon Postgres[/#bf6f6f]  [dim]unreachable[/dim]")
+    else:
+        console.print("  [yellow]Neon Postgres[/yellow]  [dim]not configured[/dim]")
+
+    # Check local inference engine
+    try:
+        resp = requests.get(OLLAMA_BASE_URL.replace("/v1", ""), timeout=3)
+        console.print("  [#6fbf73]Local engine[/#6fbf73]    [dim]running[/dim]")
+    except Exception:
+        console.print("  [#bf6f6f]Local engine[/#bf6f6f]    [dim]not running[/dim]")
+
+    live_count = sum(1 for _, s, _ in results if s == "live")
+    total = len(results)
+    console.print(f"\n  {live_count}/{total} models online")
+
+    if live_count > 0:
+        console.print(f"\n{'='*60}")
+        console.print(f"  READY -- Run: crowe-logic chat")
+        console.print(f"{'='*60}\n")
+    else:
+        console.print(f"\n  [bold red]No models available. Check credentials and connectivity.[/bold red]\n")
 
 
 @main.command()
@@ -971,6 +1256,7 @@ def resume():
     )
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
+    session_state["favicon"] = favicon
 
     while True:
         try:

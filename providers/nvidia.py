@@ -1,8 +1,11 @@
 """
-OpenRouter provider — Chat Completions with streaming and tool calling.
+NVIDIA NIM provider — Production inference for CroweLM models.
 
-Uses the OpenAI Python SDK pointed at OpenRouter's API.
-Works with any OpenAI-compatible endpoint (Together AI, Fireworks, Groq, etc).
+Uses the OpenAI-compatible API exposed by NVIDIA NIM containers
+on DGX Cloud, NVIDIA AI Enterprise, or self-hosted GPU infrastructure.
+
+NIM serves models via OpenAI-compatible /v1/chat/completions endpoints,
+so this provider follows the same pattern as Ollama/OpenRouter.
 """
 
 import json
@@ -60,14 +63,18 @@ def _build_tool_schemas(user_functions: set) -> list[dict]:
     return tools
 
 
-class OpenRouterProvider:
-    """Chat Completions provider for OpenRouter (or any OpenAI-compatible API)."""
+class NvidiaProvider:
+    """Production inference provider for CroweLM models on NVIDIA NIM."""
 
-    def __init__(self, api_key: str, base_url: str, model: str, system_instructions: str,
+    def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
                  label: str = "CroweLM"):
+        base_url = endpoint.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url += "/v1"
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
         self.label = label
+        self.endpoint = endpoint
         self.system_instructions = system_instructions
         self.messages = [{"role": "system", "content": system_instructions}]
         self._tool_schemas = None
@@ -88,14 +95,14 @@ class OpenRouterProvider:
         """
         Stream a response with tool calling loop.
 
-        Yields text chunks for live display. Handles tool calls automatically,
-        executing them and feeding results back until the model is done.
+        Same interface as OllamaProvider/OpenRouterProvider — drop-in
+        compatible with the CLI's smart routing.
         """
         from cli.renderer import StreamRenderer
 
         tool_schemas, tool_map = self._get_tools()
         favicon = session_state.get("favicon", "")
-        renderer = StreamRenderer(console, self.label, "OPENROUTER", favicon=favicon)
+        renderer = StreamRenderer(console, self.label, "NVIDIA", favicon=favicon)
 
         max_rounds = 10
         full_response = ""
@@ -109,17 +116,25 @@ class OpenRouterProvider:
                 else:
                     renderer.set_spinner("thinking...")
 
-                stream = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self.messages,
-                    tools=tool_schemas if tool_schemas else None,
-                    stream=True,
-                )
+                create_kwargs = {
+                    "model": self.model,
+                    "messages": self.messages,
+                    "stream": True,
+                }
+                if tool_schemas:
+                    create_kwargs["tools"] = tool_schemas
+
+                stream = self.client.chat.completions.create(**create_kwargs)
 
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if not delta:
                         continue
+
+                    # Kimi K2.5 and other thinking models put reasoning in a separate field
+                    reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+                    if reasoning:
+                        renderer.feed_reasoning(reasoning)
 
                     if delta.content:
                         renderer.feed(delta.content)
@@ -158,6 +173,7 @@ class OpenRouterProvider:
                 self.messages.append({"role": "assistant", "content": response_text})
                 break
 
+            # Stop live markdown before tool execution
             renderer._stop_md_live()
             renderer.stop_spinner()
 

@@ -11,7 +11,9 @@ import uuid
 
 import yaml
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "crowelm-unified")
+_PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
+DATA_DIR = os.path.join(_PROJECT_ROOT, "data", "crowelm-unified")
 
 
 # -- Query Tier ----------------------------------------------------------------
