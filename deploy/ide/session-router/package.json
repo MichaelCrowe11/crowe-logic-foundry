@@ -1,0 +1,21 @@
+{
+  "name": "crowe-ide-session-router",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Session Router for Crowe Logic IDE — JWT auth, container lifecycle, WebSocket proxy",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "jest --verbose"
+  },
+  "dependencies": {
+    "cookie": "^1.0.0",
+    "dockerode": "^4.0.0",
+    "express": "^5.1.0",
+    "http-proxy": "^1.18.0",
+    "jose": "^5.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
