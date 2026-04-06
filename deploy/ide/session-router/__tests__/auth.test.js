@@ -64,6 +64,29 @@ describe('validateToken', () => {
   test('rejects empty string', async () => {
     await expect(auth.validateToken('')).rejects.toThrow();
   });
+
+  test('rejects token with wrong audience', async () => {
+    const token = await new SignJWT({ sub: 'user-123', role: 'admin' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'test-key-id' })
+      .setIssuer('https://test.supabase.co/auth/v1')
+      .setAudience('anon')
+      .setExpirationTime('60s')
+      .setIssuedAt()
+      .sign(keyPair.privateKey);
+    await expect(auth.validateToken(token)).rejects.toThrow();
+  });
+
+  test('rejects token signed with unknown key', async () => {
+    const otherKey = await generateKeyPair('RS256');
+    const token = await new SignJWT({ sub: 'user-123', role: 'admin' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'other-key-id' })
+      .setIssuer('https://test.supabase.co/auth/v1')
+      .setAudience('authenticated')
+      .setExpirationTime('60s')
+      .setIssuedAt()
+      .sign(otherKey.privateKey);
+    await expect(auth.validateToken(token)).rejects.toThrow();
+  });
 });
 
 describe('extractToken', () => {
@@ -85,5 +108,19 @@ describe('extractToken', () => {
   test('returns null when no token present', () => {
     const req = { query: {}, cookies: {} };
     expect(auth.extractToken(req)).toBeNull();
+  });
+
+  test('extracts token from Authorization Bearer header', () => {
+    const req = { headers: { authorization: 'Bearer xyz789' }, query: {}, cookies: {} };
+    expect(auth.extractToken(req)).toBe('xyz789');
+  });
+
+  test('prefers Authorization header over query and cookie', () => {
+    const req = {
+      headers: { authorization: 'Bearer from-header' },
+      query: { token: 'from-query' },
+      cookies: { 'crowe-ide-session': 'from-cookie' },
+    };
+    expect(auth.extractToken(req)).toBe('from-header');
   });
 });

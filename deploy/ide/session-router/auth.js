@@ -32,6 +32,10 @@ function createAuthModule({ supabaseUrl, fetchJWKS }) {
   }
 
   function extractToken(req) {
+    const authHeader = req.headers && req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      return authHeader.slice(7);
+    }
     if (req.query && req.query.token) return req.query.token;
     if (req.cookies && req.cookies[COOKIE_NAME]) return req.cookies[COOKIE_NAME];
     return null;
