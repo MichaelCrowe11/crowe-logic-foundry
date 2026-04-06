@@ -1,0 +1,28 @@
+# deploy/ide/systemd/crowe-ide-router.service
+[Unit]
+Description=Crowe Logic IDE Session Router
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=crowe-ide
+WorkingDirectory=/opt/crowe-ide/session-router
+ExecStart=/usr/bin/node /opt/crowe-ide/session-router/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/crowe-ide/session-router
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crowe-ide-router
+
+[Install]
+WantedBy=multi-user.target
