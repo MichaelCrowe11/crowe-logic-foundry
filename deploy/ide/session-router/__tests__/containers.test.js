@@ -90,6 +90,7 @@ describe('getOrCreateContainer', () => {
     const createOpts = docker.createContainer.mock.calls[0][0];
     expect(createOpts.Labels['crowe-ide.user-id']).toBe('user-admin');
     expect(createOpts.Labels['crowe-ide.role']).toBe('admin');
+    expect(createOpts.HostConfig.PortBindings['8080/tcp'][0].HostIp).toBe('127.0.0.1');
   });
 
   test('creates subscriber container with resource limits', async () => {
@@ -149,5 +150,21 @@ describe('port allocation', () => {
     const a = await mgr.getOrCreateContainer('user-a', 'subscriber');
     const b = await mgr.getOrCreateContainer('user-b', 'subscriber');
     expect(a.port).not.toBe(b.port);
+  });
+});
+
+describe('input validation', () => {
+  test('throws on invalid userId', async () => {
+    const docker = createMockDocker();
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    await expect(mgr.getOrCreateContainer('', 'admin')).rejects.toThrow('Invalid userId');
+    await expect(mgr.getOrCreateContainer(null, 'admin')).rejects.toThrow('Invalid userId');
+    await expect(mgr.getOrCreateContainer('user with spaces', 'admin')).rejects.toThrow('Invalid userId');
+  });
+
+  test('throws on unknown role', async () => {
+    const docker = createMockDocker();
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    await expect(mgr.getOrCreateContainer('user-1', 'unknown-role')).rejects.toThrow('Unknown role');
   });
 });

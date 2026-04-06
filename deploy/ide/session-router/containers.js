@@ -47,6 +47,13 @@ function createContainerManager({ docker, imageName }) {
   }
 
   async function getOrCreateContainer(userId, role) {
+    if (typeof userId !== 'string' || userId.length === 0 || !/^[\w-]+$/.test(userId)) {
+      throw new Error('Invalid userId');
+    }
+    if (role && !PROFILES[role]) {
+      throw new Error(`Unknown role: ${role}`);
+    }
+
     const existing = await findExisting(userId);
     if (existing && existing.state === 'running') {
       return { containerId: existing.containerId, port: existing.port };
@@ -54,10 +61,14 @@ function createContainerManager({ docker, imageName }) {
     if (existing && existing.state !== 'running') {
       const container = docker.getContainer(existing.containerId);
       await container.start();
-      return { containerId: existing.containerId, port: existing.port };
+      const info = await container.inspect();
+      const bindings = info.NetworkSettings?.Ports?.['8080/tcp'];
+      const port = bindings?.[0]?.HostPort ? parseInt(bindings[0].HostPort, 10) : existing.port;
+      if (port) allocatedPorts.add(port);
+      return { containerId: existing.containerId, port };
     }
 
-    const profile = PROFILES[role] || PROFILES.subscriber;
+    const profile = PROFILES[role];
     const port = nextPort();
 
     const container = await docker.createContainer({
@@ -73,7 +84,7 @@ function createContainerManager({ docker, imageName }) {
       ],
       HostConfig: {
         PortBindings: {
-          '8080/tcp': [{ HostPort: String(port) }],
+          '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: String(port) }],
         },
         NanoCpus: profile.nanoCpus,
         Memory: profile.memory,
@@ -101,7 +112,7 @@ function createContainerManager({ docker, imageName }) {
   async function getContainerPort(containerId) {
     const container = docker.getContainer(containerId);
     const info = await container.inspect();
-    const bindings = info.NetworkSettings.Ports['8080/tcp'];
+    const bindings = info.NetworkSettings?.Ports?.['8080/tcp'];
     if (bindings && bindings.length > 0) {
       return parseInt(bindings[0].HostPort, 10);
     }
