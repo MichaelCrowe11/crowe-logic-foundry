@@ -16,17 +16,20 @@ function createCleanupJob({
     const containers = await containerManager.listAll();
 
     for (const c of containers) {
-      // Never touch admin containers
-      if (c.role === 'admin') continue;
+      try {
+        if (c.role === 'admin') continue;
 
-      const idleMs = getNow() - c.lastActivity;
+        const idleMs = getNow() - c.lastActivity;
 
-      if (c.state === 'running' && idleMs >= idleStopMs) {
-        console.log(`[cleanup] Stopping idle container ${c.containerId} (idle ${Math.round(idleMs / 60000)}m)`);
-        await containerManager.stopContainer(c.containerId);
-      } else if (c.state === 'exited' && idleMs >= idleRemoveMs) {
-        console.log(`[cleanup] Removing stale container ${c.containerId} (idle ${Math.round(idleMs / 3600000)}h)`);
-        await containerManager.removeContainer(c.containerId);
+        if (c.state === 'running' && idleMs >= idleStopMs) {
+          console.log(`[cleanup] Stopping idle container ${c.containerId} (idle ${Math.round(idleMs / 60000)}m)`);
+          await containerManager.stopContainer(c.containerId);
+        } else if (c.state === 'exited' && idleMs >= idleRemoveMs) {
+          console.log(`[cleanup] Removing stale container ${c.containerId} (idle ${Math.round(idleMs / 3600000)}h)`);
+          await containerManager.removeContainer(c.containerId);
+        }
+      } catch (err) {
+        console.error(`[cleanup] Error processing ${c.containerId}:`, err.message);
       }
     }
   }

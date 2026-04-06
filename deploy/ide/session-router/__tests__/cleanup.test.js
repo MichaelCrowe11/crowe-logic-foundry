@@ -4,15 +4,15 @@ function createMockContainerManager() {
   const containers = [];
   return {
     containers,
-    addContainer(id, role, lastActivity) {
-      containers.push({ id, role, lastActivity });
+    addContainer(id, role, lastActivity, state = 'running') {
+      containers.push({ id, role, lastActivity, state });
     },
     listAll: jest.fn(async () =>
       containers.map((c) => ({
         containerId: c.id,
         role: c.role,
         lastActivity: c.lastActivity,
-        state: 'running',
+        state: c.state,
       }))
     ),
     stopContainer: jest.fn(async () => {}),
@@ -77,5 +77,29 @@ describe('cleanup', () => {
     await cleanup.runOnce();
     expect(mgr.stopContainer).not.toHaveBeenCalled();
     expect(mgr.removeContainer).not.toHaveBeenCalled();
+  });
+
+  test('continues cleanup when one container fails', async () => {
+    const mgr = createMockContainerManager();
+    const now = Date.now();
+    mgr.addContainer('c1', 'subscriber', now - 31 * 60 * 1000); // idle
+    mgr.addContainer('c2', 'subscriber', now - 31 * 60 * 1000); // idle
+
+    // First stop call throws, second should still succeed
+    mgr.stopContainer
+      .mockRejectedValueOnce(new Error('Docker API error'))
+      .mockResolvedValueOnce();
+
+    const cleanup = createCleanupJob({
+      containerManager: mgr,
+      idleStopMinutes: 30,
+      idleRemoveHours: 24,
+      getNow: () => now,
+    });
+
+    await cleanup.runOnce(); // Should not throw
+    expect(mgr.stopContainer).toHaveBeenCalledTimes(2);
+    expect(mgr.stopContainer).toHaveBeenCalledWith('c1');
+    expect(mgr.stopContainer).toHaveBeenCalledWith('c2');
   });
 });
