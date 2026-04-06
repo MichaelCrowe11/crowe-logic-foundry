@@ -1,0 +1,23 @@
+# deploy/ide/requirements.txt
+#
+# Python dependencies baked into the IDE code-server image. This is a
+# deliberate copy of the repo-root requirements.txt — keep them in sync when
+# the foundry's Python deps change. The Dockerfile (Dockerfile.code-server)
+# COPYs this file from the build context (deploy/ide), so it must live here
+# rather than at the repo root.
+#
+# Sync command (from repo root):
+#   cp requirements.txt deploy/ide/requirements.txt
+azure-ai-agents>=1.1.0
+azure-identity>=1.25.0
+azure-ai-projects>=2.0.0
+opentelemetry-sdk>=1.40.0
+azure-core-tracing-opentelemetry>=1.0.0b12
+click>=8.1.0
+rich>=14.0.0
+prompt-toolkit>=3.0.0
+python-dotenv>=1.0.0
+httpx>=0.28.0
+beautifulsoup4>=4.12.0
+# crowe-quantum-trinity — optional, install separately for quantum features
+# iterm2 — only needed for local CLI, not in Docker

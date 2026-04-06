@@ -109,9 +109,9 @@ scp deploy/ide/setup.sh crowelogic@$VM_IP:/tmp/setup.sh
 ssh crowelogic@$VM_IP "sudo bash /tmp/setup.sh"
 ```
 
-The script installs Docker, Nginx, certbot, Node.js 20, and creates the `crowe-ide` system user. Total runtime ≈ 3–5 minutes.
+The script installs Docker, Nginx, certbot, Node.js 22, creates the `crowe-ide` system user, and adds it to the `docker` group so the Session Router can talk to `/var/run/docker.sock`. Total runtime ≈ 3–5 minutes.
 
-**Verification:** `ssh crowelogic@$VM_IP "docker --version && nginx -v && node --version"` should report Docker 20+, Nginx 1.24+, Node 20.x.
+**Verification:** `ssh crowelogic@$VM_IP "docker --version && nginx -v && node --version"` should report Docker 20+, Nginx 1.24+, Node 22.x.
 
 ---
 
@@ -120,15 +120,14 @@ The script installs Docker, Nginx, certbot, Node.js 20, and creates the `crowe-i
 From your local machine (in the foundry repo root):
 
 ```bash
-# Copy the entire deploy/ide tree (excluding node_modules)
+# Copy the entire deploy/ide tree (excluding node_modules and any local .env)
 rsync -av --exclude 'node_modules' --exclude '.env' \
   deploy/ide/ crowelogic@$VM_IP:/opt/crowe-ide/
-
-# Copy requirements.txt for the Docker image build
-scp requirements.txt crowelogic@$VM_IP:/opt/crowe-ide/
 ```
 
-**Verification:** `ssh crowelogic@$VM_IP "ls /opt/crowe-ide/"` should list `Dockerfile.code-server`, `docker-compose.yml`, `nginx/`, `session-router/`, `systemd/`, `sandbox-template/`.
+`deploy/ide/requirements.txt` is committed to the repo and rsynced along with everything else, so the Docker build context already contains it — no separate `scp` step needed. If you change the foundry's root `requirements.txt`, copy it into `deploy/ide/requirements.txt` before rsyncing so the image stays in sync.
+
+**Verification:** `ssh crowelogic@$VM_IP "ls /opt/crowe-ide/"` should list `Dockerfile.code-server`, `docker-compose.yml`, `requirements.txt`, `nginx/`, `session-router/`, `systemd/`, `sandbox-template/`.
 
 ---
 
@@ -150,7 +149,6 @@ sudo nano .env
 Set the following values in `.env`:
 
 ```bash
-SUPABASE_URL=https://<your-project-ref>.supabase.co
 IDE_JWT_SECRET=<paste the secret from Phase 0>
 PORT=3001
 IMAGE_NAME=crowe-ide-codeserver
@@ -159,6 +157,8 @@ IDLE_STOP_MINUTES=240
 IDLE_REMOVE_HOURS=24
 IDLE_CHECK_INTERVAL_MINUTES=5
 ```
+
+`IDE_JWT_SECRET` is the **only** auth secret the router needs. It must be byte-identical to the value set in Railway for `crowe-logic-ai` (Phase 7) — the launcher signs handoff JWTs with this secret and the router both verifies handoffs and mints session cookies with it. Drift causes every handoff to 401.
 
 Lock down permissions:
 
@@ -187,10 +187,10 @@ sudo certbot --nginx -d ide.southwestmushrooms.com --redirect \
 
 ```bash
 cd /opt/crowe-ide
-sudo docker compose build code-server-admin
+sudo docker compose build admin
 ```
 
-This builds the custom `crowe-ide-codeserver` image with all extensions baked in. Takes 5–10 minutes on first run.
+This builds the custom `crowe-ide-codeserver` image (the compose service is named `admin`) with all extensions baked in. Takes 5–10 minutes on first run.
 
 ### 5d — Install and start the systemd service
 
@@ -232,11 +232,16 @@ curl -sI https://ide.southwestmushrooms.com/
 # Expected: HTTP/2 302, Location: https://ai.southwestmushrooms.com/auth?next=/ide
 
 # 3. Generate a test token locally and try the handoff
+#    Claims must match what the launcher in crowe-logic-ai sets:
+#      iss=crowe-logic-ai, aud=crowe-ide-router, alg=HS256
 node -e "
 const { SignJWT } = require('jose');
 const secret = new TextEncoder().encode(process.env.IDE_JWT_SECRET);
-new SignJWT({ sub: 'test-user', role: 'admin', email: 'test@example.com' })
+new SignJWT({ role: 'admin', email: 'test@example.com' })
   .setProtectedHeader({ alg: 'HS256' })
+  .setSubject('test-user')
+  .setIssuer('crowe-logic-ai')
+  .setAudience('crowe-ide-router')
   .setIssuedAt()
   .setExpirationTime('60s')
   .sign(secret)

@@ -11,12 +11,12 @@ const { createProxyServer } = require('./proxy');
 try { require('dotenv').config(); } catch (_) { /* dotenv is optional */ }
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
-const SUPABASE_URL = process.env.SUPABASE_URL;
+const IDE_JWT_SECRET = process.env.IDE_JWT_SECRET;
 const IMAGE_NAME = process.env.IMAGE_NAME || 'crowe-ide-codeserver';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 
-if (!SUPABASE_URL) {
-  console.error('SUPABASE_URL is required');
+if (!IDE_JWT_SECRET) {
+  console.error('IDE_JWT_SECRET is required (must match the launcher in crowe-logic-ai)');
   process.exit(1);
 }
 
@@ -34,7 +34,7 @@ process.on('uncaughtException', (err) => {
 const Docker = require('dockerode');
 const docker = new Docker();
 
-const auth = createAuthModule({ supabaseUrl: SUPABASE_URL });
+const auth = createAuthModule({ ideJwtSecret: IDE_JWT_SECRET });
 const containerMgr = createContainerManager({ docker, imageName: IMAGE_NAME });
 const proxy = createProxyServer();
 
@@ -96,8 +96,37 @@ app.get('/health', (_req, res) => {
 // All other requests: authenticate then proxy
 app.use(async (req, res) => {
   try {
-    // Prefer the query token if present (this is the handoff flow)
-    const token = req._queryToken || auth.extractToken(req);
+    // Handoff flow: query parameter token from the launcher.
+    // Validate as a handoff JWT, then mint a fresh long-lived session token,
+    // store it as an httpOnly cookie, and 302 to strip the URL.
+    if (req._queryToken) {
+      let user;
+      try {
+        user = await auth.validateHandoffToken(req._queryToken);
+      } catch (err) {
+        console.error(`[router] Handoff auth error: ${err.message}`);
+        res.status(401).json({ error: 'Invalid or expired handoff token' });
+        return;
+      }
+      const sessionToken = await auth.mintSessionToken({
+        userId: user.userId,
+        role: user.role,
+        email: user.email,
+      });
+      res.setHeader('Set-Cookie', cookie.serialize(auth.COOKIE_NAME, sessionToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax', // 'lax' lets the cookie ride along on top-level navigations from the launcher
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+        path: '/',
+        maxAge: auth.SESSION_TTL_SECONDS,
+      }));
+      res.redirect(302, '/');
+      return;
+    }
+
+    // Cookie/Bearer flow: validate the session token.
+    const token = auth.extractToken(req);
     if (!token) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -105,24 +134,10 @@ app.use(async (req, res) => {
 
     let user;
     try {
-      user = await auth.validateToken(token);
+      user = await auth.validateSessionToken(token);
     } catch (err) {
-      console.error(`[router] Auth error: ${err.message}`);
+      console.error(`[router] Session auth error: ${err.message}`);
       res.status(401).json({ error: 'Invalid or expired session' });
-      return;
-    }
-
-    // If token came from query param, set cookie and redirect (strips token from URL)
-    if (req._queryToken) {
-      res.setHeader('Set-Cookie', cookie.serialize(auth.COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
-        path: '/',
-        maxAge: 60 * 60 * 24, // 24 hours
-      }));
-      res.redirect(302, '/');
       return;
     }
 
@@ -153,7 +168,7 @@ server.on('upgrade', async (req, socket, head) => {
       socket.destroy();
       return;
     }
-    user = await auth.validateToken(token);
+    user = await auth.validateSessionToken(token);
   } catch (err) {
     console.error(`[router] WebSocket auth error: ${err.message}`);
     socket.destroy();

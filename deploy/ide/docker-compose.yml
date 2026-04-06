@@ -24,6 +24,15 @@ services:
     mem_limit: 2g
     networks:
       - ide-admin
+    # code-server returns 302 to /login at the root when reachable. wget --spider
+    # follows redirects and exits 0 on any 2xx/3xx response, which is exactly
+    # what we want — "the HTTP server answered."
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 networks:
   ide-admin:

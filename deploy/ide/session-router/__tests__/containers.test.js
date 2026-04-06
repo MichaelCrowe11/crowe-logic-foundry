@@ -153,6 +153,41 @@ describe('port allocation', () => {
   });
 });
 
+describe('concurrent creation', () => {
+  test('serializes simultaneous requests for the same user (no double-create)', async () => {
+    const docker = createMockDocker();
+    // Slow down createContainer so the second call definitely arrives before
+    // the first one has a chance to finish — this is exactly the race
+    // condition the in-flight map exists to prevent.
+    const realCreate = docker.createContainer.getMockImplementation();
+    docker.createContainer.mockImplementation(async (opts) => {
+      await new Promise((r) => setTimeout(r, 25));
+      return realCreate(opts);
+    });
+
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const [a, b] = await Promise.all([
+      mgr.getOrCreateContainer('race-user', 'subscriber'),
+      mgr.getOrCreateContainer('race-user', 'subscriber'),
+    ]);
+    expect(a.containerId).toBe(b.containerId);
+    expect(a.port).toBe(b.port);
+    expect(docker.createContainer).toHaveBeenCalledTimes(1);
+  });
+
+  test('different users still create separate containers in parallel', async () => {
+    const docker = createMockDocker();
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const [a, b] = await Promise.all([
+      mgr.getOrCreateContainer('user-a', 'subscriber'),
+      mgr.getOrCreateContainer('user-b', 'subscriber'),
+    ]);
+    expect(a.containerId).not.toBe(b.containerId);
+    expect(a.port).not.toBe(b.port);
+    expect(docker.createContainer).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('input validation', () => {
   test('throws on invalid userId', async () => {
     const docker = createMockDocker();

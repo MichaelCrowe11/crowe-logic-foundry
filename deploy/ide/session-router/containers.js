@@ -21,6 +21,10 @@ const PROFILES = {
 
 function createContainerManager({ docker, imageName }) {
   const allocatedPorts = new Set();
+  // Per-user in-flight promise map. Two simultaneous requests from the same
+  // user share a single getOrCreate call, so we never race two findExisting
+  // queries that both return null and then both call createContainer.
+  const inFlight = new Map();
 
   function nextPort() {
     for (let p = BASE_PORT; p <= MAX_PORT; p++) {
@@ -46,14 +50,7 @@ function createContainerManager({ docker, imageName }) {
     return { containerId: c.Id, port, state: c.State };
   }
 
-  async function getOrCreateContainer(userId, role) {
-    if (typeof userId !== 'string' || userId.length === 0 || !/^[\w-]+$/.test(userId)) {
-      throw new Error('Invalid userId');
-    }
-    if (role && !PROFILES[role]) {
-      throw new Error(`Unknown role: ${role}`);
-    }
-
+  async function _doGetOrCreate(userId, role) {
     const existing = await findExisting(userId);
     if (existing && existing.state === 'running') {
       return { containerId: existing.containerId, port: existing.port };
@@ -97,6 +94,24 @@ function createContainerManager({ docker, imageName }) {
 
     await container.start();
     return { containerId: container.id, port };
+  }
+
+  function getOrCreateContainer(userId, role) {
+    if (typeof userId !== 'string' || userId.length === 0 || !/^[\w-]+$/.test(userId)) {
+      return Promise.reject(new Error('Invalid userId'));
+    }
+    if (role && !PROFILES[role]) {
+      return Promise.reject(new Error(`Unknown role: ${role}`));
+    }
+
+    const inProgress = inFlight.get(userId);
+    if (inProgress) return inProgress;
+
+    const promise = _doGetOrCreate(userId, role).finally(() => {
+      inFlight.delete(userId);
+    });
+    inFlight.set(userId, promise);
+    return promise;
   }
 
   async function releasePort(container) {

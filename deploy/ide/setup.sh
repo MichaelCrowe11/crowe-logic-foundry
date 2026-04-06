@@ -43,8 +43,12 @@ mkdir -p /opt/crowe-ide/sandbox-template
 mkdir -p /opt/crowe-ide/nginx
 mkdir -p /opt/crowe-ide/systemd
 
-# 7. Create non-root service user
+# 7. Create non-root service user and grant Docker access
 useradd -r -s /bin/false crowe-ide || true
+# The session router shells out to the Docker daemon via dockerode, which talks
+# to /var/run/docker.sock. The crowe-ide user must be in the docker group or
+# every container call fails with EACCES.
+usermod -aG docker crowe-ide
 chown -R crowe-ide:crowe-ide /opt/crowe-ide
 
 # 8. Clone crowe-logic-foundry (for admin bind mount)
