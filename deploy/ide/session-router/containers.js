@@ -99,13 +99,28 @@ function createContainerManager({ docker, imageName }) {
     return { containerId: container.id, port };
   }
 
+  async function releasePort(container) {
+    try {
+      const info = await container.inspect();
+      const bindings = info.NetworkSettings?.Ports?.['8080/tcp'];
+      if (bindings && bindings[0]?.HostPort) {
+        const port = parseInt(bindings[0].HostPort, 10);
+        if (Number.isFinite(port)) allocatedPorts.delete(port);
+      }
+    } catch (_) {
+      // Container may already be gone; ignore
+    }
+  }
+
   async function stopContainer(containerId) {
     const container = docker.getContainer(containerId);
+    await releasePort(container); // inspect before stop so we can still read ports
     await container.stop();
   }
 
   async function removeContainer(containerId) {
     const container = docker.getContainer(containerId);
+    await releasePort(container); // inspect before remove
     await container.remove();
   }
 

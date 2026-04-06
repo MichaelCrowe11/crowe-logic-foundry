@@ -8,11 +8,17 @@ function createProxyServer() {
     xfwd: true,
   });
 
-  proxy.on('error', (err, req, res) => {
+  proxy.on('error', (err, _req, resOrSocket) => {
     console.error(`[proxy] Error: ${err.message}`);
-    if (res && res.writeHead) {
-      res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end('IDE container is starting up. Refresh in a few seconds.');
+    if (resOrSocket && typeof resOrSocket.writeHead === 'function') {
+      // HTTP response path
+      try {
+        resOrSocket.writeHead(502, { 'Content-Type': 'text/plain' });
+        resOrSocket.end('IDE container is starting up. Refresh in a few seconds.');
+      } catch (_) { /* already sent */ }
+    } else if (resOrSocket && typeof resOrSocket.destroy === 'function') {
+      // WebSocket upgrade error path — destroy the socket to prevent FD leak
+      try { resOrSocket.destroy(); } catch (_) { /* already destroyed */ }
     }
   });
 
