@@ -58,7 +58,7 @@ const cleanup = createCleanupJob({
     stopContainer: (id) => containerMgr.stopContainer(id),
     removeContainer: (id) => containerMgr.removeContainer(id),
   },
-  idleStopMinutes: parseInt(process.env.IDLE_STOP_MINUTES || '30', 10),
+  idleStopMinutes: parseInt(process.env.IDLE_STOP_MINUTES || '240', 10),
   idleRemoveHours: parseInt(process.env.IDLE_REMOVE_HOURS || '24', 10),
   intervalMinutes: parseInt(process.env.IDLE_CHECK_INTERVAL_MINUTES || '5', 10),
 });
