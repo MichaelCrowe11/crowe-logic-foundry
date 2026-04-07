@@ -2,9 +2,17 @@
 const httpProxy = require('http-proxy');
 
 function createProxyServer() {
+  // changeOrigin is INTENTIONALLY false. With changeOrigin:true, http-proxy
+  // rewrites the outgoing Host header to the target (e.g. 127.0.0.1:10001).
+  // code-server's WebSocket upgrade handler enforces Origin == Host as a CSRF
+  // defense, so when the browser sends Origin: https://ide.southwestmushrooms.com
+  // and the proxy sends Host: 127.0.0.1:10001, the upgrade is rejected with
+  // HTTP 403 and the workbench fails with "WebSocket close code 1006".
+  // Preserving the original Host header keeps Origin == Host and lets the
+  // upgrade through. xfwd:true still sets X-Forwarded-* headers correctly.
   const proxy = httpProxy.createProxyServer({
     ws: true,
-    changeOrigin: true,
+    changeOrigin: false,
     xfwd: true,
   });
 

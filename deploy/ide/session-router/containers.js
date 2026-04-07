@@ -68,17 +68,28 @@ function createContainerManager({ docker, imageName }) {
     const profile = PROFILES[role];
     const port = nextPort();
 
+    // PROXY_DOMAIN tells code-server which external host it sits behind, so
+    // it accepts WebSocket upgrades with Origin headers from that host even
+    // though its --bind-addr is 127.0.0.1. Without this, code-server's CSRF
+    // check rejects Origin != Host with HTTP 403 and the workbench dies with
+    // "WebSocket close code 1006". Defaults to undefined (no flag) when not set.
+    const proxyDomain = process.env.PROXY_DOMAIN;
+    const cmd = [
+      '--bind-addr=0.0.0.0:8080',
+      '--auth=none',
+      '--disable-telemetry',
+    ];
+    if (proxyDomain) {
+      cmd.push(`--proxy-domain=${proxyDomain}`);
+    }
+
     const container = await docker.createContainer({
       Image: imageName,
       Labels: {
         [`${LABEL_PREFIX}.user-id`]: userId,
         [`${LABEL_PREFIX}.role`]: role,
       },
-      Cmd: [
-        '--bind-addr=0.0.0.0:8080',
-        '--auth=none',
-        '--disable-telemetry',
-      ],
+      Cmd: cmd,
       HostConfig: {
         PortBindings: {
           '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: String(port) }],
