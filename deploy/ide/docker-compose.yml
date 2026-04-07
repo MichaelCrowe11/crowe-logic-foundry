@@ -30,11 +30,11 @@ services:
     mem_limit: 2g
     networks:
       - ide-admin
-    # code-server returns 302 to /login at the root when reachable. wget --spider
-    # follows redirects and exits 0 on any 2xx/3xx response, which is exactly
-    # what we want — "the HTTP server answered."
+    # code-server exposes /healthz (returns {"status":"alive",...} on 200).
+    # wget --spider does a HEAD which 405s on the root after the 302 redirect,
+    # so use -qO- against /healthz instead.
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
