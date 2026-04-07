@@ -267,11 +267,12 @@ class StreamRenderer:
         if self._reasoning_token_count > 0:
             parts.append(f"{self._reasoning_token_count} reasoning")
 
+        from cli.branding import DOT, GUTTER
         footer = Text()
-        footer.append("  ", style="dim")
+        footer.append(" " * GUTTER, style="dim")
         for i, part in enumerate(parts):
             if i > 0:
-                footer.append(" \u00b7 ", style="dim")
+                footer.append(f" {DOT} ", style="dim")
             footer.append(part, style=DIM_GOLD)
         self.console.print(footer)
 
