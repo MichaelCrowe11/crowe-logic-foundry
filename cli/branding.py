@@ -500,54 +500,55 @@ def is_rate_limit_error(error_msg: str) -> bool:
 
 # ── Bottom toolbar builder ───────────────────────────────────
 def build_toolbar():
-    """Build the prompt_toolkit bottom toolbar HTML string."""
+    """Build the prompt_toolkit bottom toolbar HTML string.
+
+    Format:
+      CroweLM v0.1.0      45s · 3 tools · 1247 tok @ 89/s · CroweLM Core · LIVE
+
+    All separators are the DOT token, applied uniformly. Status is
+    color-coded: green for LIVE, amber for THROTTLED, red for DOWN.
+    """
     from prompt_toolkit.formatted_text import HTML
     from config.agent_config import AGENT_VERSION
 
     elapsed = _time.monotonic() - session_state["started_at"]
     minutes = int(elapsed) // 60
     seconds = int(elapsed) % 60
-    if minutes > 0:
-        duration = f"{minutes}m {seconds:02d}s"
-    else:
-        duration = f"{seconds}s"
+    duration = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
 
     tool_count = session_state["tool_count"]
     api_status = session_state["api_status"]
 
     if api_status == "ok":
-        status_html = '<style fg="#6fbf73">LIVE</style>'
+        status_html = f'<style fg="{GREEN_HEX}">LIVE</style>'
     elif api_status == "throttled":
         retry = session_state["retry_seconds"]
         retry_str = f" retry {retry}s" if retry > 0 else ""
-        status_html = f'<style fg="#d4a645">THROTTLED{retry_str}</style>'
-    else:  # down
-        status_html = '<style fg="#bf6f6f">DOWN</style>'
+        status_html = f'<style fg="{AMBER_HEX}">THROTTLED{retry_str}</style>'
+    else:
+        status_html = f'<style fg="{RED_HEX}">DOWN</style>'
 
-    model_label = session_state.get("active_model", "")
-    model_html = f' <style fg="gray">\u00b7</style> <style fg="#8fa4bf">{model_label}</style>' if model_label else ""
+    sep = f' <style fg="gray">{DOT}</style> '
 
-    # Token stats from last response
+    parts = [
+        f'<style fg="{GOLD_HEX}">{duration}</style>',
+        f'<style fg="{GOLD_HEX}">{tool_count} tools</style>',
+    ]
+
     tokens = session_state.get("last_tokens", 0)
     tps = session_state.get("last_tps", 0)
-    token_html = ""
     if tokens > 0:
         tps_str = f"{tps:.0f}" if tps >= 10 else f"{tps:.1f}"
-        token_html = (
-            f' <style fg="gray">\u00b7</style> '
-            f'<style fg="#bfa669">{tokens} tok @ {tps_str}/s</style>'
-        )
+        parts.append(f'<style fg="{GOLD_HEX}">{tokens} tok @ {tps_str}/s</style>')
 
-    left = f'<style fg="#bfa669">CroweLM v{AGENT_VERSION}</style>'
-    right = (
-        f'<style fg="#bfa669">{duration}</style>'
-        f' <style fg="gray">\u00b7</style> '
-        f'<style fg="#bfa669">{tool_count} tools</style>'
-        f'{token_html}'
-        f'{model_html}'
-        f' <style fg="gray">\u00b7</style> '
-        f'{status_html}'
-    )
+    model_label = session_state.get("active_model", "")
+    if model_label:
+        parts.append(f'<style fg="{BLUE_HEX}">{model_label}</style>')
+
+    parts.append(status_html)
+
+    left = f'<style fg="{GOLD_HEX}">CroweLM v{AGENT_VERSION}</style>'
+    right = sep.join(parts)
 
     return HTML(f' {left}      {right} ')
 
