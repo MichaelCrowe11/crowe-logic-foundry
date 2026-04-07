@@ -1,11 +1,14 @@
 """
-NVIDIA NIM provider — Production inference for CroweLM models.
+Azure OpenAI provider — CroweLM models on Crowe Logic's own Azure AI Foundry.
 
-Uses the OpenAI-compatible API exposed by NVIDIA NIM containers
-on DGX Cloud, NVIDIA AI Enterprise, or self-hosted GPU infrastructure.
+Targets the OpenAI-compatible `/openai/v1/` surface of an Azure AI Foundry
+resource (not the Azure AI Agents SDK). Authenticates with an API key, so it
+works without any Azure identity setup.
 
-NIM serves models via OpenAI-compatible /v1/chat/completions endpoints,
-so this provider follows the same pattern as Ollama/OpenRouter.
+This is the primary tier for the Crowe Logic Kernel stack — models deployed
+inside the `crowelogicos-4667` resource (CroweLM Core = Kimi-K2.5,
+CroweLM Kernel = gpt-5.4-nano). Because the endpoint is OpenAI-compatible,
+this provider is structurally identical to `NvidiaProvider`.
 """
 
 import json
@@ -63,14 +66,27 @@ def _build_tool_schemas(user_functions: set) -> list[dict]:
     return tools
 
 
-class NvidiaProvider:
-    """Production inference provider for CroweLM models on NVIDIA NIM."""
+class AzureOpenAIProvider:
+    """
+    OpenAI-compatible provider for Azure AI Foundry model deployments.
+
+    Uses the `/openai/v1/` surface with API-key authentication — no
+    DefaultAzureCredential, no Azure AI Agents SDK, no `.agent_id` file.
+    """
 
     def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
                  label: str = "CroweLM"):
+        # Azure surface looks like:
+        #   https://<resource>.openai.azure.com/openai/v1/
+        # The OpenAI SDK expects a base_url that points at the "v1" root so it can
+        # append `/chat/completions`. We accept a few shapes and normalize.
         base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/v1"):
-            base_url += "/v1"
+        if not base_url.endswith("/v1") and "/openai/v1" not in base_url:
+            if base_url.endswith("/openai"):
+                base_url += "/v1"
+            else:
+                base_url += "/openai/v1"
+
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
         self.label = label
@@ -95,14 +111,14 @@ class NvidiaProvider:
         """
         Stream a response with tool calling loop.
 
-        Same interface as OllamaProvider/OpenRouterProvider — drop-in
-        compatible with the CLI's smart routing.
+        Same interface as NvidiaProvider/OllamaProvider/OpenRouterProvider —
+        drop-in compatible with the CLI's smart routing.
         """
         from cli.renderer import StreamRenderer
 
         tool_schemas, tool_map = self._get_tools()
         favicon = session_state.get("favicon", "")
-        renderer = StreamRenderer(console, self.label, "NVIDIA", favicon=favicon)
+        renderer = StreamRenderer(console, self.label, "Azure", favicon=favicon)
 
         max_rounds = 10
         full_response = ""
@@ -131,7 +147,7 @@ class NvidiaProvider:
                     if not delta:
                         continue
 
-                    # Kimi K2.5 and other thinking models put reasoning in a separate field
+                    # Kimi K2.5 returns reasoning on a separate field
                     reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
                     if reasoning:
                         renderer.feed_reasoning(reasoning)
@@ -164,8 +180,11 @@ class NvidiaProvider:
                 renderer.stop_spinner()
                 raise
 
-            # Capture THIS round's content only (segmented). Using full_text
-            # would include prior rounds and corrupt the message history.
+            # Capture THIS round's content only — current_segment_text reads
+            # the live _text_chunks before they're cleared by _stop_md_live().
+            # Using full_text here would include prior rounds' content and
+            # corrupt the message history (the model would echo it back,
+            # causing the duplication the user reported).
             response_text = renderer.current_segment_text
             if response_text.strip():
                 full_response += response_text
@@ -175,9 +194,10 @@ class NvidiaProvider:
                 self.messages.append({"role": "assistant", "content": response_text})
                 break
 
-            # Finalize the current segment before tool execution so the next
-            # round starts with empty buffers (see azure_openai.py for the
-            # full explanation).
+            # Finalize the current segment before tool execution. This flushes
+            # the markdown Live to scrollback, finalizes any reasoning panel,
+            # and flushes any post-content tail reasoning — so the next round
+            # starts with completely empty buffers.
             renderer.end_segment()
             renderer.stop_spinner()
 

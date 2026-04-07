@@ -1,0 +1,15 @@
+app = 'crowelm-agent'
+primary_region = 'lax'
+
+[build]
+
+[env]
+  PYTHONUNBUFFERED = '1'
+
+[processes]
+  agent = 'crowe-logic chat'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

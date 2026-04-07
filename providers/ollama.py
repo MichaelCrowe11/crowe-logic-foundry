@@ -159,16 +159,19 @@ class OllamaProvider:
                 renderer.stop_spinner()
                 raise
 
-            response_text = renderer.full_text
+            # Per-round content only (segmented) — see azure_openai.py for
+            # the full explanation of why full_text would corrupt history.
+            response_text = renderer.current_segment_text
             if response_text.strip():
-                full_response = response_text
+                full_response += response_text
 
             if not tool_calls_accumulator:
                 renderer.finish(session_state=session_state)
                 self.messages.append({"role": "assistant", "content": response_text})
                 break
 
-            renderer._stop_md_live()
+            # Finalize segment before tool execution (see azure_openai.py).
+            renderer.end_segment()
             renderer.stop_spinner()
 
             assistant_msg = {"role": "assistant", "content": response_text or None, "tool_calls": []}

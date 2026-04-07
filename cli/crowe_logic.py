@@ -25,6 +25,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.markup import escape as _rich_escape
 from rich import box
 
 from dotenv import load_dotenv
@@ -80,6 +81,7 @@ def _reset_model_chain():
     _model_state["nvidia_provider"] = None
     _model_state["openrouter_provider"] = None
     _model_state["ollama_provider"] = None
+    _model_state["azure_openai_provider"] = None
 
 
 def _get_openrouter_provider(model_name: str, label: str = "CroweLM"):
@@ -141,6 +143,48 @@ def _get_nvidia_provider(model_name: str, label: str = "CroweLM"):
     return provider
 
 
+def _get_azure_openai_provider(model_cfg: dict):
+    """
+    Get or create an AzureOpenAIProvider for the given model config.
+
+    Unlike the other providers (which share one endpoint for all models), each
+    Azure model carries its own endpoint_env / api_key_env in the MODEL_CHAIN
+    entry — so multiple Azure Foundry resources can coexist in the same chain.
+    The provider is cached by (model, endpoint) since both determine identity.
+    """
+    from config.agent_config import SYSTEM_INSTRUCTIONS
+    from providers.azure_openai import AzureOpenAIProvider
+
+    model_name = model_cfg["name"]
+    label = model_cfg["label"]
+    endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+
+    endpoint = os.environ.get(endpoint_var, "")
+    api_key = os.environ.get(api_key_var, "")
+
+    if not endpoint or not api_key:
+        raise RuntimeError(
+            f"Azure model '{label}' is missing credentials — "
+            f"set {endpoint_var} and {api_key_var} in .env"
+        )
+
+    current = _model_state.get("azure_openai_provider")
+    if (current and current.model == model_name
+            and current.endpoint == endpoint):
+        return current
+
+    provider = AzureOpenAIProvider(
+        model=model_name,
+        system_instructions=SYSTEM_INSTRUCTIONS,
+        endpoint=endpoint,
+        api_key=api_key,
+        label=label,
+    )
+    _model_state["azure_openai_provider"] = provider
+    return provider
+
+
 def _is_model_error(error_str: str) -> bool:
     """Detect errors that indicate the model itself is failing (not user error)."""
     indicators = [
@@ -185,12 +229,18 @@ def _deploy_with_model(client, model_name: str) -> str:
     return agent.id
 
 
-def get_agent_id() -> str:
+def get_agent_id() -> str | None:
+    """
+    Load the Azure Agents agent_id from disk. Returns None if no .agent_id file
+    exists or the file is corrupt — callers can decide whether that's fatal.
+
+    The Azure Agents SDK path is now a legacy fallback; the primary providers
+    (azure_openai, nvidia, openrouter, ollama) don't need an agent at all.
+    """
     if _model_state["agent_id"]:
         return _model_state["agent_id"]
     if not os.path.exists(AGENT_ID_FILE):
-        console.print("\n  [bold red]No agent found.[/bold red] Run: [bold]crowe-logic deploy[/bold]\n")
-        sys.exit(1)
+        return None
     try:
         with open(AGENT_ID_FILE) as f:
             data = json.load(f)
@@ -198,15 +248,43 @@ def get_agent_id() -> str:
             _model_state["active_model"] = data.get("model", "unknown")
             return data["agent_id"]
     except (json.JSONDecodeError, KeyError):
-        console.print("\n  [bold red]Corrupt agent file.[/bold red] Run: [bold]crowe-logic deploy[/bold]\n")
-        sys.exit(1)
+        return None
 
 
 def get_client():
+    """Build an Azure AI Agents client. Raises if the Azure identity isn't set up."""
     from azure.ai.agents import AgentsClient
     from azure.identity import DefaultAzureCredential
     from config.agent_config import PROJECT_ENDPOINT
     return AgentsClient(endpoint=PROJECT_ENDPOINT, credential=DefaultAzureCredential())
+
+
+def _ensure_azure_agents(azure_state: dict):
+    """
+    Lazy-initialize the Azure AI Agents client, thread, and agent_id.
+
+    Called on-demand only when a MODEL_CHAIN entry with provider="azure"
+    (the legacy Agents SDK path) is actually selected. Raises RuntimeError
+    if the agent or credentials are missing, so the chat loop can fall
+    through to the next model in the chain.
+    """
+    if azure_state["client"] is not None and azure_state["agent_id"] is not None:
+        return azure_state
+
+    agent_id = get_agent_id()
+    if not agent_id:
+        raise RuntimeError(
+            "Azure Agents path requires an agent — run `crowe-logic deploy` "
+            "to create one, or switch to a non-Azure-Agents model in the chain."
+        )
+
+    client = get_client()
+    thread = azure_state.get("thread") or client.threads.create()
+
+    azure_state["agent_id"] = agent_id
+    azure_state["client"] = client
+    azure_state["thread"] = thread
+    return azure_state
 
 
 def _extract_tool_info(step_details) -> list[dict]:
@@ -237,7 +315,7 @@ def _render_error(msg: str, title: str = "Error"):
     """Print a styled error panel."""
     console.print()
     console.print(Panel(
-        f"[white]{msg}[/white]",
+        f"[white]{_rich_escape(msg)}[/white]",
         title=f"[bold]{title}[/bold]",
         border_style="red",
         padding=(0, 1),
@@ -523,16 +601,23 @@ def main(ctx):
 @main.command()
 def chat():
     """Start an interactive chat session with the agent."""
+    import uuid
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.formatted_text import HTML
 
-    agent_id = get_agent_id()
-    client = get_client()
-    thread = client.threads.create()
+    # Lazy Azure Agents state — only populated if a chat turn hits the legacy
+    # Azure Agents path. Primary providers (azure_openai, nvidia, openrouter,
+    # ollama) don't need an agent/thread/client at all.
+    azure_state = {"agent_id": None, "client": None, "thread": None}
+    synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
+
+    def _active_thread_id() -> str:
+        t = azure_state["thread"]
+        return t.id if t is not None else synthetic_thread_id
 
     orch = _get_orchestrator()
-    session_id = orch.start_session(thread_id=thread.id)
+    session_id = orch.start_session(thread_id=synthetic_thread_id)
     reset_session_state()
     _reset_model_chain()
     iterm_set_var("crowe_logic_active", "1")
@@ -602,13 +687,12 @@ def chat():
             else:
                 # Switch to specified model
                 target = parts[1].strip()
-                _switch_model(client, target)
-                agent_id = _model_state["agent_id"] or get_agent_id()
+                _switch_model(azure_state, target)
             continue
 
         try:
             model_cfg = _current_model()
-            ctx = orch.prepare(user_input, thread_id=thread.id)
+            ctx = orch.prepare(user_input, thread_id=_active_thread_id())
             console.print()
 
             # Smart routing: try current model, fallback on failure
@@ -619,7 +703,14 @@ def chat():
 
                 for attempt in range(2):
                     try:
-                        if model_cfg.get("provider") == "nvidia":
+                        if model_cfg.get("provider") == "azure_openai":
+                            # ── Crowe Logic's own Azure Foundry (OpenAI-compat, key auth) ──
+                            provider = _get_azure_openai_provider(model_cfg)
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
+                        elif model_cfg.get("provider") == "nvidia":
                             # ── NVIDIA NIM path (production CroweLM) ──
                             provider = _get_nvidia_provider(model_cfg["name"], model_cfg["label"])
                             provider.add_user_message(user_input)
@@ -641,7 +732,13 @@ def chat():
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         else:
-                            # ── Azure Agent Service path ──
+                            # ── Legacy Azure AI Agents Service path (provider="azure") ──
+                            # Lazy-init the Agents client/thread/agent only when this
+                            # branch is actually hit. Raises if .agent_id is missing.
+                            _ensure_azure_agents(azure_state)
+                            client = azure_state["client"]
+                            thread = azure_state["thread"]
+                            agent_id = azure_state["agent_id"]
                             _cancel_active_runs(client, thread.id)
                             if attempt == 0:
                                 client.messages.create(
@@ -662,8 +759,12 @@ def chat():
                             if attempt < 1:
                                 wait = 3
                                 show_retry_countdown(console, wait, attempt + 2, 2)
-                                if model_cfg.get("provider") == "azure":
-                                    _cancel_active_runs(client, thread.id)
+                                if (model_cfg.get("provider") == "azure"
+                                        and azure_state["client"] is not None
+                                        and azure_state["thread"] is not None):
+                                    _cancel_active_runs(
+                                        azure_state["client"], azure_state["thread"].id
+                                    )
                                 continue
                         elif _is_model_error(error_msg):
                             last_error = error_msg
@@ -693,20 +794,31 @@ def chat():
                     f"{next_model['label']}...[/dim #bfa669]"
                 )
 
-                # If switching to Azure, deploy a new agent
+                # If switching to legacy Azure Agents, lazy-init and deploy
                 if next_model.get("provider") == "azure":
                     try:
-                        agent_id = _deploy_with_model(client, next_model["name"])
-                        _cancel_active_runs(client, thread.id)
-                        thread = client.threads.create()
+                        _ensure_azure_agents(azure_state)
+                        agent_id = _deploy_with_model(
+                            azure_state["client"], next_model["name"]
+                        )
+                        _cancel_active_runs(
+                            azure_state["client"], azure_state["thread"].id
+                        )
+                        azure_state["thread"] = azure_state["client"].threads.create()
+                        azure_state["agent_id"] = agent_id
                     except Exception as deploy_err:
-                        console.print(f"  [dim red]Fallback deploy failed: {deploy_err}[/dim red]")
+                        console.print(f"  [dim red]Fallback deploy failed: {_rich_escape(str(deploy_err))}[/dim red]")
                         continue
 
             console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
         except Exception as e:
             error_msg = str(e)
-            if "while a run" in error_msg and "is active" in error_msg:
+            if (azure_state["client"] is not None
+                    and azure_state["thread"] is not None
+                    and "while a run" in error_msg and "is active" in error_msg):
+                client = azure_state["client"]
+                thread = azure_state["thread"]
+                agent_id = azure_state["agent_id"]
                 _cancel_active_runs(client, thread.id)
                 console.print("  [dim]Cancelled stale run — retrying...[/dim]")
                 time.sleep(1)
@@ -826,25 +938,28 @@ def _show_models():
     console.print()
 
 
-def _switch_model(client, target: str):
+def _switch_model(azure_state: dict, target: str):
     """Manually switch to a model by index (1-based) or deployment name."""
 
     def _activate(model, idx):
         _model_state["chain_index"] = idx
         console.print(f"  [#bfa669]Switching to {model['label']}...[/#bfa669]")
         provider = model.get("provider")
-        if provider in ("nvidia", "openrouter", "ollama"):
-            _model_state[f"{provider}_provider"] = None
+        if provider in ("azure_openai", "nvidia", "openrouter", "ollama"):
+            # Reset cached provider so the next turn rebuilds with the new model
+            cache_key = f"{provider}_provider"
+            _model_state[cache_key] = None
             session_state["active_model"] = model["label"]
             console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
         else:
-            # Azure — deploy a new agent
+            # Legacy Azure AI Agents — lazy-init and deploy a new agent
             try:
-                _deploy_with_model(client, model["name"])
+                _ensure_azure_agents(azure_state)
+                _deploy_with_model(azure_state["client"], model["name"])
                 session_state["active_model"] = model["label"]
                 console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
             except Exception as e:
-                console.print(f"  [red]Failed to activate {model['label']}: {e}[/red]")
+                console.print(f"  [red]Failed to activate {model['label']}: {_rich_escape(str(e))}[/red]")
         iterm_set_var("crowe_logic_model", model["label"])
 
     # Try numeric index first
@@ -975,11 +1090,47 @@ def _show_help():
 @click.argument("prompt")
 def run(prompt: str):
     """Run a single prompt and print the response."""
-    agent_id = get_agent_id()
-    client = get_client()
-    thread = client.threads.create()
-    client.messages.create(thread_id=thread.id, role="user", content=prompt)
-    stream_response(client, thread.id, agent_id)
+    # Route through the primary model in the chain (azure_openai by default).
+    # No Azure Agents thread/client needed unless the chain falls through to
+    # the legacy "azure" provider.
+    reset_session_state()
+    _reset_model_chain()
+    model_cfg = _current_model()
+    favicon = get_favicon()
+    session_state["favicon"] = favicon
+    orch = _get_orchestrator()
+    import uuid
+    synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
+    orch.start_session(thread_id=synthetic_thread_id)
+    orch.prepare(prompt, thread_id=synthetic_thread_id)
+
+    provider_kind = model_cfg.get("provider")
+    try:
+        if provider_kind == "azure_openai":
+            provider = _get_azure_openai_provider(model_cfg)
+        elif provider_kind == "nvidia":
+            provider = _get_nvidia_provider(model_cfg["name"], model_cfg["label"])
+        elif provider_kind == "openrouter":
+            provider = _get_openrouter_provider(model_cfg["name"], model_cfg["label"])
+        elif provider_kind == "ollama":
+            provider = _get_ollama_provider(model_cfg["name"], model_cfg["label"])
+        else:
+            # Legacy Azure AI Agents path
+            azure_state = {"agent_id": None, "client": None, "thread": None}
+            _ensure_azure_agents(azure_state)
+            client = azure_state["client"]
+            thread = azure_state["thread"]
+            agent_id = azure_state["agent_id"]
+            client.messages.create(thread_id=thread.id, role="user", content=prompt)
+            stream_response(client, thread.id, agent_id)
+            return
+
+        provider.add_user_message(prompt)
+        provider.stream_response(
+            console, render_tool_card, session_state, _get_orchestrator,
+        )
+    except Exception as e:
+        _render_error(str(e))
 
 
 @main.command()
@@ -990,6 +1141,8 @@ def deploy():
         MODEL_CHAIN, OLLAMA_BASE_URL, NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY,
         OPENROUTER_API_KEY, OPENROUTER_BASE_URL, NEON_DATABASE_URL,
         AGENT_NAME, AGENT_VERSION,
+        AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
+        AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
     )
     import requests
 
@@ -1002,6 +1155,16 @@ def deploy():
         {"role": "system", "content": "You are helpful. Be brief."},
         {"role": "user", "content": "Reply with exactly: OK"},
     ]
+
+    def _token_limit_kwargs(model_name: str) -> dict:
+        """
+        GPT-5 and o-series reasoning models reject `max_tokens` and require
+        `max_completion_tokens`. Everything else still uses `max_tokens`.
+        """
+        lname = model_name.lower()
+        if lname.startswith(("gpt-5", "o1", "o3", "o4")) or "gpt-5" in lname:
+            return {"max_completion_tokens": 50}
+        return {"max_tokens": 50}
 
     results = []
 
@@ -1016,13 +1179,34 @@ def deploy():
             import time
             start = time.monotonic()
 
-            if provider == "nvidia":
+            if provider == "azure_openai":
+                endpoint_var = model.get("endpoint_env", "AZURE_CORE_ENDPOINT")
+                api_key_var = model.get("api_key_env", "AZURE_CORE_API_KEY")
+                endpoint = os.environ.get(endpoint_var, "")
+                api_key = os.environ.get(api_key_var, "")
+                if not endpoint or not api_key:
+                    status = "no credentials"
+                else:
+                    base_url = endpoint.rstrip("/")
+                    if not base_url.endswith("/v1") and "/openai/v1" not in base_url:
+                        if base_url.endswith("/openai"):
+                            base_url += "/v1"
+                        else:
+                            base_url += "/openai/v1"
+                    client = OpenAI(api_key=api_key, base_url=base_url)
+                    resp = client.chat.completions.create(
+                        model=name, messages=test_msg, **_token_limit_kwargs(name),
+                    )
+                    content = (resp.choices[0].message.content or "").strip()
+                    status = "live" if resp.choices else "empty"
+
+            elif provider == "nvidia":
                 if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
                     status = "no credentials"
                 else:
                     client = OpenAI(api_key=NVIDIA_API_KEY, base_url=f"{NVIDIA_NIM_ENDPOINT.rstrip('/')}/v1")
                     resp = client.chat.completions.create(
-                        model=name, messages=test_msg, max_tokens=50,
+                        model=name, messages=test_msg, **_token_limit_kwargs(name),
                     )
                     content = (resp.choices[0].message.content or "").strip()
                     status = "live" if resp.choices else "empty"
@@ -1041,7 +1225,7 @@ def deploy():
                 else:
                     client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
                     resp = client.chat.completions.create(
-                        model=name, messages=test_msg, max_tokens=50,
+                        model=name, messages=test_msg, **_token_limit_kwargs(name),
                     )
                     content = (resp.choices[0].message.content or "").strip()
                     status = "live" if resp.choices else "empty"
@@ -1240,7 +1424,24 @@ def resume():
     console.print(f"  [#bfa669]Resuming session:[/#bfa669] {last.get('summary', 'no summary')}")
     console.print(f"  [dim]Thread: {thread_id}[/dim]")
 
+    # Resume is inherently tied to a legacy Azure Agents thread. Synthetic
+    # local-* thread IDs from the new provider system have no server-side
+    # state to resume, so refuse them up front with a clear message.
+    if thread_id.startswith("local-"):
+        console.print(
+            "  [yellow]This session has no server-side state to resume "
+            "(it ran on a non-Azure-Agents model).[/yellow]"
+        )
+        console.print("  [dim]Start a fresh chat with `crowe-logic chat`.[/dim]\n")
+        return
+
     agent_id = get_agent_id()
+    if not agent_id:
+        console.print(
+            "  [red]No agent found.[/red] Run `crowe-logic deploy` to create one "
+            "before resuming a legacy Azure Agents thread.\n"
+        )
+        return
     client = get_client()
     orch.start_session(thread_id=thread_id)
     reset_session_state()

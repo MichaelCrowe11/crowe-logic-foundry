@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir -e .
 ENTRYPOINT ["crowe-logic"]
 CMD ["chat"]
 
-# ── GPU variant for fine-tuning ─────────────────
+# ── GPU variant (build with: docker build --target gpu) ───
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS gpu
 
 LABEL maintainer="michael@crowelogic.com"
@@ -79,3 +79,6 @@ RUN pip install --no-cache-dir -e ".[quantum]"
 
 ENTRYPOINT ["crowe-logic"]
 CMD ["chat"]
+
+# ── Default target for CI/Render/Fly (must be last FROM) ──
+FROM base
