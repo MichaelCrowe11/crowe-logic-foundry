@@ -183,71 +183,82 @@ def _get_avatar_seq(width: int = 8) -> str:
     return _inline_image_seq(avatar_path, width=width)
 
 
-def welcome_screen(version: str = "0.1.0", avatar_seq: str = ""):
-    tw = min(_term_width(), 72)
-    bar = f"{GOLD}{'━' * tw}{RESET}"
-    thin = f"{GOLD}{DIM}{'─' * tw}{RESET}"
+def welcome_screen(version: str = "0.1.0", avatar_seq: str = "") -> str:
+    """Render the Crowe Logic signature welcome screen.
 
-    # Raw logo lines (no ANSI, no leading spaces) — centered below
-    crowe_lines = [
-        " ██████╗██████╗  ██████╗ ██╗    ██╗███████╗",
-        "██╔════╝██╔══██╗██╔═══██╗██║    ██║██╔════╝",
-        "██║     ██████╔╝██║   ██║██║ █╗ ██║█████╗",
-        "██║     ██╔══██╗██║   ██║██║███╗██║██╔══╝",
-        "╚██████╗██║  ██║╚██████╔╝╚███╔███╔╝███████╗",
-        " ╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚══╝╚══╝ ╚══════╝",
-    ]
-    logic_lines = [
-        "██╗      ██████╗  ██████╗ ██╗ ██████╗",
-        "██║     ██╔═══██╗██╔════╝ ██║██╔════╝",
-        "██║     ██║   ██║██║  ███╗██║██║",
-        "██║     ██║   ██║██║   ██║██║██║",
-        "███████╗╚██████╔╝╚██████╔╝██║╚██████╗",
-        "╚══════╝ ╚═════╝  ╚═════╝ ╚═╝ ╚═════╝",
-    ]
+    Layout (top to bottom):
+      - Hairline rule, full terminal width, dim gold
+      - Centered mark (inline image avatar OR diamond glyph)
+      - Centered wordmark "C R O W E   L O G I C" in bold gold
+      - Centered version + active model line in dim
+      - Centered tagline in white
+      - Hairline rule
+      - Commands hint in dim, indented
 
-    # Center as a BLOCK (align to widest line), not per-line
-    crowe_max = max(len(l) for l in crowe_lines)
-    logic_max = max(len(l) for l in logic_lines)
-    crowe_pad = max(0, (tw - crowe_max) // 2)
-    logic_pad = max(0, (tw - logic_max) // 2)
+    All centering uses the full terminal width via `center()`. The
+    rule spans the full terminal width via `hairline()`. There is no
+    72-column clamp, no block-relative centering, and no ASCII art.
+    """
+    w = term_width()
+    rule = hairline(w)
 
-    centered_logo = "\n".join(
-        f"{GOLD}{BOLD}{' ' * crowe_pad}{l}{RESET}" for l in crowe_lines
-    )
-    centered_logic = "\n".join(
-        f"{GOLD}{BOLD}{' ' * logic_pad}{l}{RESET}" for l in logic_lines
-    )
-    version_tag = _center(f"v{version}", tw)
+    # Wordmark: letter-spaced caps. "C R O W E   L O G I C" reads as
+    # typography rather than decoration. Three spaces between words,
+    # one between letters.
+    wordmark_plain = "C R O W E   L O G I C"
+    wordmark = f"{GOLD}{BOLD}{wordmark_plain}{RESET}"
+    wordmark_line = center(wordmark, w)
 
-    tagline_text = "Universal AI Agent  ---  Crowe Logic, Inc."
-    centered_tagline = _center(tagline_text, tw)
-
-    cmd_line1 = "Type naturally --- the agent selects tools automatically."
-    cmd_line2 = "/tools  /status  /clear  /help  /exit"
-
-    # Avatar sits centered inside the banner, right above the ASCII art.
-    # Only include the avatar line if we have an actual inline image.
+    # Mark: inline image where supported, glyph fallback otherwise.
+    # Both modes are visually equivalent: a single anchor point.
     if avatar_seq:
-        avatar_block = f"\n{' ' * max(0, (tw - 8) // 2)}{avatar_seq}"
+        # The avatar_seq is an iTerm2 inline image escape, which has
+        # zero measurable width to len(). We approximate the visual
+        # width as 4 cells (matching the width=4 setting in
+        # _get_avatar_seq) and pad accordingly.
+        mark_pad = max(0, (w - 4) // 2)
+        mark_line = " " * mark_pad + avatar_seq
     else:
-        avatar_block = ""
+        mark_line = center(f"{GOLD}{BOLD}{MARK}{RESET}", w)
 
-    return f"""
-{bar}{avatar_block}
+    # Build version + model line. The active model is read from
+    # session_state if set; otherwise the line shows just the version.
+    active_model = session_state.get("active_model", "") if session_state else ""
+    if active_model:
+        version_text = f"v{version}  {DOT}  {active_model}"
+    else:
+        version_text = f"v{version}"
+    version_line = center(f"{DIM}{version_text}{RESET}", w)
 
-{centered_logo}
+    tagline_plain = f"Universal AI Agent  {DOT}  Crowe Logic, Inc."
+    tagline_line = center(f"{WHITE}{tagline_plain}{RESET}", w)
 
-{centered_logic}
-{DIM}{version_tag}{RESET}
-{thin}
-{WHITE}{centered_tagline}{RESET}
-{thin}
+    cmd_hint = f"{DIM}Type naturally. The agent selects tools automatically.{RESET}"
+    cmd_list = f"{DIM}/tools   /model   /data   /status   /help   /exit{RESET}"
+    indent = " " * GUTTER
 
-{DIM}{_center(cmd_line1, tw)}{RESET}
-{DIM}{_center(cmd_line2, tw)}{RESET}
-{bar}
-"""
+    return (
+        "\n"
+        f"{rule}\n"
+        "\n"
+        "\n"
+        f"{mark_line}\n"
+        "\n"
+        "\n"
+        f"{wordmark_line}\n"
+        f"{version_line}\n"
+        "\n"
+        "\n"
+        f"{tagline_line}\n"
+        "\n"
+        "\n"
+        f"{rule}\n"
+        "\n"
+        f"{indent}{cmd_hint}\n"
+        "\n"
+        f"{indent}{cmd_list}\n"
+        "\n"
+    )
 
 
 def show_welcome(version: str = "0.1.0"):
