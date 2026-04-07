@@ -685,8 +685,10 @@ def chat():
                 # Show current model and available chain
                 _show_models()
             else:
-                # Switch to specified model
-                target = parts[1].strip()
+                # Switch to specified model. Strip surrounding angle brackets,
+                # quotes, and whitespace — users often type the literal `<2>`
+                # placeholder syntax from the help hint.
+                target = parts[1].strip().strip("<>").strip("'\"").strip()
                 _switch_model(azure_state, target)
             continue
 
@@ -934,7 +936,7 @@ def _show_models():
 
     console.print()
     console.print(table)
-    console.print("  [dim]Switch: /model <number or name>[/dim]")
+    console.print("  [dim]Switch with: /model 2   or   /model kernel[/dim]")
     console.print()
 
 
