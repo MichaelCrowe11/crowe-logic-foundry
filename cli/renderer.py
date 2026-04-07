@@ -16,21 +16,27 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.live import Live
 from rich.spinner import Spinner
-from rich.columns import Columns
 from rich import box
 
-# ── Colors ────────────────────────────────────────────────────
-GOLD = "#bfa669"
-GREEN = "#6fbf73"
-RED = "#bf6f6f"
-BLUE = "#8fa4bf"
-DIM_GOLD = "dim #bfa669"
+from cli.branding import (
+    DOT,
+    GUTTER,
+    GOLD_HEX as GOLD,
+    GOLD_DIM_HEX as DIM_GOLD,
+)
 
-# Refresh rate for live displays (frames per second)
+# Refresh rate for live displays (frames per second).
+#
+# Rich's Live widget throttles how often the *current* renderable is
+# drawn to the terminal — but constructing a Markdown renderable parses
+# the full string each time, and Live does NOT throttle that. We must
+# throttle the parse step ourselves, otherwise feed() does an O(n) join
+# + Markdown parse on every single token (250x more parsing work than
+# the user can ever see at 20fps).
 _STREAM_FPS = 20
 # Reasoning panels render plain text at a lower rate — reasoning streams
-# can be very long, and 8 FPS feels smooth without burning CPU on Markdown
-# re-parsing 20 times per second.
+# can be very long, and 8 FPS feels smooth without burning CPU on
+# re-renders.
 _REASONING_FPS = 8
 
 
@@ -61,7 +67,7 @@ class StreamRenderer:
         transient Live spinner from clobbering the header on cleanup.
 
     Usage:
-        renderer = StreamRenderer(console, model_label, provider_name, favicon)
+        renderer = StreamRenderer(console, model_label, favicon)
         renderer.start()             # shows avatar + label + spinner
         renderer.begin_stream()      # transitions to live markdown
         renderer.feed(token)         # append token
@@ -69,10 +75,9 @@ class StreamRenderer:
         renderer.finish()            # renders telemetry footer
     """
 
-    def __init__(self, console, model_label: str, provider_name: str, favicon: str = ""):
+    def __init__(self, console, model_label: str, favicon: str = ""):
         self.console = console
         self.model_label = model_label
-        self.provider_name = provider_name.upper()
         self.favicon = favicon
 
         # Segmented text state — a "segment" is one streaming pass between
@@ -85,10 +90,11 @@ class StreamRenderer:
         self._reasoning_chunks: list[str] = []
         self._token_count = 0
         self._reasoning_token_count = 0
-        # Throttle for reasoning Live updates — Markdown re-parsing is
-        # expensive, and reasoning streams can be 1k+ tokens. We update at
-        # most ~_REASONING_FPS times per second; the Live widget picks up
-        # the latest renderable on its next tick anyway.
+        # Throttles for the Live widgets. Rich's Live throttles redraw at
+        # refresh_per_second but we must also throttle the construction of
+        # the renderable itself, since parsing Markdown / re-joining the
+        # chunk list per token would dominate the streaming hot path.
+        self._last_md_update: float = 0.0
         self._last_reason_update: float = 0.0
 
         self._spinner = None
@@ -163,17 +169,28 @@ class StreamRenderer:
             vertical_overflow="visible",
         )
         self._md_live.start()
+        self._last_md_update = 0.0
 
     def feed(self, token: str):
-        """Append a content token to the live stream."""
+        """Append a content token to the live stream.
+
+        The Markdown re-parse is throttled to _STREAM_FPS — see the
+        comment on _STREAM_FPS for why this matters. The unthrottled
+        token is always appended to _text_chunks; _stop_md_live does
+        a final flush so nothing is lost between the last throttled
+        tick and the end of the stream.
+        """
         if not self._streaming:
             self.begin_stream()
         if self._t_first_token == 0.0:
             self._t_first_token = time.monotonic()
         self._text_chunks.append(token)
         self._token_count += 1
-        if self._md_live:
-            self._md_live.update(Markdown("".join(self._text_chunks)))
+        if self._md_live is not None:
+            now = time.monotonic()
+            if now - self._last_md_update >= (1.0 / _STREAM_FPS):
+                self._last_md_update = now
+                self._md_live.update(Markdown("".join(self._text_chunks)))
 
     def feed_reasoning(self, token: str):
         """Append a reasoning/thinking token.
@@ -267,7 +284,6 @@ class StreamRenderer:
         if self._reasoning_token_count > 0:
             parts.append(f"{self._reasoning_token_count} reasoning")
 
-        from cli.branding import DOT, GUTTER
         footer = Text()
         footer.append(" " * GUTTER, style="dim")
         for i, part in enumerate(parts):
