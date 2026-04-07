@@ -4,6 +4,12 @@
 
 services:
   admin:
+    # Tag the built image as crowe-ide-codeserver so the Session Router
+    # (which uses IMAGE_NAME=crowe-ide-codeserver from .env) can spawn
+    # subscriber containers from the same image. Without this, compose
+    # auto-names it "<project>-admin" and the router fails with
+    # "no such image" the first time a real user requests a session.
+    image: crowe-ide-codeserver:latest
     build:
       context: .
       dockerfile: Dockerfile.code-server
