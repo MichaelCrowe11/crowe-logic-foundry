@@ -7,13 +7,38 @@ import sys
 import shutil
 import subprocess
 
-# ── Colors ────────────────────────────────────────────────────
+# ── Design tokens ─────────────────────────────────────────────
+# Color palette. Hex values mirror the Rich style strings used by
+# the renderer; the ANSI escapes are used by the welcome banner
+# which writes raw bytes to stdout (Rich is not in scope there).
+GOLD_HEX = "#bfa669"
+GOLD_DIM_HEX = "dim #bfa669"
+WHITE_HEX = "#ffffff"
+GREEN_HEX = "#6fbf73"
+RED_HEX = "#bf6f6f"
+AMBER_HEX = "#d4a645"
+BLUE_HEX = "#8fa4bf"
+
 GOLD = "\033[38;2;191;166;105m"
 GOLD_BG = "\033[48;2;191;166;105m"
 WHITE = "\033[97m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
+
+# Glyph alphabet. Selected for legibility in monospace fonts and
+# absence of ambiguous-width characters.
+MARK = "\u25c6"          # signature mark (fallback when no inline image)
+RULE = "\u2500"          # hairline horizontal rule
+RULE_HEAVY = "\u2501"    # heavy horizontal rule
+DOT = "\u00b7"           # inline separator
+BAR = "\u2502"           # vertical rail
+CHECK = "\u2713"         # success
+CROSS = "\u2717"         # failure
+ARROW = "\u203a"         # prompt continuation, running tool
+
+# Layout
+GUTTER = 2               # left indent for non-centered content
 
 # ── Dimensions ────────────────────────────────────────────────
 def _term_width():
