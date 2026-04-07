@@ -9,5 +9,6 @@ prompt-toolkit>=3.0.0
 python-dotenv>=1.0.0
 httpx>=0.28.0
 beautifulsoup4>=4.12.0
+wcwidth>=0.2.13
 # crowe-quantum-trinity — optional, install separately for quantum features
 # iterm2 — only needed for local CLI, not in Docker
