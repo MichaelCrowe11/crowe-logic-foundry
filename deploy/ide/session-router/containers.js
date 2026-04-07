@@ -2,7 +2,11 @@
 // Container lifecycle manager — creates, starts, stops, and removes
 // per-user Docker containers with role-based resource limits.
 
+const http = require('http');
+
 const LABEL_PREFIX = 'crowe-ide';
+const READY_TIMEOUT_MS = 15000;
+const READY_POLL_MS = 200;
 const BASE_PORT = 10001; // 10000 reserved for admin in docker-compose
 const MAX_PORT = 10100;
 
@@ -18,6 +22,36 @@ const PROFILES = {
     network: 'ide-subscribers',
   },
 };
+
+// Poll http://127.0.0.1:<port>/healthz until code-server answers 200 or we
+// hit the timeout. Without this, the proxy races code-server's startup and
+// the first request after spawn fails with "socket hang up".
+function waitForReady(port) {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + READY_TIMEOUT_MS;
+    function attempt() {
+      const req = http.get(
+        { host: '127.0.0.1', port, path: '/healthz', timeout: 1000 },
+        (res) => {
+          res.resume();
+          if (res.statusCode === 200) return resolve();
+          if (Date.now() > deadline) {
+            return reject(new Error(`code-server not ready on :${port} (last status ${res.statusCode})`));
+          }
+          setTimeout(attempt, READY_POLL_MS);
+        }
+      );
+      req.on('error', () => {
+        if (Date.now() > deadline) {
+          return reject(new Error(`code-server not ready on :${port} (no response)`));
+        }
+        setTimeout(attempt, READY_POLL_MS);
+      });
+      req.on('timeout', () => req.destroy());
+    }
+    attempt();
+  });
+}
 
 function createContainerManager({ docker, imageName }) {
   const allocatedPorts = new Set();
@@ -62,6 +96,7 @@ function createContainerManager({ docker, imageName }) {
       const bindings = info.NetworkSettings?.Ports?.['8080/tcp'];
       const port = bindings?.[0]?.HostPort ? parseInt(bindings[0].HostPort, 10) : existing.port;
       if (port) allocatedPorts.add(port);
+      if (port) await waitForReady(port);
       return { containerId: existing.containerId, port };
     }
 
@@ -104,6 +139,7 @@ function createContainerManager({ docker, imageName }) {
     });
 
     await container.start();
+    await waitForReady(port);
     return { containerId: container.id, port };
   }
 
