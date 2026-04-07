@@ -40,9 +40,71 @@ ARROW = "\u203a"         # prompt continuation, running tool
 # Layout
 GUTTER = 2               # left indent for non-centered content
 
-# ── Dimensions ────────────────────────────────────────────────
-def _term_width():
-    return shutil.get_terminal_size((60, 24)).columns
+# ── Layout primitives ────────────────────────────────────────
+def term_width() -> int:
+    """Current terminal width in columns. Defaults to 80 if undetectable."""
+    return shutil.get_terminal_size((80, 24)).columns
+
+
+# Backwards-compat alias for older callers.
+_term_width = term_width
+
+
+def cell_width(text: str) -> int:
+    """Visual width of a string in terminal cells.
+
+    Uses wcwidth to handle double-width and ambiguous-width characters
+    correctly. Falls back to len() if wcwidth is unavailable. This is
+    the fix for "lines half sticking out": len() undercounts box
+    drawing characters in some monospace fonts, which throws off any
+    centering math that uses it.
+    """
+    try:
+        from wcwidth import wcswidth
+    except ImportError:
+        return len(text)
+    width = wcswidth(text)
+    return width if width is not None and width >= 0 else len(text)
+
+
+_ANSI_RE = None
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences for accurate width measurement."""
+    global _ANSI_RE
+    if _ANSI_RE is None:
+        import re
+        _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07")
+    return _ANSI_RE.sub("", text)
+
+
+def center(text: str, width: int | None = None) -> str:
+    """Center plain text against the terminal width (or override).
+
+    Strips ANSI escape sequences before measuring so colored text
+    centers correctly. The returned string preserves any escapes
+    that were present in the input.
+    """
+    w = width if width is not None else term_width()
+    plain = _strip_ansi(text)
+    pad = max(0, (w - cell_width(plain)) // 2)
+    return " " * pad + text
+
+
+# Backwards-compat alias for older callers.
+_center = center
+
+
+def hairline(width: int | None = None, heavy: bool = False, dim: bool = True) -> str:
+    """Return a horizontal rule spanning the full terminal width.
+
+    The rule is rendered with the gold accent color, optionally dimmed.
+    """
+    w = width if width is not None else term_width()
+    glyph = RULE_HEAVY if heavy else RULE
+    style = f"{GOLD}{DIM}" if dim else GOLD
+    return f"{style}{glyph * w}{RESET}"
 
 
 # ── Inline image helpers ──────────────────────────────────────
@@ -112,12 +174,6 @@ def get_favicon() -> str:
 
 
 # ── Welcome screen ───────────────────────────────────────────
-def _center(text: str, width: int) -> str:
-    """Center a plain-text line within *width* columns."""
-    pad = max(0, (width - len(text)) // 2)
-    return " " * pad + text
-
-
 def _get_avatar_seq(width: int = 8) -> str:
     """Get the centered avatar inline image sequence, or empty string."""
     icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
