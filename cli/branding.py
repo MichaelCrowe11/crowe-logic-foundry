@@ -370,35 +370,40 @@ def summarize_tool_result(tool_name: str, result: str) -> str:
 def render_tool_card(console, name: str, args: str,
                      status: str = "running",
                      result: str = "", duration_ms: int = 0):
-    """Render a hybrid tool execution card.
+    """Render a tool execution card.
 
-    status: 'running' | 'ok' | 'fail'
+    Three states:
+      running: single line with arrow indicator
+      ok:      two lines, gold left rail, check mark
+      fail:    two lines, red left rail, cross mark
+
+    All glyphs and colors come from the design token module.
     """
     from rich.text import Text
 
-    # Truncate args for display
+    # Truncate args for display (the full args go to the tool log).
     if args and len(args) > 70:
         args = args[:67] + "..."
 
+    indent = " " * GUTTER
+
     if status == "running":
         label = Text()
-        label.append("  > ", style="dim #bfa669")
-        label.append(name, style="bold #bfa669")
+        label.append(f"{indent}{ARROW} ", style=f"dim {GOLD_HEX}")
+        label.append(name, style=f"bold {GOLD_HEX}")
         if args:
             label.append(f"  {args}", style="dim")
         console.print(label)
         return
 
-    # Completed card — two lines with left border
-    border_color = "#bfa669" if status == "ok" else "#bf6f6f"
-    check = "\u2713" if status == "ok" else "\u2717"
-    check_color = "#6fbf73" if status == "ok" else "#bf6f6f"
+    border_color = GOLD_HEX if status == "ok" else RED_HEX
+    check_glyph = CHECK if status == "ok" else CROSS
+    check_color = GREEN_HEX if status == "ok" else RED_HEX
 
     duration_str = f"{duration_ms / 1000:.1f}s" if duration_ms else ""
 
     summary = summarize_tool_result(name, result) if status == "ok" else ""
     if status == "fail" and result:
-        # Extract error message
         try:
             import json as _json
             err = _json.loads(result)
@@ -407,19 +412,19 @@ def render_tool_card(console, name: str, args: str,
             summary = result.strip().split("\n")[0][:60]
 
     line1 = Text()
-    line1.append("  \u2503 ", style=border_color)
+    line1.append(f"{indent}{BAR} ", style=border_color)
     line1.append(name, style=f"bold {border_color}")
     if args:
         line1.append(f"  {args}", style="dim")
 
     line2 = Text()
-    line2.append("  \u2503 ", style=border_color)
-    line2.append(f"{check} ", style=check_color)
+    line2.append(f"{indent}{BAR} ", style=border_color)
+    line2.append(f"{check_glyph} ", style=check_color)
     if summary:
         line2.append(summary, style="dim")
     if duration_str:
         if summary:
-            line2.append(" \u00b7 ", style="dim")
+            line2.append(f" {DOT} ", style="dim")
         line2.append(duration_str, style="dim")
 
     console.print(line1)
