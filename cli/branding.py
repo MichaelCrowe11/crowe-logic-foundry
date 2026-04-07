@@ -431,6 +431,29 @@ def render_tool_card(console, name: str, args: str,
     console.print(line2)
 
 
+def render_error(console, title: str, detail: str | None = None):
+    """Render a structured error block.
+
+    Format mirrors a failed tool card: red left rail, cross glyph,
+    title in bold red, optional detail lines below.
+    """
+    from rich.text import Text
+
+    indent = " " * GUTTER
+
+    head = Text()
+    head.append(f"{indent}{CROSS} ", style=RED_HEX)
+    head.append(title, style=f"bold {RED_HEX}")
+    console.print(head)
+
+    if detail:
+        for line in detail.strip().splitlines():
+            row = Text()
+            row.append(f"{indent}{BAR} ", style=RED_HEX)
+            row.append(line, style="dim")
+            console.print(row)
+
+
 # ── Rate limit countdown bar ─────────────────────────────────
 def show_retry_countdown(console, wait_seconds: float, attempt: int, max_attempts: int):
     """Show a progress bar countdown during rate limit retry."""
