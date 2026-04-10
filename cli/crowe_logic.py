@@ -6,6 +6,7 @@ Usage:
     crowe-logic                       # Interactive chat (default)
     crowe-logic chat                  # Interactive chat session
     crowe-logic run "your prompt"     # Single prompt, get response
+    crowe-logic headless              # JSON-streaming Crowe Logic Command
     crowe-logic deploy                # Create/recreate the agent
     crowe-logic status                # Show agent status
     crowe-logic tools                 # List available tools
@@ -1322,6 +1323,28 @@ def status():
 def tools():
     """List all available tools."""
     _list_tools_inline()
+
+
+@main.command(name="headless")
+@click.option("--input", "input_path", help="Read headless JSON input from this file instead of stdin")
+@click.option("--model", default="auto", show_default=True,
+              help="Model id from MODEL_CHAIN to run in headless mode")
+def headless_cmd(input_path: str | None, model: str):
+    """Run one headless JSON-streaming turn for external hosts."""
+    from cli.headless import main as headless_main
+
+    argv = ["crowe-logic-headless"]
+    if input_path:
+        argv.extend(["--input", input_path])
+    if model:
+        argv.extend(["--model", model])
+
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = argv
+        raise SystemExit(headless_main())
+    finally:
+        sys.argv = old_argv
 
 
 @main.command()

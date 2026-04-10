@@ -114,16 +114,24 @@ class BaseOpenAIProvider:
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
 
-    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator):
+    def stream_response(
+        self,
+        console,
+        render_tool_card,
+        session_state,
+        _get_orchestrator,
+        renderer=None,
+    ):
         """Stream a response with the tool-calling loop.
 
         Drop-in compatible across all OpenAI-compatible providers.
         """
-        from cli.renderer import StreamRenderer
-
         tool_schemas, tool_map = load_tools()
-        favicon = session_state.get("favicon", "")
-        renderer = StreamRenderer(console, self.label, favicon=favicon)
+        if renderer is None:
+            from cli.renderer import StreamRenderer
+
+            favicon = session_state.get("favicon", "")
+            renderer = StreamRenderer(console, self.label, favicon=favicon)
 
         full_response = ""
 
@@ -271,5 +279,6 @@ class BaseOpenAIProvider:
                     "content": result_str[:50000],
                 })
 
-        console.print()
+        if console is not None:
+            console.print()
         return full_response

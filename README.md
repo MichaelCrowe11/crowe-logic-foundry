@@ -39,10 +39,25 @@ crowe-logic
 crowe-logic              # Interactive chat (default)
 crowe-logic chat         # Interactive chat session
 crowe-logic run "prompt" # Single prompt, get response
+crowe-logic headless     # Crowe Logic Command JSON event stream
 crowe-logic deploy       # Create/recreate the agent
 crowe-logic status       # Show agent status
 crowe-logic tools        # List available tools
 ```
+
+## Crowe Logic Command
+
+For external hosts that need a structured agent runtime, Foundry now
+ships a headless JSON-streaming entrypoint branded as Crowe Logic
+Command:
+
+```bash
+crowe-logic headless --input request.json
+```
+
+It emits newline-delimited JSON events for tokens, reasoning, tool
+execution, and completion so Studio or other hosts can render the run in
+their own UI without parsing terminal output.
 
 ## Tools (75)
 
