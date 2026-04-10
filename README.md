@@ -1,6 +1,6 @@
 # Crowe Logic
 
-Universal AI agent powered by gpt-oss-120b on Azure AI Foundry. 74 built-in tools across cultivation, quantum computing, vision analysis, music composition, and more.
+Universal AI agent powered by gpt-oss-120b on Azure AI Foundry. 75 built-in tools across cultivation, quantum computing, vision analysis, video generation, music composition, and more.
 
 ## Install
 
@@ -44,7 +44,7 @@ crowe-logic status       # Show agent status
 crowe-logic tools        # List available tools
 ```
 
-## Tools (74)
+## Tools (75)
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -58,6 +58,7 @@ crowe-logic tools        # List available tools
 | Quantum Computing | 7 | QubitFlow circuits, Synapse pipelines, Trinity bridge |
 | Music Composition | 5 | Talon engine -- scales, chords, MIDI, Ableton integration |
 | Vision & Image | 2 | Multi-backend photo analysis (OpenRouter, Crowe Vision) |
+| Video Generation | 1 | Azure-hosted Sora 2 text/image-to-video generation |
 | CroweLM Training | 10 | Dataset management, curation, fine-tuning pipeline |
 | Crowe Logic Platform | 4 | Chat, vision, grow logs, SOP generation via ai.southwestmushrooms.com |
 | MCP Client | 2 | Connect to 5,800+ MCP servers on demand |
@@ -88,6 +89,9 @@ See [crowe-logic-mcp](https://github.com/MichaelCrowe11/crowe-logic-mcp) for con
 |----------|-------------|
 | `AZURE_AI_PROJECT_ENDPOINT` | Azure AI Foundry project endpoint |
 | `AZURE_AI_DEPLOYMENT` | Model deployment name |
+| `AZURE_SORA_ENDPOINT` | Optional dedicated Sora endpoint; falls back to `AZURE_CORE_ENDPOINT` |
+| `AZURE_SORA_API_KEY` | Optional dedicated Sora API key; falls back to `AZURE_CORE_API_KEY` |
+| `AZURE_SORA_DEPLOYMENT_NAME` | Azure Sora deployment name, usually `sora-2` |
 | `OPENROUTER_API_KEY` | OpenRouter API key (vision fallback) |
 | `CROWE_LOGIC_URL` | Crowe Logic platform URL |
 | `CROWE_LOGIC_KEY` | Crowe Logic API key |
