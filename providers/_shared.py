@@ -114,16 +114,27 @@ class BaseOpenAIProvider:
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
 
-    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator):
+    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
+                        renderer=None):
         """Stream a response with the tool-calling loop.
 
         Drop-in compatible across all OpenAI-compatible providers.
-        """
-        from cli.renderer import StreamRenderer
 
+        ``renderer`` is optional; when omitted (the default for the
+        terminal CLI) a Rich-based ``StreamRenderer`` is constructed
+        from ``console`` and the favicon in ``session_state``. Headless
+        callers (the VS Code extension's stdio bridge, future HTTP
+        servers, tests) pass their own renderer that conforms to the
+        same interface (``start``, ``set_spinner``, ``stop_spinner``,
+        ``feed``, ``feed_reasoning``, ``end_segment``, ``finish``,
+        ``current_segment_text``).
+        """
         tool_schemas, tool_map = load_tools()
-        favicon = session_state.get("favicon", "")
-        renderer = StreamRenderer(console, self.label, favicon=favicon)
+
+        if renderer is None:
+            from cli.renderer import StreamRenderer
+            favicon = session_state.get("favicon", "")
+            renderer = StreamRenderer(console, self.label, favicon=favicon)
 
         full_response = ""
 
@@ -271,5 +282,8 @@ class BaseOpenAIProvider:
                     "content": result_str[:50000],
                 })
 
-        console.print()
+        # Headless callers pass console=None — only the Rich CLI needs
+        # this trailing newline to flush its prompt back into place.
+        if console is not None:
+            console.print()
         return full_response

@@ -1,8 +1,8 @@
 """
-Azure Sora 2 client for the Azure OpenAI v1 video API.
+CroweLM Motion client for the Azure OpenAI v1 video API.
 
 Accepts a few Azure endpoint shapes and normalizes them to the OpenAI-
-compatible `/openai/v1` base URL used by Sora 2 deployments.
+compatible `/openai/v1` base URL used by the underlying `sora-2` deployment.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def normalize_azure_video_endpoint(endpoint: str) -> str:
     """Normalize Azure video endpoint shapes to an `/openai/v1` base URL."""
     base_url = (endpoint or "").strip()
     if not base_url:
-        raise ValueError("Azure Sora endpoint is not configured")
+        raise ValueError("CroweLM Motion endpoint is not configured")
 
     base_url = base_url.split("?", 1)[0].rstrip("/")
 
@@ -71,7 +71,7 @@ def _extract_video(payload: dict) -> dict:
 
 
 class AzureSoraClient:
-    """Minimal client for Azure-hosted Sora 2 video generation."""
+    """Minimal client for CroweLM Motion video generation."""
 
     def __init__(
         self,
@@ -82,7 +82,7 @@ class AzureSoraClient:
         timeout_seconds: int = 900,
     ) -> None:
         if not api_key.strip():
-            raise ValueError("Azure Sora API key is not configured")
+            raise ValueError("CroweLM Motion API key is not configured")
 
         self.base_url = normalize_azure_video_endpoint(endpoint)
         self.api_key = api_key.strip()
@@ -197,14 +197,14 @@ class AzureSoraClient:
 
             if status in FAILED_VIDEO_STATUSES:
                 detail = video.get("error") or video.get("failure_reason") or "unknown error"
-                raise RuntimeError(f"Sora video generation failed: {detail}")
+                raise RuntimeError(f"CroweLM Motion video generation failed: {detail}")
 
             if status not in ACTIVE_VIDEO_STATUSES:
-                raise RuntimeError(f"Unexpected Sora video status: {status or 'missing'}")
+                raise RuntimeError(f"Unexpected CroweLM Motion video status: {status or 'missing'}")
 
             if time.monotonic() - started >= self.timeout_seconds:
                 raise TimeoutError(
-                    f"Sora video generation timed out after {self.timeout_seconds} seconds"
+                    f"CroweLM Motion video generation timed out after {self.timeout_seconds} seconds"
                 )
 
             time.sleep(self.poll_interval_seconds)
@@ -243,4 +243,4 @@ class AzureSoraClient:
             except httpx.HTTPError as exc:
                 last_error = exc
 
-        raise RuntimeError(f"Unable to download Sora video content: {last_error}")
+        raise RuntimeError(f"Unable to download CroweLM Motion video content: {last_error}")

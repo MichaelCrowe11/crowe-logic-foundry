@@ -1,5 +1,5 @@
 """
-Video generation tools for Azure-hosted Sora 2.
+Video generation tools for CroweLM Motion on Azure AI Foundry.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ def sora_generate_video(
     model: str = "",
 ) -> str:
     """
-    Generate a video clip with Azure-hosted Sora 2 and save it to disk.
+    Generate a video clip with CroweLM Motion and save it to disk.
 
     :param prompt: Text prompt that describes the video to generate.
     :param output_path: Optional destination path for the MP4 file.
@@ -35,7 +35,8 @@ def sora_generate_video(
     :param wait_for_completion: If true, poll until the clip finishes and save the MP4.
     :param poll_interval_seconds: Poll interval while waiting for completion.
     :param timeout_seconds: Overall timeout while waiting for completion.
-    :param model: Optional Azure deployment name override. Defaults to AZURE_SORA_DEPLOYMENT_NAME or "sora-2".
+    :param model: Optional Azure deployment name override. Defaults to the
+        CroweLM Motion deployment in AZURE_SORA_DEPLOYMENT_NAME or "sora-2".
     :return: JSON with job metadata and the saved output path when complete.
     :rtype: str
     """
