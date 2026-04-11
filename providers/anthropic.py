@@ -50,6 +50,19 @@ class AnthropicProvider:
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
 
+    @staticmethod
+    def _decode_tool_input(raw_input: str) -> tuple[dict[str, Any], str | None]:
+        """Decode a streamed tool JSON payload without crashing the session."""
+        if not raw_input:
+            return {}, None
+        try:
+            parsed = json.loads(raw_input)
+        except json.JSONDecodeError as exc:
+            return {}, f"{type(exc).__name__}: {exc}"
+        if not isinstance(parsed, dict):
+            return {}, f"TypeError: tool arguments must decode to an object, got {type(parsed).__name__}"
+        return parsed, None
+
     def _build_tool_schemas(self) -> list[dict]:
         """Convert Foundry tools to Anthropic tool format."""
         import inspect
@@ -131,9 +144,8 @@ class AnthropicProvider:
 
                 stream = self.client.messages.create(**create_kwargs)
 
-                content_blocks = []
-                current_text = ""
                 tool_use_blocks = []
+                tool_use_blocks_by_index = {}
 
                 for event in stream:
                     # Content block start
@@ -142,11 +154,15 @@ class AnthropicProvider:
                             # Claude's reasoning/thinking blocks
                             pass
                         elif event.content_block.type == "tool_use":
-                            tool_use_blocks.append({
+                            block = {
                                 "id": event.content_block.id,
                                 "name": event.content_block.name,
                                 "input": "",
-                            })
+                            }
+                            tool_use_blocks.append(block)
+                            block_index = getattr(event, "index", None)
+                            if block_index is not None:
+                                tool_use_blocks_by_index[block_index] = block
 
                     # Content block delta (streaming text/thinking)
                     elif event.type == "content_block_delta":
@@ -156,11 +172,15 @@ class AnthropicProvider:
                         elif event.delta.type == "text_delta":
                             token = event.delta.text
                             renderer.feed(token)
-                            current_text += token
                         elif event.delta.type == "input_json_delta":
                             # Accumulating tool arguments
                             if tool_use_blocks:
-                                tool_use_blocks[-1]["input"] += event.delta.partial_json
+                                block_index = getattr(event, "index", None)
+                                target_block = (
+                                    tool_use_blocks_by_index.get(block_index)
+                                    if block_index is not None else None
+                                ) or tool_use_blocks[-1]
+                                target_block["input"] += event.delta.partial_json
 
                     # Message stop
                     elif event.type == "message_stop":
@@ -184,6 +204,11 @@ class AnthropicProvider:
             renderer.end_segment()
             renderer.stop_spinner()
 
+            for tb in tool_use_blocks:
+                parsed_input, input_error = self._decode_tool_input(tb["input"])
+                tb["parsed_input"] = parsed_input
+                tb["input_error"] = input_error
+
             # Build assistant message with content + tool uses
             assistant_content = []
             if response_text.strip():
@@ -193,7 +218,7 @@ class AnthropicProvider:
                     "type": "tool_use",
                     "id": tb["id"],
                     "name": tb["name"],
-                    "input": json.loads(tb["input"]) if tb["input"] else {},
+                    "input": tb["parsed_input"],
                 })
 
             self.messages.append({"role": "assistant", "content": assistant_content})
@@ -208,9 +233,15 @@ class AnthropicProvider:
 
                 func = tool_map.get(name)
                 failed = False
-                if func:
+                if tb.get("input_error"):
+                    result_str = json.dumps({
+                        "error": f"Invalid tool arguments for {name}: {tb['input_error']}",
+                        "raw_arguments": args_json[:2000],
+                    })
+                    failed = True
+                elif func:
                     try:
-                        args = json.loads(args_json) if isinstance(args_json, str) else args_json
+                        args = tb.get("parsed_input", {})
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
                     except Exception as e:

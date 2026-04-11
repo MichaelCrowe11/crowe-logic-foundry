@@ -44,6 +44,8 @@ crowe-logic status       # Show agent status
 crowe-logic tools        # List available tools
 ```
 
+`CroweLM Pro` is now wired to stream reasoning summaries through both the terminal UI and `crowe-logic headless` when the Azure Responses API emits them, so hosts that consume the JSON event stream can render `reasoning` deltas before answer tokens.
+
 ## Tools (75)
 
 | Category | Tools | Description |

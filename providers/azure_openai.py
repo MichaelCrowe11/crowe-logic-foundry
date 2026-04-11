@@ -59,6 +59,10 @@ class AzureResponsesProvider:
 
     SUPPORTS_REASONING: bool = True
     MAX_ROUNDS: int = 10
+    REASONING_CONFIG: dict[str, str] = {
+        "effort": "medium",
+        "summary": "auto",
+    }
 
     def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
                  label: str = "CroweLM"):
@@ -122,6 +126,17 @@ class AzureResponsesProvider:
         self.messages = []
         return items
 
+    @staticmethod
+    def _emit_final_reasoning(response: Any, renderer) -> None:
+        """Flush reasoning summaries from the final response if streaming missed them."""
+        for item in (getattr(response, "output", []) or []):
+            if getattr(item, "type", None) != "reasoning":
+                continue
+            for summary in (getattr(item, "summary", []) or []):
+                text = getattr(summary, "text", "") or ""
+                if text:
+                    renderer.feed_reasoning(text)
+
     def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
                         renderer=None):
         """Run a Responses API loop with local function-tool execution."""
@@ -138,20 +153,40 @@ class AzureResponsesProvider:
         previous_response_id = self.previous_response_id
 
         for round_index in range(self.MAX_ROUNDS):
+            saw_reasoning_delta = False
+            saw_text_delta = False
             try:
                 if round_index == 0:
                     renderer.start()
                 else:
                     renderer.set_spinner("thinking...")
 
-                response = self.client.responses.create(
+                with self.client.responses.stream(
                     model=self.model,
                     instructions=self.system_instructions,
                     input=pending_input,
                     previous_response_id=previous_response_id,
                     tools=response_tools,
                     max_output_tokens=4096,
-                )
+                    reasoning=self.REASONING_CONFIG,
+                ) as stream:
+                    for event in stream:
+                        event_type = getattr(event, "type", "")
+
+                        if event_type == "response.reasoning_summary_text.delta":
+                            delta = getattr(event, "delta", "") or ""
+                            if delta:
+                                saw_reasoning_delta = True
+                                renderer.feed_reasoning(delta)
+                            continue
+
+                        if event_type == "response.output_text.delta":
+                            delta = getattr(event, "delta", "") or ""
+                            if delta:
+                                saw_text_delta = True
+                                renderer.feed(delta)
+
+                    response = stream.get_final_response()
             except Exception:
                 renderer.stop_spinner()
                 raise
@@ -160,9 +195,16 @@ class AzureResponsesProvider:
             self.previous_response_id = response.id
             previous_response_id = response.id
 
-            response_text = getattr(response, "output_text", "") or ""
+            if not saw_reasoning_delta:
+                self._emit_final_reasoning(response, renderer)
+
+            if not saw_text_delta:
+                response_text = getattr(response, "output_text", "") or ""
+                if response_text:
+                    renderer.feed(response_text)
+
+            response_text = renderer.current_segment_text
             if response_text:
-                renderer.feed(response_text)
                 full_response += response_text
 
             function_calls = [
