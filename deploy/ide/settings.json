@@ -1,5 +1,6 @@
 {
-  "workbench.colorTheme": "Dracula",
+  "workbench.colorTheme": "Crowe Logic Dark",
+  "workbench.startupEditor": "walkthrough",
   "editor.fontSize": 14,
   "editor.tabSize": 4,
   "editor.formatOnSave": true,
@@ -8,5 +9,7 @@
   "files.autoSave": "afterDelay",
   "files.autoSaveDelay": 1000,
   "python.defaultInterpreterPath": "/opt/venv/bin/python3",
-  "workbench.startupEditor": "readme"
+  "croweLogic.pythonPath": "/opt/venv/bin/python3",
+  "croweLogic.foundryPath": "/workspace/crowe-logic-foundry",
+  "croweLogic.model": "auto"
 }

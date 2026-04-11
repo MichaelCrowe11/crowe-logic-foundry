@@ -36,6 +36,7 @@ from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_exec
 
 # Vision
 from tools.vision import analyze_image, screenshot_and_analyze
+from tools.video_generation import sora_generate_video
 
 # CroweLM training data
 from tools.crowelm import (
@@ -94,6 +95,8 @@ user_functions = {
     run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline,
     # Vision
     analyze_image, screenshot_and_analyze,
+    # Video generation
+    sora_generate_video,
     # CroweLM training data
     crowelm_list_datasets, crowelm_dataset_stats, crowelm_search_examples,
     crowelm_inspect_config,

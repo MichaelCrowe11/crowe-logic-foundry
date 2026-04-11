@@ -1,0 +1,165 @@
+{
+  "name": "crowe-logic",
+  "displayName": "Crowe Logic",
+  "description": "Crowe Logic Foundry agent — chat, plans, and tool execution inside the IDE.",
+  "version": "0.1.0",
+  "publisher": "crowe-logic",
+  "license": "SEE LICENSE IN README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crowe-logic/crowe-logic-foundry.git",
+    "directory": "deploy/ide/extensions/crowe-logic"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "icon": "media/avatar-light.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "crowe-logic.foundry",
+        "fullName": "Crowe Logic",
+        "name": "crowe",
+        "description": "Ask Crowe Logic — your Foundry agent.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "plan",
+            "description": "Draft a plan before running tools."
+          },
+          {
+            "name": "run",
+            "description": "Execute the current plan end-to-end."
+          },
+          {
+            "name": "explain",
+            "description": "Explain the selected file or symbol."
+          }
+        ]
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "crowe-logic",
+          "title": "Crowe Logic",
+          "icon": "media/mark.svg"
+        }
+      ]
+    },
+    "views": {
+      "crowe-logic": [
+        {
+          "id": "crowe-logic.plan",
+          "name": "Plan",
+          "icon": "media/mark.svg",
+          "contextualTitle": "Crowe Logic"
+        },
+        {
+          "id": "crowe-logic.tools",
+          "name": "Tool Activity",
+          "icon": "media/mark.svg",
+          "contextualTitle": "Crowe Logic"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "crowe-logic.openChat",
+        "title": "Crowe Logic: Open Chat",
+        "icon": "media/mark.svg"
+      },
+      {
+        "command": "crowe-logic.clearTools",
+        "title": "Crowe Logic: Clear Tool Activity",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "crowe-logic.clearTools",
+          "when": "view == crowe-logic.tools",
+          "group": "navigation"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "label": "Crowe Logic Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/crowe-logic-dark-color-theme.json"
+      }
+    ],
+    "configuration": {
+      "title": "Crowe Logic",
+      "properties": {
+        "croweLogic.pythonPath": {
+          "type": "string",
+          "default": "/opt/venv/bin/python3",
+          "description": "Path to the Python interpreter that runs the Foundry headless agent."
+        },
+        "croweLogic.foundryPath": {
+          "type": "string",
+          "default": "/workspace/crowe-logic-foundry",
+          "description": "Filesystem path to the crowe-logic-foundry checkout."
+        },
+        "croweLogic.model": {
+          "type": "string",
+          "default": "auto",
+          "description": "Model id from MODEL_CHAIN to use for chat (or 'auto' for the first entry)."
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "crowe-logic.welcome",
+        "title": "Welcome to Crowe Logic",
+        "description": "Get started with the Crowe Logic Foundry agent.",
+        "steps": [
+          {
+            "id": "open-chat",
+            "title": "Open the chat",
+            "description": "Press ⌃⌘I (Ctrl+Cmd+I) to open the chat panel and type @crowe to talk to the Foundry agent.",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.openChat"
+            ]
+          },
+          {
+            "id": "explore-plan",
+            "title": "Watch the plan build",
+            "description": "Plans and tool runs stream into the Crowe Logic activity bar pane on the left.",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --out crowe-logic.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}

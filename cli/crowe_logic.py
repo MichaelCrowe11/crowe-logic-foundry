@@ -82,13 +82,16 @@ def _reset_model_chain():
     _model_state["openrouter_provider"] = None
     _model_state["ollama_provider"] = None
     _model_state["azure_openai_provider"] = None
+    _model_state["anthropic_provider"] = None
 
 
-def _get_openrouter_provider(model_name: str, label: str = "CroweLM"):
+def _get_openrouter_provider(model_cfg: dict):
     """Get or create an OpenRouterProvider for the given model."""
-    from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, SYSTEM_INSTRUCTIONS
+    from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, build_system_instructions
     from providers.openrouter import OpenRouterProvider
 
+    model_name = model_cfg["name"]
+    label = model_cfg["label"]
     current = _model_state.get("openrouter_provider")
     if current and current.model == model_name:
         return current
@@ -97,25 +100,27 @@ def _get_openrouter_provider(model_name: str, label: str = "CroweLM"):
         api_key=OPENROUTER_API_KEY,
         base_url=OPENROUTER_BASE_URL,
         model=model_name,
-        system_instructions=SYSTEM_INSTRUCTIONS,
+        system_instructions=build_system_instructions(model_cfg),
         label=label,
     )
     _model_state["openrouter_provider"] = provider
     return provider
 
 
-def _get_ollama_provider(model_name: str, label: str = "CroweLM"):
+def _get_ollama_provider(model_cfg: dict):
     """Get or create an OllamaProvider for the given model."""
-    from config.agent_config import OLLAMA_BASE_URL, SYSTEM_INSTRUCTIONS
+    from config.agent_config import OLLAMA_BASE_URL, build_system_instructions
     from providers.ollama import OllamaProvider
 
+    model_name = model_cfg["name"]
+    label = model_cfg["label"]
     current = _model_state.get("ollama_provider")
     if current and current.model == model_name:
         return current
 
     provider = OllamaProvider(
         model=model_name,
-        system_instructions=SYSTEM_INSTRUCTIONS,
+        system_instructions=build_system_instructions(model_cfg),
         base_url=OLLAMA_BASE_URL,
         label=label,
     )
@@ -123,18 +128,20 @@ def _get_ollama_provider(model_name: str, label: str = "CroweLM"):
     return provider
 
 
-def _get_nvidia_provider(model_name: str, label: str = "CroweLM"):
+def _get_nvidia_provider(model_cfg: dict):
     """Get or create a NvidiaProvider for the given model."""
-    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, SYSTEM_INSTRUCTIONS
+    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, build_system_instructions
     from providers.nvidia import NvidiaProvider
 
+    model_name = model_cfg["name"]
+    label = model_cfg["label"]
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
         return current
 
     provider = NvidiaProvider(
         model=model_name,
-        system_instructions=SYSTEM_INSTRUCTIONS,
+        system_instructions=build_system_instructions(model_cfg),
         endpoint=NVIDIA_NIM_ENDPOINT,
         api_key=NVIDIA_API_KEY,
         label=label,
@@ -152,8 +159,8 @@ def _get_azure_openai_provider(model_cfg: dict):
     entry — so multiple Azure Foundry resources can coexist in the same chain.
     The provider is cached by (model, endpoint) since both determine identity.
     """
-    from config.agent_config import SYSTEM_INSTRUCTIONS
-    from providers.azure_openai import AzureOpenAIProvider
+    from config.agent_config import build_system_instructions
+    from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
@@ -174,14 +181,55 @@ def _get_azure_openai_provider(model_cfg: dict):
             and current.endpoint == endpoint):
         return current
 
-    provider = AzureOpenAIProvider(
+    provider_cls = AzureResponsesProvider if model_cfg.get("surface") == "responses" else AzureOpenAIProvider
+    provider = provider_cls(
         model=model_name,
-        system_instructions=SYSTEM_INSTRUCTIONS,
+        system_instructions=build_system_instructions(model_cfg),
         endpoint=endpoint,
         api_key=api_key,
         label=label,
     )
     _model_state["azure_openai_provider"] = provider
+    return provider
+
+
+def _get_anthropic_provider(model_cfg: dict):
+    """
+    Get or create an AnthropicProvider for the given model config.
+
+    Uses Azure AI Foundry's native Anthropic API surface at /anthropic.
+    Caches by (model, endpoint) like the Azure OpenAI provider.
+    """
+    from config.agent_config import build_system_instructions
+    from providers.anthropic import AnthropicProvider
+
+    model_name = model_cfg["name"]
+    label = model_cfg["label"]
+    endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+
+    endpoint = os.environ.get(endpoint_var, "")
+    api_key = os.environ.get(api_key_var, "")
+
+    if not endpoint or not api_key:
+        raise RuntimeError(
+            f"Anthropic model '{label}' is missing credentials — "
+            f"set {endpoint_var} and {api_key_var} in .env"
+        )
+
+    current = _model_state.get("anthropic_provider")
+    if (current and current.model == model_name
+            and current.endpoint == endpoint):
+        return current
+
+    provider = AnthropicProvider(
+        model=model_name,
+        system_instructions=build_system_instructions(model_cfg),
+        endpoint=endpoint,
+        api_key=api_key,
+        label=label,
+    )
+    _model_state["anthropic_provider"] = provider
     return provider
 
 
@@ -712,23 +760,30 @@ def chat():
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
+                        elif model_cfg.get("provider") == "anthropic":
+                            # ── Azure AI Foundry Anthropic (native Anthropic API) ──
+                            provider = _get_anthropic_provider(model_cfg)
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
                         elif model_cfg.get("provider") == "nvidia":
                             # ── NVIDIA NIM path (production CroweLM) ──
-                            provider = _get_nvidia_provider(model_cfg["name"], model_cfg["label"])
+                            provider = _get_nvidia_provider(model_cfg)
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "openrouter":
                             # ── OpenRouter path (Chat Completions) ──
-                            provider = _get_openrouter_provider(model_cfg["name"], model_cfg["label"])
+                            provider = _get_openrouter_provider(model_cfg)
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "ollama":
                             # ── Ollama path (local CroweLM fallback) ──
-                            provider = _get_ollama_provider(model_cfg["name"], model_cfg["label"])
+                            provider = _get_ollama_provider(model_cfg)
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
@@ -947,7 +1002,7 @@ def _switch_model(azure_state: dict, target: str):
         _model_state["chain_index"] = idx
         console.print(f"  [#bfa669]Switching to {model['label']}...[/#bfa669]")
         provider = model.get("provider")
-        if provider in ("azure_openai", "nvidia", "openrouter", "ollama"):
+        if provider in ("anthropic", "azure_openai", "nvidia", "openrouter", "ollama"):
             # Reset cached provider so the next turn rebuilds with the new model
             cache_key = f"{provider}_provider"
             _model_state[cache_key] = None
@@ -973,7 +1028,16 @@ def _switch_model(azure_state: dict, target: str):
     except ValueError:
         pass
 
-    # Try matching by name or label
+    from config.agent_config import resolve_model_config
+
+    resolved = resolve_model_config(target)
+    if resolved is not None:
+        for i, m in enumerate(MODEL_CHAIN):
+            if m is resolved:
+                _activate(m, i)
+                return
+
+    # Fall back to raw substring matching for legacy selectors
     for i, m in enumerate(MODEL_CHAIN):
         if target.lower() in m["name"].lower() or target.lower() in m["label"].lower():
             _activate(m, i)
@@ -1092,7 +1156,7 @@ def _show_help():
 @click.argument("prompt")
 def run(prompt: str):
     """Run a single prompt and print the response."""
-    # Route through the primary model in the chain (azure_openai by default).
+    # Route through the primary model in the chain.
     # No Azure Agents thread/client needed unless the chain falls through to
     # the legacy "azure" provider.
     reset_session_state()
@@ -1108,14 +1172,16 @@ def run(prompt: str):
 
     provider_kind = model_cfg.get("provider")
     try:
-        if provider_kind == "azure_openai":
+        if provider_kind == "anthropic":
+            provider = _get_anthropic_provider(model_cfg)
+        elif provider_kind == "azure_openai":
             provider = _get_azure_openai_provider(model_cfg)
         elif provider_kind == "nvidia":
-            provider = _get_nvidia_provider(model_cfg["name"], model_cfg["label"])
+            provider = _get_nvidia_provider(model_cfg)
         elif provider_kind == "openrouter":
-            provider = _get_openrouter_provider(model_cfg["name"], model_cfg["label"])
+            provider = _get_openrouter_provider(model_cfg)
         elif provider_kind == "ollama":
-            provider = _get_ollama_provider(model_cfg["name"], model_cfg["label"])
+            provider = _get_ollama_provider(model_cfg)
         else:
             # Legacy Azure AI Agents path
             azure_state = {"agent_id": None, "client": None, "thread": None}
@@ -1145,6 +1211,7 @@ def deploy():
         AGENT_NAME, AGENT_VERSION,
         AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
         AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
+        AZURE_ANTHROPIC_ENDPOINT, AZURE_ANTHROPIC_API_KEY,
     )
     import requests
 
@@ -1196,11 +1263,39 @@ def deploy():
                         else:
                             base_url += "/openai/v1"
                     client = OpenAI(api_key=api_key, base_url=base_url)
-                    resp = client.chat.completions.create(
-                        model=name, messages=test_msg, **_token_limit_kwargs(name),
+                    if model.get("surface") == "responses":
+                        resp = client.responses.create(
+                            model=name,
+                            input="Reply with exactly: OK",
+                            max_output_tokens=50,
+                        )
+                        status = "live" if getattr(resp, "output_text", "").strip() else "empty"
+                    else:
+                        resp = client.chat.completions.create(
+                            model=name, messages=test_msg, **_token_limit_kwargs(name),
+                        )
+                        status = "live" if resp.choices else "empty"
+
+            elif provider == "anthropic":
+                from anthropic import Anthropic
+
+                endpoint_var = model.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+                api_key_var = model.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+                endpoint = os.environ.get(endpoint_var, "")
+                api_key = os.environ.get(api_key_var, "")
+                if not endpoint or not api_key:
+                    status = "no credentials"
+                else:
+                    base_url = endpoint.rstrip("/")
+                    if not base_url.endswith("/anthropic"):
+                        base_url += "/anthropic"
+                    client = Anthropic(api_key=api_key, base_url=base_url)
+                    resp = client.messages.create(
+                        model=name,
+                        max_tokens=50,
+                        messages=[{"role": "user", "content": "Reply with exactly: OK"}],
                     )
-                    content = (resp.choices[0].message.content or "").strip()
-                    status = "live" if resp.choices else "empty"
+                    status = "live" if getattr(resp, "content", None) else "empty"
 
             elif provider == "nvidia":
                 if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
@@ -1322,6 +1417,28 @@ def status():
 def tools():
     """List all available tools."""
     _list_tools_inline()
+
+
+@main.command(name="headless")
+@click.option("--input", "input_path", help="Read headless JSON input from this file instead of stdin")
+@click.option("--model", default="auto", show_default=True,
+              help="Model id from MODEL_CHAIN to run in headless mode")
+def headless_cmd(input_path: str | None, model: str):
+    """Run one headless JSON-streaming turn for external hosts."""
+    from cli.headless import main as headless_main
+
+    argv = ["crowe-logic-headless"]
+    if input_path:
+        argv.extend(["--input", input_path])
+    if model:
+        argv.extend(["--model", model])
+
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = argv
+        raise SystemExit(headless_main())
+    finally:
+        sys.argv = old_argv
 
 
 @main.command()

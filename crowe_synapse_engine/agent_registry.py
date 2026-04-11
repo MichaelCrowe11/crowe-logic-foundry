@@ -2,7 +2,8 @@
 Crowe-Synapse Agent Registry — load and manage YAML-defined sub-agents.
 
 Each agent is a persona: a system prompt override, a tool subset, and
-optional pipeline templates. Agents reuse the same model (gpt-oss-120b)
+optional pipeline templates. Agents reuse the same branded model tier
+(CroweLM Pro by default)
 with different instructions.
 """
 
@@ -17,7 +18,7 @@ import yaml
 class AgentConfig:
     name: str
     description: str = ""
-    model: str = "gpt-oss-120b"
+    model: str = "crowelm-pro"
     tools: list[str] = field(default_factory=list)
     prompt_override: str = ""
     pipelines: list[str] = field(default_factory=list)
@@ -40,7 +41,7 @@ class AgentRegistry:
                     agent = AgentConfig(
                         name=data["name"],
                         description=data.get("description", ""),
-                        model=data.get("model", "gpt-oss-120b"),
+                        model=data.get("model", "crowelm-pro"),
                         tools=data.get("tools", []),
                         prompt_override=data.get("prompt_override", ""),
                         pipelines=data.get("pipelines", []),

@@ -2,7 +2,7 @@ FROM python:3.12-slim AS base
 
 LABEL maintainer="michael@crowelogic.com"
 LABEL org.opencontainers.image.title="Crowe Logic Agent"
-LABEL org.opencontainers.image.description="Universal AI Agent powered by gpt-oss-120b on Azure AI Foundry"
+LABEL org.opencontainers.image.description="Universal AI Agent powered by the CroweLM model stack on Azure AI Foundry"
 LABEL org.opencontainers.image.vendor="Crowe Logic, Inc."
 
 WORKDIR /app
