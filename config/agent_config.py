@@ -206,7 +206,7 @@ NEON_API_KEY = os.environ.get("NEON_API_KEY", "")
 
 # Agent identity
 AGENT_NAME = "crowe-logic"
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.1"
 
 SYSTEM_INSTRUCTIONS = """You are Crowe Logic, a universal AI agent created by Michael Crowe.
 

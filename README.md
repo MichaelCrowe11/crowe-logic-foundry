@@ -46,24 +46,25 @@ crowe-logic tools        # List available tools
 
 `CroweLM Pro` is now wired to stream reasoning summaries through both the terminal UI and `crowe-logic headless` when the Azure Responses API emits them, so hosts that consume the JSON event stream can render `reasoning` deltas before answer tokens.
 
-## Tools (75)
+## Tools (79)
 
 | Category | Tools | Description |
 |----------|-------|-------------|
-| Filesystem | 6 | Read, write, list, search, move, delete files |
-| Shell | 2 | Execute commands, manage processes |
-| Web & Search | 5 | HTTP requests, web search, scraping |
-| Git | 4 | Status, diff, log, commit operations |
+| Filesystem | 4 | Read, write, edit, list files and directories |
+| Shell | 1 | Execute commands with timeout and working directory |
+| Web & Search | 3 | Web search, grep/ripgrep, URL fetching |
+| Git | 5 | Status, diff, log, commit, clone |
 | Browser Automation | 5 | Playwright-based navigation, screenshots, interaction |
-| macOS / AppleScript | 2 | System automation, app control |
-| iTerm2 | 20 | Terminal profiles, status bar, title, theme, split panes |
-| Quantum Computing | 7 | QubitFlow circuits, Synapse pipelines, Trinity bridge |
-| Music Composition | 5 | Talon engine -- scales, chords, MIDI, Ableton integration |
+| macOS / AppleScript | 3 | System automation, app control, notifications |
+| iTerm2 | 18 | Windows, tabs, panes, broadcast, badges, colors, variables |
+| Quantum Computing | 4 | QubitFlow circuits, Synapse evaluation, Trinity pipeline |
+| Music Composition | 11 | Talon engine -- chords, drums, melody, emotion, quantum composition |
 | Vision & Image | 2 | Multi-backend photo analysis (OpenRouter, Crowe Vision) |
-| Video Generation | 1 | CroweLM Motion text/image-to-video generation on Azure AI Foundry |
+| Video Generation | 1 | CroweLM Motion text/image-to-video on Azure AI Foundry |
 | CroweLM Training | 10 | Dataset management, curation, fine-tuning pipeline |
-| Crowe Logic Platform | 4 | Chat, vision, grow logs, SOP generation via ai.southwestmushrooms.com |
-| MCP Client | 2 | Connect to 5,800+ MCP servers on demand |
+| CroweLM Pipeline | 4 | Staging, promotion, agent runner, audit logs |
+| Crowe Logic Platform | 4 | Chat, vision, grow logs, SOP generation |
+| MCP Client | 4 | Search registry, list tools, call tools, stop servers |
 
 ## MCP Server
 

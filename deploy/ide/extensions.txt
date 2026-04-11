@@ -1,8 +1,11 @@
 # deploy/ide/extensions.txt
-# VS Code extensions to pre-install in code-server
+# Marketplace VS Code extensions to pre-install in code-server.
+#
+# The Crowe Logic chat participant is NOT listed here — it ships as a
+# local VSIX built in the extension-builder Docker stage and installed
+# from /tmp/crowe-logic.vsix. See Dockerfile.code-server.
 ms-python.python
 ms-python.debugpy
 ms-toolsai.jupyter
 eamodio.gitlens
 esbenp.prettier-vscode
-dracula-theme.theme-dracula
