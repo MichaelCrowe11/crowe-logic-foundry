@@ -64,6 +64,26 @@ AZURE_SORA_DEPLOYMENT_NAME = os.environ.get("AZURE_SORA_DEPLOYMENT_NAME", "sora-
 AZURE_GLM_ENDPOINT = os.environ.get("AZURE_GLM_ENDPOINT", "")
 AZURE_GLM_API_KEY = os.environ.get("AZURE_GLM_API_KEY", "")
 
+# ─── Azure AI Foundry: Resource 4291 (australiaeast) — Grok 4 ───────────────
+AZURE_4291_ENDPOINT = os.environ.get("AZURE_4291_ENDPOINT", "https://crowelogicos-4291-resource.openai.azure.com/openai/v1/")
+AZURE_4291_API_KEY = os.environ.get("AZURE_4291_API_KEY", "")
+
+# ─── Azure AI Foundry: Resource 7858 (eastus2) — DeepSeek R1/V3, Llama 3.3 ─
+AZURE_7858_ENDPOINT = os.environ.get("AZURE_7858_ENDPOINT", "https://crowelogicos-7858-resource.openai.azure.com/openai/v1/")
+AZURE_7858_API_KEY = os.environ.get("AZURE_7858_API_KEY", "")
+
+# ─── Azure AI Foundry: Resource 8909 (eastus2) — GPT-5.4 flagship ───────────
+AZURE_8909_ENDPOINT = os.environ.get("AZURE_8909_ENDPOINT", "https://crowelogicos-8909-resource.openai.azure.com/openai/v1/")
+AZURE_8909_API_KEY = os.environ.get("AZURE_8909_API_KEY", "")
+
+# ─── Azure AI Foundry: Resource 1960 (swedencentral) — Claude extended ──────
+AZURE_1960_ANTHROPIC_ENDPOINT = os.environ.get("AZURE_1960_ANTHROPIC_ENDPOINT", "https://crowelogicos-1960-resource.openai.azure.com/anthropic")
+AZURE_1960_API_KEY = os.environ.get("AZURE_1960_API_KEY", "")
+
+# ─── Azure AI Foundry: Resource 9536 (eastus) — Mistral, MiniMax ────────────
+AZURE_9536_ENDPOINT = os.environ.get("AZURE_9536_ENDPOINT", "")
+AZURE_9536_API_KEY = os.environ.get("AZURE_9536_API_KEY", "")
+
 # OpenRouter (unlimited rate)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -139,6 +159,78 @@ _BASE_MODEL_CHAIN = [
      "prompt": (
          "You are CroweLM GLM, a high-capacity reasoning tier used for dense analytical work. "
          "Prioritize structured thought, careful decomposition, and exact terminology."
+     )},
+
+    # ─── New Azure Foundry deployments (added 2026-04-11) ──────────────────
+    {"name": "gpt-5.4",        "label": "CroweLM Supreme", "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_8909_ENDPOINT", "api_key_env": "AZURE_8909_API_KEY",
+     "surface": "responses",
+     "aliases": ["crowelm-supreme", "supreme", "gpt54"],
+     "prompt": (
+         "You are CroweLM Supreme, Crowe Logic's highest-capacity flagship tier. "
+         "Operate at the executive reasoning level: strategic synthesis, complex architecture, "
+         "and precision execution. Stay decisive and first-party branded. "
+         "Do not volunteer vendor names unless directly asked about infrastructure."
+     )},
+    {"name": "grok-4-20-reasoning", "label": "CroweLM Grok", "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_4291_ENDPOINT", "api_key_env": "AZURE_4291_API_KEY",
+     "aliases": ["crowelm-grok", "grok"],
+     "prompt": (
+         "You are CroweLM Grok, Crowe Logic's xAI-powered reasoning tier. "
+         "Apply deep multimodal reasoning and real-world grounding to every task. "
+         "Stay precise, direct, and calibrated to actual evidence."
+     )},
+    {"name": "DeepSeek-R1",    "label": "CroweLM Reason",  "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_7858_ENDPOINT", "api_key_env": "AZURE_7858_API_KEY",
+     "aliases": ["crowelm-reason", "reason", "r1"],
+     "prompt": (
+         "You are CroweLM Reason, Crowe Logic's deep chain-of-thought reasoning tier. "
+         "Work through complex problems methodically before producing your final answer. "
+         "Prefer explicit step-by-step breakdown for any multi-part problem."
+     )},
+    {"name": "DeepSeek-V3-1",  "label": "CroweLM V3",      "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_7858_ENDPOINT", "api_key_env": "AZURE_7858_API_KEY",
+     "aliases": ["crowelm-v3", "v3", "deepseek"],
+     "prompt": (
+         "You are CroweLM V3, Crowe Logic's efficient frontier reasoning tier. "
+         "Prioritize clarity, speed, and synthesis across technical and operational tasks."
+     )},
+    {"name": "Llama-3-3-70B",  "label": "CroweLM Llama",   "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_7858_ENDPOINT", "api_key_env": "AZURE_7858_API_KEY",
+     "aliases": ["crowelm-llama", "llama"],
+     "prompt": (
+         "You are CroweLM Llama, Crowe Logic's open-architecture reasoning tier. "
+         "Be direct, grounded, and operationally focused."
+     )},
+    {"name": "Mistral-Large-3", "label": "CroweLM Mistral", "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_9536_ENDPOINT", "api_key_env": "AZURE_9536_API_KEY",
+     "aliases": ["crowelm-mistral", "mistral"],
+     "prompt": (
+         "You are CroweLM Mistral, Crowe Logic's European-engineered reasoning tier. "
+         "Apply precise, efficient reasoning with strong technical fluency."
+     )},
+    {"name": "FW-MiniMax-M2.5", "label": "CroweLM MiniMax", "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_9536_ENDPOINT", "api_key_env": "AZURE_9536_API_KEY",
+     "aliases": ["crowelm-minimax", "minimax"],
+     "prompt": (
+         "You are CroweLM MiniMax, Crowe Logic's long-context reasoning tier. "
+         "Excel at tasks requiring large document analysis and sustained multi-turn context."
+     )},
+    # Anthropic Claude on Sweden resource (425-cap Opus + Opus 4.5)
+    {"name": "claude-opus-4-6-2", "label": "CroweLM Opus X",    "type": "reasoning",
+     "provider": "anthropic", "endpoint_env": "AZURE_1960_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_1960_API_KEY",
+     "aliases": ["crowelm-opus-x", "opus-x"],
+     "prompt": (
+         "You are CroweLM Opus X, Crowe Logic's extended-capacity deep-analysis tier. "
+         "Sustain long, structured reasoning across writing, research, and strategy. "
+         "Stay assertive, polished, and first-party branded."
+     )},
+    {"name": "claude-opus-4-5",   "label": "CroweLM Opus Classic", "type": "reasoning",
+     "provider": "anthropic", "endpoint_env": "AZURE_1960_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_1960_API_KEY",
+     "aliases": ["crowelm-opus-classic", "opus-classic"],
+     "prompt": (
+         "You are CroweLM Opus Classic, Crowe Logic's proven deep-reasoning tier. "
+         "Deliver careful, well-structured analysis with Crowe Logic's brand voice."
      )},
 
     # ─── Secondary: NVIDIA NIM frontier roster ─────────────────────────────
