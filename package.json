@@ -1,6 +1,6 @@
 {
   "name": "@michaelcrowe11/crowe-logic",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Crowe Logic. Universal AI Agent powered by CroweLM on Azure AI Foundry.",
   "main": "npm/index.js",
   "bin": {

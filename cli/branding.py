@@ -6,6 +6,8 @@ import os
 import sys
 import shutil
 import subprocess
+import json
+import html
 
 # ── Design tokens ─────────────────────────────────────────────
 # Color palette. Hex values mirror the Rich style strings used by
@@ -39,6 +41,9 @@ ARROW = "\u203a"         # prompt continuation, running tool
 
 # Layout
 GUTTER = 2               # left indent for non-centered content
+TRANSCRIPT_MAX_WIDTH = 96
+HUD_MAX_WIDTH = 112
+RECENT_ACTION_LIMIT = 6
 
 # ── Layout primitives ────────────────────────────────────────
 def term_width() -> int:
@@ -105,6 +110,105 @@ def hairline(width: int | None = None, heavy: bool = False, dim: bool = True) ->
     glyph = RULE_HEAVY if heavy else RULE
     style = f"{GOLD}{DIM}" if dim else GOLD
     return f"{style}{glyph * w}{RESET}"
+
+
+def transcript_width(console, max_width: int = TRANSCRIPT_MAX_WIDTH) -> int:
+    """Preferred width for transcript panels inside the terminal gutter."""
+    width = getattr(console, "width", term_width())
+    usable = max(24, width - (GUTTER * 2) - 2)
+    return min(max_width, usable)
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def preview_tool_args(args: str, limit: int = 84) -> str:
+    """Compact tool arguments into a short, scan-friendly preview."""
+    if not args:
+        return ""
+
+    compact = " ".join(str(args).split())
+    if compact.startswith("{") and compact.endswith("}"):
+        try:
+            data = json.loads(compact)
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            preview_parts = []
+            for key, value in list(data.items())[:3]:
+                if isinstance(value, str):
+                    rendered = value
+                else:
+                    rendered = json.dumps(value, ensure_ascii=True)
+                preview_parts.append(f"{key}={_truncate(rendered, 20)}")
+            if len(data) > 3:
+                preview_parts.append(f"+{len(data) - 3} more")
+            return _truncate("  ".join(preview_parts), limit)
+
+    return _truncate(compact, limit)
+
+
+def _panel_title(label: str, meta: str = "", accent: str = GOLD_HEX):
+    """Return a styled Rich title token for transcript panels."""
+    from rich.text import Text
+
+    title = Text()
+    title.append(label.upper(), style=f"bold {accent}")
+    if meta:
+        title.append(f" {DOT} ", style="dim")
+        title.append(meta, style="dim")
+    return title
+
+
+def build_transcript_markdown(console, text: str, *, title: str = "answer", meta: str = ""):
+    """Build the primary transcript renderable for assistant answer text."""
+    from rich.markdown import Markdown
+    from rich.padding import Padding
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich import box
+
+    body = Markdown(text) if text.strip() else Text("thinking...", style="dim italic")
+    panel = Panel(
+        body,
+        title=_panel_title(title, meta),
+        border_style=GOLD_DIM_HEX,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=False,
+        width=transcript_width(console),
+    )
+    return Padding(panel, (0, 0, 0, GUTTER))
+
+
+def render_transcript_markdown(console, text: str, *, title: str = "answer", meta: str = ""):
+    """Print a static transcript block."""
+    console.print(build_transcript_markdown(console, text, title=title, meta=meta))
+
+
+def build_reasoning_panel(console, text: str, *, live: bool = False):
+    """Build the muted reasoning block used before or between answer segments."""
+    from rich.padding import Padding
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich import box
+
+    meta = "live" if live else "captured"
+    body = Text(text, style="dim") if text.strip() else Text("thinking...", style="dim italic")
+    panel = Panel(
+        body,
+        title=_panel_title("reasoning", meta),
+        border_style=GOLD_DIM_HEX,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=False,
+        width=transcript_width(console),
+    )
+    return Padding(panel, (0, 0, 0, GUTTER))
 
 
 # ── Inline image helpers ──────────────────────────────────────
@@ -288,9 +392,27 @@ session_state = {
     "last_tokens": 0,         # tokens from last response
     "last_tps": 0.0,          # tokens/sec from last response
     "total_tokens": 0,        # cumulative tokens this session
+    "recent_actions": [],     # newest action cards / timeline entries
 }
 
+def ensure_session_state(state: dict | None = None) -> dict:
+    """Backfill any newly added session-state keys for older callers/tests."""
+    if state is None:
+        state = session_state
+    state.setdefault("started_at", _time.monotonic())
+    state.setdefault("tool_count", 0)
+    state.setdefault("api_status", "ok")
+    state.setdefault("retry_seconds", 0)
+    state.setdefault("active_model", "")
+    state.setdefault("last_tokens", 0)
+    state.setdefault("last_tps", 0.0)
+    state.setdefault("total_tokens", 0)
+    state.setdefault("recent_actions", [])
+    return state
+
+
 def reset_session_state():
+    ensure_session_state()
     session_state["started_at"] = _time.monotonic()
     session_state["tool_count"] = 0
     session_state["api_status"] = "ok"
@@ -299,6 +421,210 @@ def reset_session_state():
     session_state["last_tokens"] = 0
     session_state["last_tps"] = 0.0
     session_state["total_tokens"] = 0
+    session_state["recent_actions"] = []
+
+
+def _action_summary(name: str, status: str, result: str) -> str:
+    """Return the timeline summary for a completed action."""
+    if status == "ok":
+        return summarize_tool_result(name, result)
+    if not result:
+        return "failed"
+    try:
+        err = json.loads(result)
+        return err.get("error", "failed")
+    except (ValueError, AttributeError):
+        first_line = result.strip().split("\n")[0].strip()
+        return first_line or "failed"
+
+
+def record_action(session_state: dict | None, *,
+                  name: str,
+                  status: str,
+                  result: str = "",
+                  duration_ms: int = 0,
+                  args: str = "") -> dict:
+    """Append a recent action entry for HUD/status rendering."""
+    state = ensure_session_state(session_state)
+    entry = {
+        "index": int(state.get("tool_count", 0)),
+        "name": name,
+        "status": status,
+        "summary": _action_summary(name, status, result),
+        "duration_ms": duration_ms,
+        "args_preview": preview_tool_args(args),
+    }
+    recent = list(state.get("recent_actions", []))
+    recent.append(entry)
+    state["recent_actions"] = recent[-RECENT_ACTION_LIMIT:]
+    return entry
+
+
+def latest_action_summary(state: dict | None = None, limit: int = 28) -> str:
+    """Compact latest-action summary for the toolbar."""
+    current = ensure_session_state(state)
+    recent = current.get("recent_actions", [])
+    if not recent:
+        return ""
+    latest = recent[-1]
+    summary = f"{latest.get('name', 'action')} {latest.get('status', '')}".strip()
+    return _truncate(summary, limit)
+
+
+def _format_session_duration(state: dict | None = None) -> str:
+    """Render elapsed session duration."""
+    current = ensure_session_state(state)
+    elapsed = _time.monotonic() - current["started_at"]
+    minutes = int(elapsed) // 60
+    seconds = int(elapsed) % 60
+    return f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
+
+
+def _api_status_label(state: dict | None = None) -> tuple[str, str]:
+    """Return display text + color for the current API state."""
+    current = ensure_session_state(state)
+    api_status = current["api_status"]
+    if api_status == "ok":
+        return ("LIVE", GREEN_HEX)
+    if api_status == "throttled":
+        retry = current.get("retry_seconds", 0)
+        retry_str = f" retry {retry}s" if retry > 0 else ""
+        return (f"THROTTLED{retry_str}", AMBER_HEX)
+    return ("DOWN", RED_HEX)
+
+
+def _metric_line(label: str, value: str, *, accent: str = WHITE_HEX):
+    """Build a compact HUD metric line."""
+    from rich.text import Text
+
+    line = Text()
+    line.append(f"{label} ", style=GOLD_DIM_HEX)
+    line.append(value or "—", style=accent)
+    return line
+
+
+def build_session_hud(console, *,
+                      state: dict | None = None,
+                      cwd: str | None = None,
+                      title: str = "session",
+                      meta: str = "live"):
+    """Build the compact session HUD shown ahead of transcript turns."""
+    from rich.console import Group
+    from rich.padding import Padding
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    from rich import box
+
+    current = ensure_session_state(state)
+    status_text, status_color = _api_status_label(current)
+    model_label = current.get("active_model", "") or "CroweLM"
+    cwd_label = os.path.basename(cwd or os.getcwd()) or (cwd or os.getcwd())
+    tokens = int(current.get("last_tokens", 0))
+    tps = float(current.get("last_tps", 0.0))
+    total_tokens = int(current.get("total_tokens", 0))
+    latest_action = latest_action_summary(current, limit=32)
+
+    grid = Table.grid(expand=False, padding=(0, 3))
+    grid.add_column(min_width=24)
+    grid.add_column(min_width=24)
+    grid.add_column(min_width=24)
+    grid.add_row(
+        _metric_line("MODEL", model_label, accent=BLUE_HEX),
+        _metric_line("API", status_text, accent=status_color),
+        _metric_line("SESSION", _format_session_duration(current), accent=GOLD_HEX),
+    )
+    grid.add_row(
+        _metric_line("WORKSPACE", cwd_label, accent=WHITE_HEX),
+        _metric_line("TOOLS", str(current.get("tool_count", 0)), accent=GOLD_HEX),
+        _metric_line("TOTAL", f"{total_tokens:,} tok" if total_tokens else "0 tok", accent=GOLD_HEX),
+    )
+    if tokens > 0 or latest_action:
+        tps_str = f"{tps:.0f}" if tps >= 10 else f"{tps:.1f}"
+        grid.add_row(
+            _metric_line("LAST", f"{tokens} tok @ {tps_str}/s" if tokens > 0 else "—", accent=WHITE_HEX),
+            _metric_line("LATEST", latest_action or "no actions yet", accent=WHITE_HEX),
+            Text(""),
+        )
+
+    panel = Panel(
+        Group(grid),
+        title=_panel_title(title, meta),
+        border_style=GOLD_DIM_HEX,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=False,
+        width=min(HUD_MAX_WIDTH, transcript_width(console, max_width=HUD_MAX_WIDTH)),
+    )
+    return Padding(panel, (0, 0, 0, GUTTER))
+
+
+def render_session_hud(console, *,
+                       state: dict | None = None,
+                       cwd: str | None = None,
+                       title: str = "session",
+                       meta: str = "live"):
+    """Print the compact session HUD."""
+    console.print(build_session_hud(console, state=state, cwd=cwd, title=title, meta=meta))
+
+
+def build_recent_actions_panel(console, *,
+                               state: dict | None = None,
+                               title: str = "timeline",
+                               meta: str = "recent"):
+    """Build the recent-actions timeline panel."""
+    from rich.padding import Padding
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    from rich import box
+
+    current = ensure_session_state(state)
+    recent = list(reversed(current.get("recent_actions", [])))
+
+    if not recent:
+        body = Text("No actions yet in this session.", style="dim italic")
+    else:
+        body = Table.grid(expand=False, padding=(0, 2))
+        body.add_column(style="dim", width=4)
+        body.add_column(style=WHITE_HEX, min_width=24)
+        body.add_column(width=10)
+        body.add_column(style="dim", width=8)
+        body.add_column(style="dim", min_width=26)
+        for entry in recent:
+            status = entry.get("status", "")
+            status_text = "OK" if status == "ok" else "FAIL"
+            status_style = GREEN_HEX if status == "ok" else RED_HEX
+            duration_ms = int(entry.get("duration_ms", 0))
+            duration_str = f"{duration_ms / 1000:.1f}s" if duration_ms else "—"
+            summary = _truncate(str(entry.get("summary", "")), 44)
+            status_cell = Text(status_text, style=status_style)
+            body.add_row(
+                f"#{entry.get('index', 0)}",
+                str(entry.get("name", "action")),
+                status_cell,
+                duration_str,
+                summary,
+            )
+
+    panel = Panel(
+        body,
+        title=_panel_title(title, meta),
+        border_style=GOLD_DIM_HEX,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=False,
+        width=min(HUD_MAX_WIDTH, transcript_width(console, max_width=HUD_MAX_WIDTH)),
+    )
+    return Padding(panel, (0, 0, 0, GUTTER))
+
+
+def render_recent_actions(console, *,
+                          state: dict | None = None,
+                          title: str = "timeline",
+                          meta: str = "recent"):
+    """Print the recent-actions timeline."""
+    console.print(build_recent_actions_panel(console, state=state, title=title, meta=meta))
 
 
 # ── Tool result summarizer ───────────────────────────────────
@@ -379,56 +705,71 @@ def render_tool_card(console, name: str, args: str,
 
     All glyphs and colors come from the design token module.
     """
+    from rich.console import Group
+    from rich.padding import Padding
+    from rich.panel import Panel
     from rich.text import Text
+    from rich import box
 
-    # Truncate args for display (the full args go to the tool log).
-    if args and len(args) > 70:
-        args = args[:67] + "..."
-
-    indent = " " * GUTTER
+    args_preview = preview_tool_args(args)
+    duration_str = f"{duration_ms / 1000:.1f}s" if duration_ms else ""
 
     if status == "running":
         label = Text()
-        label.append(f"{indent}{ARROW} ", style=f"dim {GOLD_HEX}")
-        label.append(name, style=f"bold {GOLD_HEX}")
-        if args:
-            label.append(f"  {args}", style="dim")
+        label.append(" " * GUTTER + f"{ARROW} ", style=f"dim {AMBER_HEX}")
+        label.append("ACTION", style=f"bold {AMBER_HEX}")
+        label.append(f"  {name}", style=f"bold {GOLD_HEX}")
+        if args_preview:
+            label.append(f"  {args_preview}", style="dim")
         console.print(label)
         return
 
-    border_color = GOLD_HEX if status == "ok" else RED_HEX
+    meta = "ok" if status == "ok" else "failed"
+    title_accent = GOLD_HEX if status == "ok" else RED_HEX
+    border_color = GOLD_DIM_HEX if status == "ok" else RED_HEX
     check_glyph = CHECK if status == "ok" else CROSS
     check_color = GREEN_HEX if status == "ok" else RED_HEX
-
-    duration_str = f"{duration_ms / 1000:.1f}s" if duration_ms else ""
 
     summary = summarize_tool_result(name, result) if status == "ok" else ""
     if status == "fail" and result:
         try:
-            import json as _json
-            err = _json.loads(result)
-            summary = err.get("error", result[:60])
+            err = json.loads(result)
+            summary = err.get("error", result[:80])
         except (ValueError, AttributeError):
-            summary = result.strip().split("\n")[0][:60]
+            summary = result.strip().split("\n")[0][:80]
 
-    line1 = Text()
-    line1.append(f"{indent}{BAR} ", style=border_color)
-    line1.append(name, style=f"bold {border_color}")
-    if args:
-        line1.append(f"  {args}", style="dim")
-
-    line2 = Text()
-    line2.append(f"{indent}{BAR} ", style=border_color)
-    line2.append(f"{check_glyph} ", style=check_color)
-    if summary:
-        line2.append(summary, style="dim")
+    header = Text()
+    header.append(name, style=f"bold {title_accent}")
     if duration_str:
-        if summary:
-            line2.append(f" {DOT} ", style="dim")
-        line2.append(duration_str, style="dim")
+        header.append(f"  {DOT}  {duration_str}", style="dim")
 
-    console.print(line1)
-    console.print(line2)
+    rows = [header]
+    if args_preview:
+        arg_row = Text()
+        arg_row.append("args", style=BLUE_HEX)
+        arg_row.append("  ")
+        arg_row.append(args_preview, style="dim")
+        rows.append(arg_row)
+
+    if summary or duration_str:
+        summary_row = Text()
+        summary_row.append(f"{check_glyph} ", style=check_color)
+        if summary:
+            summary_row.append(summary, style="dim")
+        if duration_str and not summary:
+            summary_row.append(duration_str, style="dim")
+        rows.append(summary_row)
+
+    panel = Panel(
+        Group(*rows),
+        title=_panel_title("action", meta, accent=title_accent),
+        border_style=border_color,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=False,
+        width=transcript_width(console),
+    )
+    console.print(Padding(panel, (0, 0, 0, GUTTER)))
 
 
 def render_error(console, title: str, detail: str | None = None):
@@ -437,21 +778,33 @@ def render_error(console, title: str, detail: str | None = None):
     Format mirrors a failed tool card: red left rail, cross glyph,
     title in bold red, optional detail lines below.
     """
+    from rich.console import Group
+    from rich.padding import Padding
+    from rich.panel import Panel
     from rich.text import Text
-
-    indent = " " * GUTTER
+    from rich import box
 
     head = Text()
-    head.append(f"{indent}{CROSS} ", style=RED_HEX)
     head.append(title, style=f"bold {RED_HEX}")
-    console.print(head)
 
+    rows = [head]
     if detail:
         for line in detail.strip().splitlines():
             row = Text()
-            row.append(f"{indent}{BAR} ", style=RED_HEX)
+            row.append(f"{CROSS} ", style=RED_HEX)
             row.append(line, style="dim")
-            console.print(row)
+            rows.append(row)
+
+    panel = Panel(
+        Group(*rows),
+        title=_panel_title("error", accent=RED_HEX),
+        border_style=RED_HEX,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=False,
+        width=transcript_width(console),
+    )
+    console.print(Padding(panel, (0, 0, 0, GUTTER)))
 
 
 # ── Rate limit countdown bar ─────────────────────────────────
@@ -511,22 +864,12 @@ def build_toolbar():
     from prompt_toolkit.formatted_text import HTML
     from config.agent_config import AGENT_VERSION
 
-    elapsed = _time.monotonic() - session_state["started_at"]
-    minutes = int(elapsed) // 60
-    seconds = int(elapsed) % 60
-    duration = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
+    current = ensure_session_state()
+    duration = _format_session_duration(current)
 
-    tool_count = session_state["tool_count"]
-    api_status = session_state["api_status"]
-
-    if api_status == "ok":
-        status_html = f'<style fg="{GREEN_HEX}">LIVE</style>'
-    elif api_status == "throttled":
-        retry = session_state["retry_seconds"]
-        retry_str = f" retry {retry}s" if retry > 0 else ""
-        status_html = f'<style fg="{AMBER_HEX}">THROTTLED{retry_str}</style>'
-    else:
-        status_html = f'<style fg="{RED_HEX}">DOWN</style>'
+    tool_count = current["tool_count"]
+    status_text, status_color = _api_status_label(current)
+    status_html = f'<style fg="{status_color}">{html.escape(status_text)}</style>'
 
     sep = f' <style fg="gray">{DOT}</style> '
 
@@ -535,15 +878,19 @@ def build_toolbar():
         f'<style fg="{GOLD_HEX}">{tool_count} tools</style>',
     ]
 
-    tokens = session_state.get("last_tokens", 0)
-    tps = session_state.get("last_tps", 0)
+    tokens = current.get("last_tokens", 0)
+    tps = current.get("last_tps", 0)
     if tokens > 0:
         tps_str = f"{tps:.0f}" if tps >= 10 else f"{tps:.1f}"
         parts.append(f'<style fg="{GOLD_HEX}">{tokens} tok @ {tps_str}/s</style>')
 
-    model_label = session_state.get("active_model", "")
+    latest_action = latest_action_summary(current)
+    if latest_action:
+        parts.append(f'<style fg="{WHITE_HEX}">last {html.escape(latest_action)}</style>')
+
+    model_label = current.get("active_model", "")
     if model_label:
-        parts.append(f'<style fg="{BLUE_HEX}">{model_label}</style>')
+        parts.append(f'<style fg="{BLUE_HEX}">{html.escape(model_label)}</style>')
 
     parts.append(status_html)
 

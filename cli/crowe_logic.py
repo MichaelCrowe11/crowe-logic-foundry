@@ -7,6 +7,7 @@ Usage:
     crowe-logic chat                  # Interactive chat session
     crowe-logic run "your prompt"     # Single prompt, get response
     crowe-logic deploy                # Create/recreate the agent
+    crowe-logic models sync           # Sync extra models from Azure CLI
     crowe-logic status                # Show agent status
     crowe-logic tools                 # List available tools
 """
@@ -15,6 +16,7 @@ import os
 import sys
 import json
 import time
+from pathlib import Path
 
 _PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PACKAGE_ROOT)
@@ -23,8 +25,6 @@ import click
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.markup import escape as _rich_escape
 from rich import box
 
@@ -37,7 +37,8 @@ PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 from cli.branding import (
     welcome_screen, show_welcome, show_inline_image, get_favicon,
     session_state, reset_session_state,
-    render_tool_card, summarize_tool_result,
+    render_tool_card, render_error as render_error_block, render_transcript_markdown,
+    render_session_hud, render_recent_actions, record_action,
     show_retry_countdown, is_rate_limit_error,
     build_toolbar, SlashCompleter, create_chat_keybindings,
 )
@@ -95,6 +96,11 @@ def _get_openrouter_provider(model_cfg: dict):
     current = _model_state.get("openrouter_provider")
     if current and current.model == model_name:
         return current
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError(
+            f"OpenRouter model '{label}' is missing credentials — "
+            "set OPENROUTER_API_KEY in .env"
+        )
 
     provider = OpenRouterProvider(
         api_key=OPENROUTER_API_KEY,
@@ -138,6 +144,11 @@ def _get_nvidia_provider(model_cfg: dict):
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
         return current
+    if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
+        raise RuntimeError(
+            f"NVIDIA model '{label}' is missing credentials — "
+            "set NVIDIA_NIM_ENDPOINT and NVIDIA_API_KEY in .env"
+        )
 
     provider = NvidiaProvider(
         model=model_name,
@@ -362,12 +373,7 @@ def _render_tool_card_old(tool_info: dict):
 def _render_error(msg: str, title: str = "Error"):
     """Print a styled error panel."""
     console.print()
-    console.print(Panel(
-        f"[white]{_rich_escape(msg)}[/white]",
-        title=f"[bold]{title}[/bold]",
-        border_style="red",
-        padding=(0, 1),
-    ))
+    render_error_block(console, title, msg)
 
 
 def _cancel_active_runs(client, thread_id: str):
@@ -428,76 +434,53 @@ def stream_response(client, thread_id: str, agent_id: str):
     from azure.ai.agents.models import (
         MessageDeltaChunk, ThreadRun, RunStep, AgentStreamEvent, ToolOutput,
     )
-    from rich.spinner import Spinner
-    from rich.live import Live
+    from cli.renderer import StreamRenderer
 
     tool_map = _get_tool_map()
-    text_chunks = []
+    renderer = StreamRenderer(
+        console,
+        session_state.get("active_model") or "crowe-logic",
+        favicon=session_state.get("favicon", ""),
+    )
+    full_text = ""
     tool_calls_shown = set()
-    spinner = None
-    spin_live = None
-    md_live = None
-    streaming_started = False
+    stream_ok = True
 
     run_id = None
     pending_tool_calls = None
 
-    def _start_spinner(label: str):
-        nonlocal spinner, spin_live
-        _stop_spinner()
-        spinner = Spinner("dots", text=f"  [#bfa669]{label}[/#bfa669]", style="#bfa669")
-        spin_live = Live(spinner, console=console, refresh_per_second=12, transient=True)
-        spin_live.start()
+    def _capture_segment():
+        nonlocal full_text
+        segment = renderer.current_segment_text
+        if segment.strip():
+            full_text += segment
+        return segment
 
-    def _stop_spinner():
-        nonlocal spinner, spin_live
-        if spin_live:
-            spin_live.stop()
-            spin_live = None
-            spinner = None
+    def _end_segment():
+        _capture_segment()
+        renderer.end_segment()
 
-    def _stop_md_live():
-        nonlocal md_live
-        if md_live:
-            # Final render with complete text
-            full = "".join(text_chunks)
-            if full.strip():
-                md_live.update(Markdown(full))
-            md_live.stop()
-            md_live = None
-
-    # ── Phase 1: Streaming with Live Markdown ─────────────────
     try:
-        _start_spinner("thinking...")
+        renderer.start()
 
         with client.runs.stream(thread_id=thread_id, agent_id=agent_id) as stream:
             for event_type, event_data, _ in stream:
                 if isinstance(event_data, MessageDeltaChunk):
-                    if not streaming_started:
-                        _stop_spinner()
-                        streaming_started = True
-                        md_live = Live(
-                            Markdown(""),
-                            console=console,
-                            refresh_per_second=8,
-                            vertical_overflow="visible",
-                        )
-                        md_live.start()
                     if event_data.text:
-                        text_chunks.append(event_data.text)
-                        md_live.update(Markdown("".join(text_chunks)))
+                        renderer.feed(event_data.text)
 
                 elif isinstance(event_data, ThreadRun):
                     run_id = event_data.id
                     if event_data.status == "requires_action":
-                        _stop_md_live()
-                        _stop_spinner()
+                        _end_segment()
+                        renderer.stop_spinner()
                         pending_tool_calls = (
                             event_data.required_action.submit_tool_outputs.tool_calls
                         )
                     elif event_data.status == "failed":
-                        _stop_md_live()
-                        _stop_spinner()
+                        _end_segment()
+                        renderer.stop_spinner()
+                        stream_ok = False
                         err_str = str(event_data.last_error)
                         if is_rate_limit_error(err_str):
                             session_state["api_status"] = "throttled"
@@ -506,8 +489,9 @@ def stream_response(client, thread_id: str, agent_id: str):
                             raise RuntimeError(f"model_error: {err_str}")
                         _render_error(err_str, "Run Failed")
                     elif event_data.status in ("cancelled", "expired"):
-                        _stop_md_live()
-                        _stop_spinner()
+                        _end_segment()
+                        renderer.stop_spinner()
+                        stream_ok = False
                         _render_error(f"Run {event_data.status}.", "Run Stopped")
 
                 elif isinstance(event_data, RunStep):
@@ -516,26 +500,32 @@ def stream_response(client, thread_id: str, agent_id: str):
                         if step_id not in tool_calls_shown:
                             tool_calls_shown.add(step_id)
                             tools = _extract_tool_info(event_data.step_details)
-                            _stop_md_live()
-                            _stop_spinner()
-                            # Only show spinner — Phase 2 renders the full hybrid cards
+                            _end_segment()
                             names = [t["name"] for t in tools] if tools else ["tools"]
-                            _start_spinner(f"running {', '.join(names)}...")
+                            renderer.set_spinner(f"running {', '.join(names)}...")
                     elif event_data.status == "completed":
-                        _stop_spinner()
+                        renderer.stop_spinner()
 
                 elif event_type == AgentStreamEvent.ERROR:
-                    _stop_md_live()
-                    _stop_spinner()
+                    _end_segment()
+                    renderer.stop_spinner()
+                    stream_ok = False
                     _render_error(str(event_data))
 
                 elif event_type == AgentStreamEvent.DONE:
                     break
     finally:
-        _stop_md_live()
-        _stop_spinner()
+        renderer.stop_spinner()
 
-    # ── Phase 2: Tool execution loop ──────────────────────────
+    if not pending_tool_calls:
+        final_segment = _capture_segment()
+        if stream_ok and final_segment.strip():
+            renderer.finish(session_state=session_state)
+        else:
+            renderer.end_segment()
+        console.print()
+        return full_text
+
     def _poll_run(rid):
         r = client.runs.get(thread_id=thread_id, run_id=rid)
         while r.status in ("queued", "in_progress"):
@@ -545,15 +535,15 @@ def stream_response(client, thread_id: str, agent_id: str):
 
     tool_phase_ok = True
     while pending_tool_calls and run_id:
-        _start_spinner("preparing tools...")
+        renderer.set_spinner("preparing actions...")
         try:
             run = _poll_run(run_id)
         except Exception as e:
-            _stop_spinner()
+            renderer.stop_spinner()
             _render_error(str(e), "Run Status Error")
             tool_phase_ok = False
             break
-        _stop_spinner()
+        renderer.stop_spinner()
 
         if run.status == "completed":
             break
@@ -566,41 +556,49 @@ def stream_response(client, thread_id: str, agent_id: str):
         tool_outputs = []
         for tc in pending_tool_calls:
             if tc.type == "function":
-                _start_spinner(f"running {tc.function.name}...")
+                tool_name = tc.function.name or "invalid_tool_call"
+                renderer.set_spinner(f"running {tool_name}...")
                 _tool_start = time.monotonic()
-                result = _execute_tool_call(tool_map, tc.function.name, tc.function.arguments)
+                result = _execute_tool_call(tool_map, tool_name, tc.function.arguments)
                 duration_ms = int((time.monotonic() - _tool_start) * 1000)
-                _stop_spinner()
+                renderer.stop_spinner()
 
-                # Render completed hybrid card (single display per tool)
                 failed = result.startswith('{"error"')
                 render_tool_card(
-                    console, tc.function.name, tc.function.arguments,
+                    console, tool_name, tc.function.arguments,
                     status="fail" if failed else "ok",
                     result=result,
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
+                record_action(
+                    session_state,
+                    name=tool_name,
+                    status="fail" if failed else "ok",
+                    result=result,
+                    duration_ms=duration_ms,
+                    args=tc.function.arguments,
+                )
                 iterm_set_var("crowe_logic_tools", str(session_state["tool_count"]))
 
                 _get_orchestrator().record_execution(
-                    tool_name=tc.function.name,
+                    tool_name=tool_name,
                     arguments=tc.function.arguments,
                     output=result[:10000],
                     duration_ms=duration_ms,
                 )
                 tool_outputs.append(ToolOutput(tool_call_id=tc.id, output=result))
 
-        _start_spinner("thinking...")
+        renderer.set_spinner("thinking...")
         try:
             client.runs.submit_tool_outputs(thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs)
             run = _poll_run(run_id)
         except Exception as e:
-            _stop_spinner()
+            renderer.stop_spinner()
             _render_error(str(e), "Tool Submit Failed")
             tool_phase_ok = False
             break
-        _stop_spinner()
+        renderer.stop_spinner()
 
         if run.status == "requires_action":
             pending_tool_calls = run.required_action.submit_tool_outputs.tool_calls
@@ -612,9 +610,7 @@ def stream_response(client, thread_id: str, agent_id: str):
             tool_phase_ok = False
             break
 
-    # ── Phase 3: Post-tool response ───────────────────────────
-    full_text = "".join(text_chunks)
-    if not full_text.strip() and run_id and tool_phase_ok:
+    if run_id and tool_phase_ok:
         try:
             messages = client.messages.list(thread_id=thread_id)
             msg_list = getattr(messages, "data", None) or list(messages)
@@ -627,8 +623,9 @@ def stream_response(client, thread_id: str, agent_id: str):
                             if val.strip():
                                 parts.append(val.strip())
                     if parts:
-                        full_text = "\n\n".join(parts)
-                        console.print(Markdown(full_text), highlight=False)
+                        final_text = "\n\n".join(parts)
+                        full_text = f"{full_text}\n\n{final_text}".strip() if full_text.strip() else final_text
+                        render_transcript_markdown(console, final_text, title="answer", meta="final")
                     break
         except Exception:
             pass
@@ -685,6 +682,8 @@ def chat():
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
     session_state["favicon"] = favicon
+    render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="ready")
+    console.print()
 
     while True:
         try:
@@ -717,6 +716,8 @@ def chat():
         if user_input.lower() == "/clear":
             console.clear()
             show_welcome(AGENT_VERSION)
+            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="ready")
+            console.print()
             continue
         if user_input.lower() == "/status":
             _show_status_inline()
@@ -743,6 +744,7 @@ def chat():
         try:
             model_cfg = _current_model()
             ctx = orch.prepare(user_input, thread_id=_active_thread_id())
+            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
             console.print()
 
             # Smart routing: try current model, fallback on failure
@@ -914,13 +916,12 @@ def _list_tools_inline():
 
 def _show_status_inline():
     model_cfg = _current_model()
-    elapsed = time.monotonic() - session_state["started_at"]
-    minutes = int(elapsed) // 60
-    seconds = int(elapsed) % 60
-    dur_str = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
+    console.print()
+    render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="status")
+    render_recent_actions(console, state=session_state)
 
     table = Table(
-        title="CroweLM Agent Status",
+        title="CroweLM Foundry",
         box=box.ROUNDED,
         border_style="#bfa669",
         title_style="bold #bfa669",
@@ -930,9 +931,6 @@ def _show_status_inline():
     table.add_column("Key", style="#bfa669 bold", min_width=18)
     table.add_column("Value", style="white")
     table.add_row("Active Model", model_cfg["label"])
-    table.add_row("Session Duration", dur_str)
-    table.add_row("Tools Executed", str(session_state["tool_count"]))
-    table.add_row("API Status", session_state["api_status"].upper())
     table.add_row("Version", AGENT_VERSION)
 
     # CroweLM training data summary
@@ -956,8 +954,8 @@ def _show_status_inline():
     table.add_row("[dim]CroweLM Models[/dim]", "")
     for i, m in enumerate(MODEL_CHAIN):
         marker = "[bold #6fbf73]>[/bold #6fbf73] " if i == _model_state["chain_index"] else "  "
-        fails = _model_state["failures"].get(m["name"], 0)
-        fail_str = f"  [#bf6f6f]({fails} fails)[/#bf6f6f]" if fails > 0 else ""
+        status_note = _model_status_note(m)
+        fail_str = f"  [#bf6f6f]({status_note})[/#bf6f6f]" if status_note else ""
         table.add_row(f"{marker}{m['label']}", f"{m.get('type', 'general')}{fail_str}")
 
     console.print()
@@ -983,10 +981,12 @@ def _show_models():
 
     for i, m in enumerate(MODEL_CHAIN):
         is_active = i == _model_state["chain_index"]
-        status = "[bold #6fbf73]ACTIVE[/bold #6fbf73]" if is_active else "[dim]standby[/dim]"
-        failures = _model_state["failures"].get(m["name"], 0)
-        if failures > 0:
-            status = f"[#bf6f6f]{failures} fails[/#bf6f6f]"
+        status_note = _model_status_note(m)
+        status = (
+            f"[#bf6f6f]{status_note}[/#bf6f6f]"
+            if status_note
+            else ("[bold #6fbf73]ACTIVE[/bold #6fbf73]" if is_active else "[dim]standby[/dim]")
+        )
         table.add_row(str(i + 1), m["label"], m.get("type", "general"), status)
 
     console.print()
@@ -995,12 +995,78 @@ def _show_models():
     console.print()
 
 
+def _model_status_note(model_cfg: dict) -> str:
+    """Return a short status note when a model is blocked or failing."""
+    failures = _model_state["failures"].get(model_cfg["name"], 0)
+    if failures > 0:
+        return f"{failures} fails"
+    if _model_switch_error(model_cfg):
+        return "blocked"
+    return ""
+
+
+def _model_switch_error(model_cfg: dict) -> str | None:
+    """Return a configuration error string for a model, or None if ready."""
+    provider = model_cfg.get("provider")
+    label = model_cfg.get("label", model_cfg.get("name", "model"))
+
+    if provider == "azure_openai":
+        endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
+        api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+        missing = [
+            var for var in (endpoint_var, api_key_var)
+            if not os.environ.get(var, "").strip()
+        ]
+        if missing:
+            return (
+                f"Cannot switch to {label} — missing "
+                + ", ".join(missing)
+                + " in .env"
+            )
+
+    if provider == "anthropic":
+        endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+        api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+        missing = [
+            var for var in (endpoint_var, api_key_var)
+            if not os.environ.get(var, "").strip()
+        ]
+        if missing:
+            return (
+                f"Cannot switch to {label} — missing "
+                + ", ".join(missing)
+                + " in .env"
+            )
+
+    if provider == "nvidia":
+        missing = [
+            var for var in ("NVIDIA_NIM_ENDPOINT", "NVIDIA_API_KEY")
+            if not os.environ.get(var, "").strip()
+        ]
+        if missing:
+            return (
+                f"Cannot switch to {label} — missing "
+                + ", ".join(missing)
+                + " in .env"
+            )
+
+    if provider == "openrouter" and not os.environ.get("OPENROUTER_API_KEY", "").strip():
+        return f"Cannot switch to {label} — missing OPENROUTER_API_KEY in .env"
+
+    return None
+
+
 def _switch_model(azure_state: dict, target: str):
     """Manually switch to a model by index (1-based) or deployment name."""
 
     def _activate(model, idx):
-        _model_state["chain_index"] = idx
         console.print(f"  [#bfa669]Switching to {model['label']}...[/#bfa669]")
+        config_error = _model_switch_error(model)
+        if config_error:
+            console.print(f"  [red]{_rich_escape(config_error)}[/red]")
+            return
+
+        _model_state["chain_index"] = idx
         provider = model.get("provider")
         if provider in ("anthropic", "azure_openai", "nvidia", "openrouter", "ollama"):
             # Reset cached provider so the next turn rebuilds with the new model
@@ -1164,11 +1230,14 @@ def run(prompt: str):
     model_cfg = _current_model()
     favicon = get_favicon()
     session_state["favicon"] = favicon
+    session_state["active_model"] = model_cfg["label"]
     orch = _get_orchestrator()
     import uuid
     synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
     orch.start_session(thread_id=synthetic_thread_id)
     orch.prepare(prompt, thread_id=synthetic_thread_id)
+    render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
+    console.print()
 
     provider_kind = model_cfg.get("provider")
     try:
@@ -1407,6 +1476,69 @@ def deploy():
         console.print(f"\n  [bold red]No models available. Check credentials and connectivity.[/bold red]\n")
 
 
+@main.group()
+def models():
+    """Manage the synced extra-model registry."""
+    pass
+
+
+@models.command(name="sync")
+@click.option("--account", help="Azure Cognitive Services account name")
+@click.option("--resource-group", help="Azure resource group for the account")
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Read deployment inventory from a saved Azure JSON file",
+)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Write the synced registry to this path",
+)
+def models_sync(
+    account: str | None,
+    resource_group: str | None,
+    input_path: Path | None,
+    output_path: Path | None,
+):
+    """Sync Azure deployments into the extra-model registry."""
+    from config.model_sync import (
+        sync_output_warnings,
+        build_extra_models_payload,
+        parse_sync_source,
+        resolve_output_path,
+        write_extra_models_payload,
+    )
+
+    if input_path is None and not (account and resource_group):
+        raise click.UsageError("Provide either --input or both --account and --resource-group")
+
+    try:
+        deployments = parse_sync_source(
+            input_path=input_path,
+            account=account,
+            resource_group=resource_group,
+        )
+        payload = build_extra_models_payload(deployments)
+        destination = write_extra_models_payload(
+            payload,
+            resolve_output_path(output_path),
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    model_count = len(payload["models"])
+    console.print(
+        f"  [#6fbf73]Synced {model_count} models to "
+        f"{_rich_escape(str(destination))}[/#6fbf73]"
+    )
+    for warning in sync_output_warnings(destination, project_root=Path(PROJECT_ROOT)):
+        console.print(f"  [yellow]{_rich_escape(warning)}[/yellow]")
+    console.print("  [dim]The updated registry will be picked up on the next crowe-logic run.[/dim]\n")
+
+
 @main.command()
 def status():
     """Show current agent status."""
@@ -1577,6 +1709,9 @@ def resume():
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
     session_state["favicon"] = favicon
+    session_state["active_model"] = "crowe-logic"
+    render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="resume")
+    console.print()
 
     while True:
         try:
@@ -1604,10 +1739,8 @@ def resume():
         try:
             _cancel_active_runs(client, thread_id)
             client.messages.create(thread_id=thread_id, role="user", content=user_input)
+            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
             console.print()
-            sys.stdout.write(f"  {favicon} ")
-            sys.stdout.flush()
-            console.print("[bold #bfa669]crowe-logic[/bold #bfa669]")
 
             last_error = None
             for attempt in range(3):

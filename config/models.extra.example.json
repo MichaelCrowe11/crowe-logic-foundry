@@ -1,0 +1,24 @@
+{
+  "models": [
+    {
+      "name": "gpt-4.1-mini",
+      "label": "CroweLM Scout",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": ["scout", "crowelm-scout"],
+      "prompt": "You are CroweLM Scout, a compact Azure-hosted analysis tier for fast exploratory work."
+    },
+    {
+      "name": "claude-sonnet-4-5",
+      "label": "CroweLM Sonnet",
+      "provider": "anthropic",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_ANTHROPIC_ENDPOINT",
+      "api_key_env": "AZURE_ANTHROPIC_API_KEY",
+      "aliases": ["sonnet", "crowelm-sonnet"],
+      "prompt": "You are CroweLM Sonnet, a concise Azure-hosted writing and analysis tier."
+    }
+  ]
+}

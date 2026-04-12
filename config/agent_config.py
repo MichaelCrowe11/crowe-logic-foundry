@@ -4,6 +4,7 @@ Crowe Logic Agent — Central Configuration
 All agent settings, system instructions, and tool selection live here.
 """
 
+import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -91,7 +92,7 @@ AZURE_ANTHROPIC_API_KEY = os.environ.get("AZURE_ANTHROPIC_API_KEY", "")
 #
 # Primary tier = Crowe Logic's own Azure deployments. Secondary tier = NVIDIA
 # NIM frontier models. Tertiary tier = local Ollama fallback.
-MODEL_CHAIN = [
+_BASE_MODEL_CHAIN = [
     # ─── Primary: Crowe Logic's own Azure Foundry deployments ──────────────
     {"name": "gpt-5.4-pro",    "label": "CroweLM Pro",    "type": "reasoning",
      "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
@@ -169,6 +170,149 @@ MODEL_CHAIN = [
     {"name": "glm-4.6:cloud",                                "label": "CroweLM Cloud (local)", "type": "reasoning", "provider": "ollama"},
 ]
 
+
+def _selector_key(value: str) -> str:
+    """Normalize model selectors so 'crowelm-pro' matches 'CroweLM Pro'."""
+    return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+def model_selectors(model_cfg: dict) -> list[str]:
+    """Return the selector strings that should resolve to a model config."""
+    selectors = [model_cfg.get("name", ""), model_cfg.get("label", "")]
+    selectors.extend(model_cfg.get("aliases", []))
+    return [selector for selector in selectors if selector]
+
+
+def _normalize_extra_model(entry: dict) -> dict:
+    """Normalize an externally supplied model entry into MODEL_CHAIN shape."""
+    if not isinstance(entry, dict):
+        raise ValueError("Extra model entries must be JSON objects")
+
+    normalized = dict(entry)
+    name = str(normalized.get("name", "")).strip()
+    if not name:
+        raise ValueError("Extra model entries require a non-empty 'name'")
+
+    provider = str(normalized.get("provider", "azure_openai")).strip() or "azure_openai"
+    normalized["name"] = name
+    normalized["provider"] = provider
+    normalized["label"] = str(normalized.get("label", name)).strip() or name
+    normalized["type"] = str(normalized.get("type", "reasoning")).strip() or "reasoning"
+
+    raw_aliases = normalized.get("aliases", [])
+    if raw_aliases is None:
+        raw_aliases = []
+    if not isinstance(raw_aliases, list):
+        raise ValueError("Extra model 'aliases' must be a JSON array")
+    normalized["aliases"] = [
+        str(alias).strip() for alias in raw_aliases if str(alias).strip()
+    ]
+
+    if provider == "azure_openai":
+        normalized.setdefault("endpoint_env", "AZURE_CORE_ENDPOINT")
+        normalized.setdefault("api_key_env", "AZURE_CORE_API_KEY")
+    elif provider == "anthropic":
+        normalized.setdefault("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+        normalized.setdefault("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+
+    surface = normalized.get("surface")
+    if surface is not None:
+        surface = str(surface).strip()
+        if surface not in ("responses", "chat"):
+            raise ValueError("Extra model 'surface' must be 'responses' or 'chat'")
+        normalized["surface"] = surface
+
+    prompt = normalized.get("prompt")
+    if prompt is not None:
+        normalized["prompt"] = str(prompt)
+
+    return normalized
+
+
+def _load_extra_models() -> list[dict]:
+    """Load optional model definitions from JSON env/config hooks.
+
+    Supported inputs:
+    - `CROWE_LOGIC_EXTRA_MODELS_JSON` with a JSON array or {"models":[...]}
+    - `CROWE_LOGIC_EXTRA_MODELS_PATH` pointing at a JSON file
+    - `config/models.extra.json` in the project tree
+    - `~/.config/crowe-logic/models.extra.json`
+    - `~/.crowe-logic/models.extra.json`
+    """
+    raw_json = os.environ.get("CROWE_LOGIC_EXTRA_MODELS_JSON", "").strip()
+    if raw_json:
+        data = json.loads(raw_json)
+    else:
+        candidates = []
+        extra_path = os.environ.get("CROWE_LOGIC_EXTRA_MODELS_PATH", "").strip()
+        if extra_path:
+            candidates.append(Path(extra_path).expanduser())
+        candidates.extend([
+            Path(__file__).resolve().with_name("models.extra.json"),
+            _home / ".config" / "crowe-logic" / "models.extra.json",
+            _home / ".crowe-logic" / "models.extra.json",
+        ])
+
+        data = None
+        for candidate in candidates:
+            if candidate.exists():
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                break
+        if data is None:
+            return []
+
+    if isinstance(data, dict):
+        data = data.get("models", [])
+    if not isinstance(data, list):
+        raise ValueError("Extra model config must be a JSON array or {'models': [...]}")
+    return [_normalize_extra_model(entry) for entry in data]
+
+
+def _merge_model_chain(base_chain: list[dict], extra_models: list[dict]) -> list[dict]:
+    """Merge external models into the base chain, replacing selector matches."""
+    merged = [dict(model) for model in base_chain]
+
+    for extra in extra_models:
+        extra_keys = {
+            _selector_key(selector) for selector in model_selectors(extra)
+            if _selector_key(selector)
+        }
+        replaced = False
+
+        for idx, existing in enumerate(merged):
+            existing_keys = {
+                _selector_key(selector) for selector in model_selectors(existing)
+                if _selector_key(selector)
+            }
+            if extra_keys & existing_keys:
+                combined = dict(existing)
+                combined.update(extra)
+                combined["aliases"] = list(dict.fromkeys([
+                    *existing.get("aliases", []),
+                    *extra.get("aliases", []),
+                ]))
+                merged[idx] = combined
+                replaced = True
+                break
+
+        if not replaced:
+            if extra.get("provider") in ("azure_openai", "anthropic"):
+                insert_at = next(
+                    (
+                        idx for idx, model in enumerate(merged)
+                        if model.get("provider") not in ("azure_openai", "anthropic")
+                    ),
+                    len(merged),
+                )
+                merged.insert(insert_at, extra)
+            else:
+                merged.append(extra)
+
+    return merged
+
+
+MODEL_CHAIN = _merge_model_chain(_BASE_MODEL_CHAIN, _load_extra_models())
+
 # Specialized model registry — used by tools and pipelines that need a specific
 # capability rather than the general fallback chain.
 SPECIALIZED_MODELS = {
@@ -206,7 +350,7 @@ NEON_API_KEY = os.environ.get("NEON_API_KEY", "")
 
 # Agent identity
 AGENT_NAME = "crowe-logic"
-AGENT_VERSION = "0.2.1"
+AGENT_VERSION = "0.2.2"
 
 SYSTEM_INSTRUCTIONS = """You are Crowe Logic, a universal AI agent created by Michael Crowe.
 
@@ -294,20 +438,6 @@ You operate from: /Users/crowelogic
 Current model family: CroweLM (the branded model stack operated by Crowe Logic Inc.)
 Platform: Crowe Logic Foundry
 """
-
-
-def _selector_key(value: str) -> str:
-    """Normalize model selectors so 'crowelm-pro' matches 'CroweLM Pro'."""
-    return "".join(ch.lower() for ch in value if ch.isalnum())
-
-
-def model_selectors(model_cfg: dict) -> list[str]:
-    """Return the selector strings that should resolve to a model config."""
-    selectors = [model_cfg.get("name", ""), model_cfg.get("label", "")]
-    selectors.extend(model_cfg.get("aliases", []))
-    return [selector for selector in selectors if selector]
-
-
 def resolve_model_config(selector: str) -> dict | None:
     """Resolve a model by deployment id, branded label, or alias."""
     needle = _selector_key(selector or "")

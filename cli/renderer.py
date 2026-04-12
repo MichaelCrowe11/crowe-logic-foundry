@@ -11,18 +11,17 @@ High-fidelity terminal rendering with real-time telemetry:
 
 import sys
 import time
-from rich.markdown import Markdown
 from rich.text import Text
-from rich.panel import Panel
 from rich.live import Live
 from rich.spinner import Spinner
-from rich import box
 
 from cli.branding import (
     DOT,
     GUTTER,
     GOLD_HEX as GOLD,
     GOLD_DIM_HEX as DIM_GOLD,
+    build_reasoning_panel,
+    build_transcript_markdown,
 )
 
 # Refresh rate for live displays (frames per second).
@@ -163,7 +162,7 @@ class StreamRenderer:
         self._show_header()
 
         self._md_live = Live(
-            Markdown(""),
+            self._build_answer_panel("", live=True),
             console=self.console,
             refresh_per_second=_STREAM_FPS,
             vertical_overflow="visible",
@@ -190,7 +189,7 @@ class StreamRenderer:
             now = time.monotonic()
             if now - self._last_md_update >= (1.0 / _STREAM_FPS):
                 self._last_md_update = now
-                self._md_live.update(Markdown("".join(self._text_chunks)))
+                self._md_live.update(self._build_answer_panel("".join(self._text_chunks), live=True))
 
     def feed_reasoning(self, token: str):
         """Append a reasoning/thinking token.
@@ -213,7 +212,7 @@ class StreamRenderer:
             self._stop_spinner()
             self._show_header()
             self._reasoning_live = Live(
-                self._build_reasoning_panel(""),
+                self._build_reasoning_panel("", live=True),
                 console=self.console,
                 refresh_per_second=_REASONING_FPS,
                 vertical_overflow="visible",
@@ -229,7 +228,7 @@ class StreamRenderer:
             if now - self._last_reason_update >= (1.0 / _REASONING_FPS):
                 self._last_reason_update = now
                 self._reasoning_live.update(
-                    self._build_reasoning_panel("".join(self._reasoning_chunks))
+                    self._build_reasoning_panel("".join(self._reasoning_chunks), live=True)
                 )
 
     def end_segment(self):
@@ -320,23 +319,14 @@ class StreamRenderer:
 
     # ── Internal ──────────────────────────────────────────────
 
-    def _build_reasoning_panel(self, text: str) -> Panel:
-        """Build the reasoning panel widget for live updates.
+    def _build_answer_panel(self, text: str, *, live: bool) -> object:
+        """Build the live/final answer renderable."""
+        meta = "streaming" if live else "final"
+        return build_transcript_markdown(self.console, text, title="answer", meta=meta)
 
-        Uses Rich Text (plain prose rendering) rather than Markdown —
-        reasoning is typically internal monologue without tables or code
-        blocks, and Text rendering is an order of magnitude cheaper than
-        Markdown parsing when streaming at high token rates.
-        """
-        body = Text(text, style="dim") if text.strip() else Text("thinking...", style="dim italic")
-        return Panel(
-            body,
-            title="[dim]reasoning[/dim]",
-            border_style="dim #bfa669",
-            box=box.ROUNDED,
-            padding=(0, 1),
-            expand=False,
-        )
+    def _build_reasoning_panel(self, text: str, *, live: bool) -> object:
+        """Build the live/final reasoning renderable."""
+        return build_reasoning_panel(self.console, text, live=live)
 
     def _start_spinner(self, label: str):
         self._stop_spinner()
@@ -361,7 +351,7 @@ class StreamRenderer:
         if self._md_live:
             full = "".join(self._text_chunks)
             if full.strip():
-                self._md_live.update(Markdown(full))
+                self._md_live.update(self._build_answer_panel(full, live=False))
             self._md_live.stop()
             self._md_live = None
         # Reset unconditionally so _streaming and _text_chunks stay in sync
@@ -381,7 +371,7 @@ class StreamRenderer:
         if self._reasoning_live:
             full = "".join(self._reasoning_chunks).strip()
             if full:
-                self._reasoning_live.update(self._build_reasoning_panel(full))
+                self._reasoning_live.update(self._build_reasoning_panel(full, live=False))
             self._reasoning_live.stop()
             self._reasoning_live = None
             self._reasoning_chunks = []
@@ -403,4 +393,4 @@ class StreamRenderer:
         if not text:
             return
         self.console.print()
-        self.console.print(self._build_reasoning_panel(text))
+        self.console.print(self._build_reasoning_panel(text, live=False))

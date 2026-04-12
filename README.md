@@ -40,11 +40,39 @@ crowe-logic              # Interactive chat (default)
 crowe-logic chat         # Interactive chat session
 crowe-logic run "prompt" # Single prompt, get response
 crowe-logic deploy       # Verify provider health across the CroweLM stack
+crowe-logic models sync --account <account> --resource-group <resource-group>
 crowe-logic status       # Show agent status
 crowe-logic tools        # List available tools
 ```
 
 `CroweLM Pro` is now wired to stream reasoning summaries through both the terminal UI and `crowe-logic headless` when the Azure Responses API emits them, so hosts that consume the JSON event stream can render `reasoning` deltas before answer tokens.
+
+## Extra Models
+
+The base `MODEL_CHAIN` can now be extended without editing source. Crowe Logic will load extra model entries from:
+
+- `CROWE_LOGIC_EXTRA_MODELS_JSON`
+- `CROWE_LOGIC_EXTRA_MODELS_PATH`
+- `config/models.extra.json`
+- `~/.config/crowe-logic/models.extra.json`
+- `~/.crowe-logic/models.extra.json`
+
+Start from [`config/models.extra.example.json`](config/models.extra.example.json) and save your generated file as `config/models.extra.json`, or point `CROWE_LOGIC_EXTRA_MODELS_PATH` at it.
+
+If you already have Azure deployments and want to turn them into Foundry model entries, generate the file with:
+
+```bash
+crowe-logic models sync --account <account> --resource-group <resource-group>
+```
+
+By default that writes to `~/.config/crowe-logic/models.extra.json`, which the runtime already loads. Use `--output config/models.extra.json` if you want a project-local registry instead.
+
+You can also sync from a saved Azure CLI payload:
+
+```bash
+az cognitiveservices account deployment list --name <account> --resource-group <resource-group> --output json > deployments.json
+crowe-logic models sync --input deployments.json --output config/models.extra.json
+```
 
 ## Tools (79)
 

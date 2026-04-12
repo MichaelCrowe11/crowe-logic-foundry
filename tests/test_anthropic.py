@@ -98,6 +98,7 @@ def test_anthropic_provider_recovers_from_invalid_tool_json(monkeypatch):
     provider.add_user_message("hello")
 
     tool_cards = []
+    session_state = {"favicon": "", "tool_count": 0, "recent_actions": []}
     full_response = provider.stream_response(
         console=None,
         render_tool_card=lambda console, name, args_json, status, result, duration_ms: tool_cards.append({
@@ -105,7 +106,7 @@ def test_anthropic_provider_recovers_from_invalid_tool_json(monkeypatch):
             "status": status,
             "result": result,
         }),
-        session_state={"favicon": "", "tool_count": 0},
+        session_state=session_state,
         _get_orchestrator=_noop_orchestrator,
         renderer=_FakeRenderer(),
     )
@@ -173,6 +174,7 @@ def test_anthropic_provider_routes_json_deltas_by_index(monkeypatch):
     provider.add_user_message("hello")
 
     tool_cards = []
+    session_state = {"favicon": "", "tool_count": 0, "recent_actions": []}
     full_response = provider.stream_response(
         console=None,
         render_tool_card=lambda console, name, args_json, status, result, duration_ms: tool_cards.append({
@@ -180,7 +182,7 @@ def test_anthropic_provider_routes_json_deltas_by_index(monkeypatch):
             "status": status,
             "result": result,
         }),
-        session_state={"favicon": "", "tool_count": 0},
+        session_state=session_state,
         _get_orchestrator=_noop_orchestrator,
         renderer=_FakeRenderer(),
     )
@@ -190,3 +192,4 @@ def test_anthropic_provider_routes_json_deltas_by_index(monkeypatch):
         {"name": "tool_a", "status": "ok", "result": "A:a"},
         {"name": "tool_b", "status": "ok", "result": "B:b"},
     ]
+    assert [entry["name"] for entry in session_state["recent_actions"]] == ["tool_a", "tool_b"]

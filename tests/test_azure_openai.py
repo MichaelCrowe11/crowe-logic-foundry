@@ -176,7 +176,7 @@ def test_responses_provider_executes_function_calls(monkeypatch):
     )
     provider.add_user_message("hello")
 
-    session_state = {"favicon": "", "tool_count": 0}
+    session_state = {"favicon": "", "tool_count": 0, "recent_actions": []}
     full_response = provider.stream_response(
         console=None,
         render_tool_card=lambda console, name, args_json, status, result, duration_ms: tool_cards.append({
@@ -192,6 +192,8 @@ def test_responses_provider_executes_function_calls(monkeypatch):
 
     assert full_response == "done"
     assert session_state["tool_count"] == 1
+    assert session_state["recent_actions"][0]["name"] == "echo_tool"
+    assert session_state["recent_actions"][0]["status"] == "ok"
     assert tool_cards == [{
         "name": "echo_tool",
         "args_json": '{"text": "hi"}',

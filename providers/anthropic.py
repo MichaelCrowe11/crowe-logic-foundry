@@ -261,6 +261,15 @@ class AnthropicProvider:
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
+                from cli.branding import record_action
+                record_action(
+                    session_state,
+                    name=name,
+                    status="fail" if failed else "ok",
+                    result=result_str,
+                    duration_ms=duration_ms,
+                    args=json.dumps(args_json) if isinstance(args_json, dict) else args_json,
+                )
 
                 _get_orchestrator().record_execution(
                     tool_name=name,

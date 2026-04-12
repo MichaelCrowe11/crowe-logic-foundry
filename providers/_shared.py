@@ -110,9 +110,21 @@ class BaseOpenAIProvider:
         self.label = label
         self.system_instructions = system_instructions
         self.messages = [{"role": "system", "content": system_instructions}]
+        self._tool_call_seq = 0
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
+
+    def _next_tool_call_id(self) -> str:
+        """Generate backend-safe tool_call_ids for local message history.
+
+        Some OpenAI-compatible backends emit blank or backend-specific ids during
+        streamed tool calls. We control the assistant/tool message history we send
+        back on the next round, so we synthesize compact alphanumeric ids and keep
+        them consistent within the local transcript.
+        """
+        self._tool_call_seq += 1
+        return f"tc{self._tool_call_seq:07d}"
 
     def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
                         renderer=None):
@@ -181,12 +193,13 @@ class BaseOpenAIProvider:
                             idx = tc.index
                             if idx not in tool_calls_accumulator:
                                 tool_calls_accumulator[idx] = {
-                                    "id": tc.id or "",
+                                    "id": self._next_tool_call_id(),
+                                    "raw_id": tc.id or "",
                                     "name": tc.function.name if tc.function and tc.function.name else "",
                                     "arguments": "",
                                 }
                             if tc.id:
-                                tool_calls_accumulator[idx]["id"] = tc.id
+                                tool_calls_accumulator[idx]["raw_id"] = tc.id
                             if tc.function:
                                 if tc.function.name:
                                     tool_calls_accumulator[idx]["name"] = tc.function.name
@@ -229,16 +242,18 @@ class BaseOpenAIProvider:
             }
             for idx in ordered_indices:
                 tc = tool_calls_accumulator[idx]
+                name = (tc["name"] or "").strip() or "invalid_tool_call"
                 assistant_msg["tool_calls"].append({
                     "id": tc["id"],
                     "type": "function",
-                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                    "function": {"name": name, "arguments": tc["arguments"]},
                 })
             self.messages.append(assistant_msg)
 
             for idx in ordered_indices:
                 tc = tool_calls_accumulator[idx]
-                name = tc["name"]
+                raw_name = (tc["name"] or "").strip()
+                name = raw_name or "invalid_tool_call"
                 args_json = tc["arguments"]
 
                 renderer.set_spinner(f"running {name}...")
@@ -246,7 +261,13 @@ class BaseOpenAIProvider:
 
                 func = tool_map.get(name)
                 failed = False
-                if func:
+                if not raw_name:
+                    result_str = json.dumps({
+                        "error": "Model emitted a tool call without a function name.",
+                        "raw_arguments": args_json[:2000],
+                    })
+                    failed = True
+                elif func:
                     try:
                         args = json.loads(args_json) if args_json else {}
                         result = func(**args)
@@ -268,6 +289,15 @@ class BaseOpenAIProvider:
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
+                from cli.branding import record_action
+                record_action(
+                    session_state,
+                    name=name,
+                    status="fail" if failed else "ok",
+                    result=result_str,
+                    duration_ms=duration_ms,
+                    args=args_json,
+                )
 
                 _get_orchestrator().record_execution(
                     tool_name=name,
