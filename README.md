@@ -130,6 +130,7 @@ See [crowe-logic-mcp](https://github.com/MichaelCrowe11/crowe-logic-mcp) for con
 | `AZURE_SORA_API_KEY` | Optional dedicated CroweLM Motion API key; falls back to `AZURE_CORE_API_KEY` |
 | `AZURE_SORA_DEPLOYMENT_NAME` | CroweLM Motion deployment name, usually `sora-2` |
 | `OPENROUTER_API_KEY` | OpenRouter API key (vision fallback) |
+| `CROWE_LOGIC_DEPLOY_TIMEOUT_SECONDS` | Optional timeout for `crowe-logic deploy` provider checks; defaults to `8` |
 | `CROWE_LOGIC_URL` | Crowe Logic platform URL |
 | `CROWE_LOGIC_KEY` | Crowe Logic API key |
 

@@ -1270,6 +1270,38 @@ def run(prompt: str):
         _render_error(str(e))
 
 
+def _deploy_timeout_seconds() -> float:
+    """Return the per-provider timeout used by `crowe-logic deploy`."""
+    raw = os.environ.get("CROWE_LOGIC_DEPLOY_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return 8.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 8.0
+    return max(1.0, min(value, 60.0))
+
+
+def _classify_deploy_error(error: Exception) -> str:
+    """Normalize deploy-health failures into short status labels."""
+    err = str(error).lower()
+    if "timed out" in err or "timeout" in err:
+        return "timeout"
+    if "404" in err or "not found" in err:
+        return "not found"
+    if "401" in err or "403" in err or "auth" in err or "unauthorized" in err:
+        return "auth failed"
+    if (
+        "connection" in err
+        or "refused" in err
+        or "nodename nor servname" in err
+        or "name or service not known" in err
+        or "temporary failure in name resolution" in err
+    ):
+        return "offline"
+    return "error"
+
+
 @main.command()
 def deploy():
     """Verify all CroweLM providers and run health checks."""
@@ -1287,6 +1319,7 @@ def deploy():
     console.print(f"\n{'='*60}")
     console.print(f"  CROWE LOGIC — DEPLOY HEALTH CHECK")
     console.print(f"  {AGENT_NAME} v{AGENT_VERSION}")
+    console.print(f"  request timeout {int(_deploy_timeout_seconds())}s")
     console.print(f"{'='*60}\n")
 
     test_msg = [
@@ -1305,6 +1338,7 @@ def deploy():
         return {"max_tokens": 50}
 
     results = []
+    timeout_seconds = _deploy_timeout_seconds()
 
     for model in MODEL_CHAIN:
         name = model["name"]
@@ -1331,7 +1365,12 @@ def deploy():
                             base_url += "/v1"
                         else:
                             base_url += "/openai/v1"
-                    client = OpenAI(api_key=api_key, base_url=base_url)
+                    client = OpenAI(
+                        api_key=api_key,
+                        base_url=base_url,
+                        timeout=timeout_seconds,
+                        max_retries=0,
+                    )
                     if model.get("surface") == "responses":
                         resp = client.responses.create(
                             model=name,
@@ -1358,7 +1397,7 @@ def deploy():
                     base_url = endpoint.rstrip("/")
                     if not base_url.endswith("/anthropic"):
                         base_url += "/anthropic"
-                    client = Anthropic(api_key=api_key, base_url=base_url)
+                    client = Anthropic(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
                     resp = client.messages.create(
                         model=name,
                         max_tokens=50,
@@ -1370,7 +1409,12 @@ def deploy():
                 if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
                     status = "no credentials"
                 else:
-                    client = OpenAI(api_key=NVIDIA_API_KEY, base_url=f"{NVIDIA_NIM_ENDPOINT.rstrip('/')}/v1")
+                    client = OpenAI(
+                        api_key=NVIDIA_API_KEY,
+                        base_url=f"{NVIDIA_NIM_ENDPOINT.rstrip('/')}/v1",
+                        timeout=timeout_seconds,
+                        max_retries=0,
+                    )
                     resp = client.chat.completions.create(
                         model=name, messages=test_msg, **_token_limit_kwargs(name),
                     )
@@ -1378,7 +1422,12 @@ def deploy():
                     status = "live" if resp.choices else "empty"
 
             elif provider == "ollama":
-                client = OpenAI(api_key="ollama", base_url=OLLAMA_BASE_URL)
+                client = OpenAI(
+                    api_key="ollama",
+                    base_url=OLLAMA_BASE_URL,
+                    timeout=timeout_seconds,
+                    max_retries=0,
+                )
                 resp = client.chat.completions.create(
                     model=name, messages=test_msg, max_tokens=50,
                 )
@@ -1389,7 +1438,12 @@ def deploy():
                 if not OPENROUTER_API_KEY:
                     status = "no key"
                 else:
-                    client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
+                    client = OpenAI(
+                        api_key=OPENROUTER_API_KEY,
+                        base_url=OPENROUTER_BASE_URL,
+                        timeout=timeout_seconds,
+                        max_retries=0,
+                    )
                     resp = client.chat.completions.create(
                         model=name, messages=test_msg, **_token_limit_kwargs(name),
                     )
@@ -1402,15 +1456,7 @@ def deploy():
             latency = int((time.monotonic() - start) * 1000)
 
         except Exception as e:
-            err = str(e)[:60]
-            if "404" in err or "not found" in err.lower():
-                status = "not found"
-            elif "401" in err or "auth" in err.lower():
-                status = "auth failed"
-            elif "connection" in err.lower() or "refused" in err.lower():
-                status = "offline"
-            else:
-                status = f"error"
+            status = _classify_deploy_error(e)
 
         results.append((label, status, latency))
 
@@ -1431,7 +1477,7 @@ def deploy():
     for label, status, latency in results:
         if status == "live":
             status_fmt = "[bold #6fbf73]LIVE[/bold #6fbf73]"
-        elif status in ("not found", "offline"):
+        elif status in ("not found", "offline", "timeout"):
             status_fmt = f"[#bf6f6f]{status}[/#bf6f6f]"
         elif status in ("no credentials", "no key", "auth failed"):
             status_fmt = f"[yellow]{status}[/yellow]"
@@ -1447,7 +1493,7 @@ def deploy():
     console.print()
     if NEON_DATABASE_URL:
         try:
-            resp = requests.head(NEON_DATABASE_URL, timeout=5)
+            resp = requests.head(NEON_DATABASE_URL, timeout=timeout_seconds)
             if resp.status_code < 500:
                 console.print("  [#6fbf73]Neon Postgres[/#6fbf73]  [dim]connected[/dim]")
             else:
@@ -1459,7 +1505,7 @@ def deploy():
 
     # Check local inference engine
     try:
-        resp = requests.get(OLLAMA_BASE_URL.replace("/v1", ""), timeout=3)
+        resp = requests.get(OLLAMA_BASE_URL.replace("/v1", ""), timeout=timeout_seconds)
         console.print("  [#6fbf73]Local engine[/#6fbf73]    [dim]running[/dim]")
     except Exception:
         console.print("  [#bf6f6f]Local engine[/#bf6f6f]    [dim]not running[/dim]")
