@@ -1,4 +1,4 @@
-"""Tests for Anthropic provider behavior on Azure-hosted CroweLM Opus."""
+"""Tests for Anthropic provider behavior on Azure-hosted CroweLM Prime."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def test_anthropic_provider_recovers_from_invalid_tool_json(monkeypatch):
         system_instructions="system",
         endpoint="https://example.openai.azure.com/anthropic",
         api_key="test-key",
-        label="CroweLM Opus",
+        label="CroweLM Prime",
     )
     provider.add_user_message("hello")
 
@@ -169,7 +169,7 @@ def test_anthropic_provider_routes_json_deltas_by_index(monkeypatch):
         system_instructions="system",
         endpoint="https://example.openai.azure.com/anthropic",
         api_key="test-key",
-        label="CroweLM Opus",
+        label="CroweLM Prime",
     )
     provider.add_user_message("hello")
 

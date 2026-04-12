@@ -97,7 +97,7 @@ def test_responses_provider_streams_reasoning_and_text(monkeypatch):
         system_instructions="system",
         endpoint="https://example.openai.azure.com",
         api_key="test-key",
-        label="CroweLM Pro",
+        label="CroweLM Apex",
     )
     provider.add_user_message("hello")
 
@@ -172,7 +172,7 @@ def test_responses_provider_executes_function_calls(monkeypatch):
         system_instructions="system",
         endpoint="https://example.openai.azure.com",
         api_key="test-key",
-        label="CroweLM Pro",
+        label="CroweLM Apex",
     )
     provider.add_user_message("hello")
 
@@ -232,7 +232,7 @@ def test_responses_provider_falls_back_to_final_response_content(monkeypatch):
         system_instructions="system",
         endpoint="https://example.openai.azure.com",
         api_key="test-key",
-        label="CroweLM Pro",
+        label="CroweLM Apex",
     )
     provider.add_user_message("hello")
 

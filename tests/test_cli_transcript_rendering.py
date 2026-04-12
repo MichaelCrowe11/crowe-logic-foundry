@@ -81,7 +81,7 @@ def test_render_session_hud_prints_latest_action_and_metrics():
         "tool_count": 3,
         "api_status": "ok",
         "retry_seconds": 0,
-        "active_model": "CroweLM Pro",
+        "active_model": "CroweLM Apex",
         "last_tokens": 128,
         "last_tps": 32.0,
         "total_tokens": 512,
@@ -100,7 +100,7 @@ def test_render_session_hud_prints_latest_action_and_metrics():
 
     output = console.export_text()
     assert "SESSION · turn" in output
-    assert "CroweLM Pro" in output
+    assert "CroweLM Apex" in output
     assert "crowe-logic-foundry" in output
     assert "browser_navigate ok" in output
     assert "128 tok @ 32/s" in output
@@ -113,7 +113,7 @@ def test_render_recent_actions_prints_timeline_panel():
         "tool_count": 1,
         "api_status": "ok",
         "retry_seconds": 0,
-        "active_model": "CroweLM Pro",
+        "active_model": "CroweLM Apex",
         "last_tokens": 0,
         "last_tps": 0.0,
         "total_tokens": 0,

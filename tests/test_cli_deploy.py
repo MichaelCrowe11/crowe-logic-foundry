@@ -31,8 +31,8 @@ def test_deploy_passes_timeouts_to_provider_clients(monkeypatch):
         agent_config,
         "MODEL_CHAIN",
         [
-            {"name": "gpt-5.4-pro", "label": "CroweLM Pro", "provider": "azure_openai", "surface": "responses"},
-            {"name": "claude-opus-4-6", "label": "CroweLM Opus", "provider": "anthropic"},
+            {"name": "gpt-5.4-pro", "label": "CroweLM Apex", "provider": "azure_openai", "surface": "responses"},
+            {"name": "claude-opus-4-6", "label": "CroweLM Prime", "provider": "anthropic"},
         ],
     )
     monkeypatch.setattr(agent_config, "NEON_DATABASE_URL", "")

@@ -46,21 +46,21 @@ MODEL_DEPLOYMENT_NAME = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-oss-120b")
 
 # ─── Azure AI Foundry: Resource 4667 (CroweLM flagship stack) ───────────────
 # OpenAI-compatible endpoint with API-key auth. Hosts:
-#   gpt-5.4-pro    → "CroweLM Pro"    (flagship reasoning)
-#   Kimi-K2.5      → "CroweLM Core"   (frontier reasoning)
-#   gpt-5.4-nano   → "CroweLM Kernel" (fast nano)
+#   gpt-5.4-pro    → "CroweLM Apex"   (legacy selectors: CroweLM Pro / pro)
+#   Kimi-K2.5      → "CroweLM Nexus"  (legacy selectors: CroweLM Core / core)
+#   gpt-5.4-nano   → "CroweLM Nano"   (legacy selectors: CroweLM Kernel / kernel)
 AZURE_CORE_ENDPOINT = os.environ.get("AZURE_CORE_ENDPOINT", "https://crowelogicos-4667-resource.openai.azure.com/openai/v1/")
 AZURE_CORE_API_KEY = os.environ.get("AZURE_CORE_API_KEY", "")
 
 # Optional dedicated CroweLM Motion deployment. When omitted, video generation
-# falls back to the same Azure OpenAI-compatible resource used by CroweLM Core.
+# falls back to the same Azure OpenAI-compatible resource used by CroweLM Nexus.
 AZURE_SORA_ENDPOINT = os.environ.get("AZURE_SORA_ENDPOINT", "")
 AZURE_SORA_API_KEY = os.environ.get("AZURE_SORA_API_KEY", "")
 AZURE_SORA_DEPLOYMENT_NAME = os.environ.get("AZURE_SORA_DEPLOYMENT_NAME", "sora-2")
 
 # ─── Azure AI Foundry: Resource 3995 (CroweLM GLM) ──────────────────────────
 # OpenAI-compatible endpoint with API-key auth. Hosts:
-#   FW-GLM-5       → "CroweLM GLM"    (25k TPM, DataZoneStandard, preview)
+#   FW-GLM-5       → "CroweLM Dense"  (legacy selectors: CroweLM GLM / glm)
 AZURE_GLM_ENDPOINT = os.environ.get("AZURE_GLM_ENDPOINT", "")
 AZURE_GLM_API_KEY = os.environ.get("AZURE_GLM_API_KEY", "")
 
@@ -114,157 +114,162 @@ AZURE_ANTHROPIC_API_KEY = os.environ.get("AZURE_ANTHROPIC_API_KEY", "")
 # NIM frontier models. Tertiary tier = local Ollama fallback.
 _BASE_MODEL_CHAIN = [
     # ─── Primary: Crowe Logic's own Azure Foundry deployments ──────────────
-    {"name": "gpt-5.4-pro",    "label": "CroweLM Pro",    "type": "reasoning",
+    # Tier 1: Flagship (highest capability + capacity)
+    {"name": "gpt-5.4",        "label": "CroweLM Titan",     "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_8909_ENDPOINT", "api_key_env": "AZURE_8909_API_KEY",
+     "surface": "responses",
+     "aliases": ["titan", "crowelm-titan", "crowelm-supreme", "supreme", "gpt54", "CroweLM Supreme"],
+     "prompt": (
+         "You are CroweLM Titan, Crowe Logic's highest-capacity flagship tier. "
+         "Operate at the executive level: strategic synthesis, complex architecture, and precision execution. "
+         "Stay decisive, thorough, and first-party branded. "
+         "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
+     )},
+    {"name": "gpt-5.4-pro",    "label": "CroweLM Apex",      "type": "reasoning",
      "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
      "surface": "responses",
-     "aliases": ["crowelm-pro", "pro"],
+     "aliases": ["apex", "crowelm-apex", "crowelm-pro", "pro", "CroweLM Pro"],
      "prompt": (
-         "You are CroweLM Pro, Crowe Logic's flagship reasoning tier. "
-         "Respond like first-party Crowe Logic IP: decisive, executive-grade, and technically rigorous. "
-         "Favor synthesis, planning, architecture, and high-consequence judgment. "
-         "Do not volunteer vendor names or say you are GPT unless the user explicitly asks about infrastructure."
+         "You are CroweLM Apex, Crowe Logic's peak-performance reasoning tier. "
+         "Respond with executive-grade precision: decisive, technically rigorous, and synthesis-focused. "
+         "Favor planning, architecture, and high-consequence judgment. "
+         "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
+     )},
+    {"name": "grok-4-20-reasoning", "label": "CroweLM Oracle", "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_4291_ENDPOINT", "api_key_env": "AZURE_4291_API_KEY",
+     "aliases": ["oracle", "crowelm-oracle", "crowelm-grok", "grok", "CroweLM Grok"],
+     "prompt": (
+         "You are CroweLM Oracle, Crowe Logic's deep-foresight reasoning tier. "
+         "Apply rigorous multimodal reasoning and real-world grounding to every task. "
+         "Stay precise, direct, and calibrated to actual evidence. "
+         "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
      )},
 
-    # Anthropic Claude (native Anthropic API on Azure)
-    {"name": "claude-opus-4-6", "label": "CroweLM Opus",   "type": "reasoning",
-     "provider": "anthropic", "endpoint_env": "AZURE_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_ANTHROPIC_API_KEY",
-     "aliases": ["crowelm-opus", "opus"],
+    # Tier 2: Deep analysis (Anthropic-powered)
+    {"name": "claude-opus-4-6-2", "label": "CroweLM Sovereign", "type": "reasoning",
+     "provider": "anthropic", "endpoint_env": "AZURE_1960_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_1960_API_KEY",
+     "aliases": ["sovereign", "crowelm-sovereign", "crowelm-opus-x", "opus-x", "CroweLM Opus X"],
      "prompt": (
-         "You are CroweLM Opus, Crowe Logic's deep-analysis and writing tier. "
+         "You are CroweLM Sovereign, Crowe Logic's premium writing and deep-analysis tier. "
+         "Sustain long, structured reasoning across writing, research, and strategy. "
+         "Deliver assertive, polished output in Crowe Logic's first-party brand voice. "
+         "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
+     )},
+    {"name": "claude-opus-4-6", "label": "CroweLM Prime",     "type": "reasoning",
+     "provider": "anthropic", "endpoint_env": "AZURE_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_ANTHROPIC_API_KEY",
+     "aliases": ["prime", "crowelm-prime", "crowelm-opus", "opus", "CroweLM Opus"],
+     "prompt": (
+         "You are CroweLM Prime, Crowe Logic's core flagship analysis tier. "
          "Optimize for sustained reasoning, careful argument structure, and polished long-form output. "
          "Stay assertive and precise while preserving Crowe Logic's first-party brand voice. "
-         "Do not volunteer vendor names or say you are Claude unless the user explicitly asks about infrastructure."
+         "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
      )},
 
-    # OpenAI-compatible deployments
-    {"name": "Kimi-K2.5",      "label": "CroweLM Core",   "type": "reasoning",
+    # Tier 3: Balanced general-purpose
+    {"name": "Kimi-K2.5",      "label": "CroweLM Nexus",     "type": "reasoning",
      "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
-     "aliases": ["crowelm-core", "core"],
+     "aliases": ["nexus", "crowelm-nexus", "crowelm-core", "core", "CroweLM Core"],
      "prompt": (
-         "You are CroweLM Core, the balanced general-purpose tier in the CroweLM stack. "
+         "You are CroweLM Nexus, Crowe Logic's central general-purpose tier. "
          "Be fast, pragmatic, and capable across product, research, and operations work. "
          "Keep outputs concise unless the task clearly needs depth."
      )},
-    {"name": "gpt-5.4-nano",   "label": "CroweLM Kernel", "type": "fast",
-     "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
-     "aliases": ["crowelm-kernel", "kernel"],
-     "prompt": (
-         "You are CroweLM Kernel, the low-latency execution tier in the CroweLM stack. "
-         "Optimize for speed, operational clarity, and crisp tool use. "
-         "Keep answers tight and action-oriented."
-     )},
-    {"name": "FW-GLM-5",       "label": "CroweLM GLM",    "type": "reasoning",
-     "provider": "azure_openai", "endpoint_env": "AZURE_GLM_ENDPOINT",  "api_key_env": "AZURE_GLM_API_KEY",
-     "aliases": ["crowelm-glm", "glm"],
-     "prompt": (
-         "You are CroweLM GLM, a high-capacity reasoning tier used for dense analytical work. "
-         "Prioritize structured thought, careful decomposition, and exact terminology."
-     )},
 
-    # ─── New Azure Foundry deployments (added 2026-04-11) ──────────────────
-    {"name": "gpt-5.4",        "label": "CroweLM Supreme", "type": "reasoning",
-     "provider": "azure_openai", "endpoint_env": "AZURE_8909_ENDPOINT", "api_key_env": "AZURE_8909_API_KEY",
-     "surface": "responses",
-     "aliases": ["crowelm-supreme", "supreme", "gpt54"],
-     "prompt": (
-         "You are CroweLM Supreme, Crowe Logic's highest-capacity flagship tier. "
-         "Operate at the executive reasoning level: strategic synthesis, complex architecture, "
-         "and precision execution. Stay decisive and first-party branded. "
-         "Do not volunteer vendor names unless directly asked about infrastructure."
-     )},
-    {"name": "grok-4-20-reasoning", "label": "CroweLM Grok", "type": "reasoning",
-     "provider": "azure_openai", "endpoint_env": "AZURE_4291_ENDPOINT", "api_key_env": "AZURE_4291_API_KEY",
-     "aliases": ["crowelm-grok", "grok"],
-     "prompt": (
-         "You are CroweLM Grok, Crowe Logic's xAI-powered reasoning tier. "
-         "Apply deep multimodal reasoning and real-world grounding to every task. "
-         "Stay precise, direct, and calibrated to actual evidence."
-     )},
-    {"name": "DeepSeek-R1",    "label": "CroweLM Reason",  "type": "reasoning",
+    # Tier 4: Specialist reasoning
+    {"name": "DeepSeek-R1",    "label": "CroweLM Reason",    "type": "reasoning",
      "provider": "azure_openai", "endpoint_env": "AZURE_7858_ENDPOINT", "api_key_env": "AZURE_7858_API_KEY",
-     "aliases": ["crowelm-reason", "reason", "r1"],
+     "aliases": ["reason", "crowelm-reason", "r1"],
      "prompt": (
-         "You are CroweLM Reason, Crowe Logic's deep chain-of-thought reasoning tier. "
+         "You are CroweLM Reason, Crowe Logic's chain-of-thought specialist tier. "
          "Work through complex problems methodically before producing your final answer. "
          "Prefer explicit step-by-step breakdown for any multi-part problem."
      )},
-    {"name": "DeepSeek-V3-1",  "label": "CroweLM V3",      "type": "reasoning",
+    {"name": "DeepSeek-V3-1",  "label": "CroweLM Vector",    "type": "reasoning",
      "provider": "azure_openai", "endpoint_env": "AZURE_7858_ENDPOINT", "api_key_env": "AZURE_7858_API_KEY",
-     "aliases": ["crowelm-v3", "v3", "deepseek"],
+     "aliases": ["vector", "crowelm-vector", "crowelm-v3", "v3", "deepseek", "CroweLM V3"],
      "prompt": (
-         "You are CroweLM V3, Crowe Logic's efficient frontier reasoning tier. "
+         "You are CroweLM Vector, Crowe Logic's directional-efficiency reasoning tier. "
          "Prioritize clarity, speed, and synthesis across technical and operational tasks."
      )},
-    {"name": "Llama-3-3-70B",  "label": "CroweLM Llama",   "type": "reasoning",
+    {"name": "Mistral-Large-3", "label": "CroweLM Edge",     "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_9536_ENDPOINT", "api_key_env": "AZURE_9536_API_KEY",
+     "aliases": ["edge", "crowelm-edge", "crowelm-mistral", "mistral", "CroweLM Mistral"],
+     "prompt": (
+         "You are CroweLM Edge, Crowe Logic's precision-reasoning tier. "
+         "Apply sharp, efficient reasoning with strong technical fluency and exact terminology."
+     )},
+    {"name": "FW-MiniMax-M2.5", "label": "CroweLM Atlas",    "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_9536_ENDPOINT", "api_key_env": "AZURE_9536_API_KEY",
+     "aliases": ["atlas", "crowelm-atlas", "crowelm-minimax", "minimax", "CroweLM MiniMax"],
+     "prompt": (
+         "You are CroweLM Atlas, Crowe Logic's long-context specialist tier. "
+         "Excel at tasks requiring large document analysis and sustained multi-turn context. "
+         "Hold the full scope of complex problems without losing detail."
+     )},
+    {"name": "Llama-3-3-70B",  "label": "CroweLM Forge",     "type": "reasoning",
      "provider": "azure_openai", "endpoint_env": "AZURE_7858_ENDPOINT", "api_key_env": "AZURE_7858_API_KEY",
-     "aliases": ["crowelm-llama", "llama"],
+     "aliases": ["forge", "crowelm-forge", "crowelm-llama", "llama", "CroweLM Llama"],
      "prompt": (
-         "You are CroweLM Llama, Crowe Logic's open-architecture reasoning tier. "
-         "Be direct, grounded, and operationally focused."
+         "You are CroweLM Forge, Crowe Logic's open-architecture foundation tier. "
+         "Be direct, grounded, and operationally focused across all task types."
      )},
-    {"name": "Mistral-Large-3", "label": "CroweLM Mistral", "type": "reasoning",
-     "provider": "azure_openai", "endpoint_env": "AZURE_9536_ENDPOINT", "api_key_env": "AZURE_9536_API_KEY",
-     "aliases": ["crowelm-mistral", "mistral"],
+
+    # Tier 5: Speed + structured
+    {"name": "gpt-5.4-nano",   "label": "CroweLM Nano",      "type": "fast",
+     "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
+     "aliases": ["nano", "crowelm-nano", "crowelm-kernel", "kernel", "CroweLM Kernel"],
      "prompt": (
-         "You are CroweLM Mistral, Crowe Logic's European-engineered reasoning tier. "
-         "Apply precise, efficient reasoning with strong technical fluency."
+         "You are CroweLM Nano, Crowe Logic's low-latency execution tier. "
+         "Optimize for speed, operational clarity, and crisp tool use. "
+         "Keep answers tight and action-oriented."
      )},
-    {"name": "FW-MiniMax-M2.5", "label": "CroweLM MiniMax", "type": "reasoning",
-     "provider": "azure_openai", "endpoint_env": "AZURE_9536_ENDPOINT", "api_key_env": "AZURE_9536_API_KEY",
-     "aliases": ["crowelm-minimax", "minimax"],
+    {"name": "FW-GLM-5",       "label": "CroweLM Dense",     "type": "reasoning",
+     "provider": "azure_openai", "endpoint_env": "AZURE_GLM_ENDPOINT",  "api_key_env": "AZURE_GLM_API_KEY",
+     "aliases": ["dense", "crowelm-dense", "crowelm-glm", "glm", "CroweLM GLM"],
      "prompt": (
-         "You are CroweLM MiniMax, Crowe Logic's long-context reasoning tier. "
-         "Excel at tasks requiring large document analysis and sustained multi-turn context."
+         "You are CroweLM Dense, Crowe Logic's structured analytical tier. "
+         "Prioritize meticulous decomposition, exact terminology, and dense information synthesis."
      )},
-    # Anthropic Claude on Sweden resource (425-cap Opus + Opus 4.5)
-    {"name": "claude-opus-4-6-2", "label": "CroweLM Opus X",    "type": "reasoning",
+    {"name": "claude-opus-4-5",   "label": "CroweLM Classic",  "type": "reasoning",
      "provider": "anthropic", "endpoint_env": "AZURE_1960_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_1960_API_KEY",
-     "aliases": ["crowelm-opus-x", "opus-x"],
+     "aliases": ["classic", "crowelm-classic", "crowelm-opus-classic", "opus-classic", "CroweLM Opus Classic"],
      "prompt": (
-         "You are CroweLM Opus X, Crowe Logic's extended-capacity deep-analysis tier. "
-         "Sustain long, structured reasoning across writing, research, and strategy. "
-         "Stay assertive, polished, and first-party branded."
-     )},
-    {"name": "claude-opus-4-5",   "label": "CroweLM Opus Classic", "type": "reasoning",
-     "provider": "anthropic", "endpoint_env": "AZURE_1960_ANTHROPIC_ENDPOINT", "api_key_env": "AZURE_1960_API_KEY",
-     "aliases": ["crowelm-opus-classic", "opus-classic"],
-     "prompt": (
-         "You are CroweLM Opus Classic, Crowe Logic's proven deep-reasoning tier. "
+         "You are CroweLM Classic, Crowe Logic's proven legacy reasoning tier. "
          "Deliver careful, well-structured analysis with Crowe Logic's brand voice."
      )},
 
     # ─── Secondary: NVIDIA NIM frontier roster ─────────────────────────────
     # Frontier reasoning (>250B params)
-    {"name": "mistralai/mistral-large-3-675b-instruct-2512", "label": "CroweLM Frontier",   "type": "reasoning", "provider": "nvidia"},
-    {"name": "qwen/qwen3.5-397b-a17b",                       "label": "CroweLM Qwen Pro",   "type": "reasoning", "provider": "nvidia"},
-    {"name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",      "label": "CroweLM Ultra",      "type": "reasoning", "provider": "nvidia"},
-    {"name": "moonshotai/kimi-k2.5",                         "label": "CroweLM K2 Frontier", "type": "reasoning", "provider": "nvidia"},
-    {"name": "moonshotai/kimi-k2-thinking",                  "label": "CroweLM Thinker",    "type": "reasoning", "provider": "nvidia"},
-    {"name": "deepseek-ai/deepseek-v3.2",                    "label": "CroweLM DeepSeek",   "type": "reasoning", "provider": "nvidia"},
-    {"name": "nvidia/nemotron-3-super-120b-a12b",            "label": "CroweLM Nemotron",   "type": "reasoning", "provider": "nvidia"},
-    {"name": "openai/gpt-oss-120b",                          "label": "CroweLM 120B",       "type": "reasoning", "provider": "nvidia"},
-    {"name": "meta/llama-4-maverick-17b-128e-instruct",      "label": "CroweLM Maverick",   "type": "reasoning", "provider": "nvidia"},
+    {"name": "mistralai/mistral-large-3-675b-instruct-2512", "label": "CroweLM Frontier",  "type": "reasoning", "provider": "nvidia"},
+    {"name": "qwen/qwen3.5-397b-a17b",                       "label": "CroweLM Prism",     "type": "reasoning", "provider": "nvidia"},
+    {"name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",      "label": "CroweLM Ultra",     "type": "reasoning", "provider": "nvidia"},
+    {"name": "moonshotai/kimi-k2.5",                         "label": "CroweLM Lunar",     "type": "reasoning", "provider": "nvidia"},
+    {"name": "moonshotai/kimi-k2-thinking",                  "label": "CroweLM Pulse",     "type": "reasoning", "provider": "nvidia"},
+    {"name": "deepseek-ai/deepseek-v3.2",                    "label": "CroweLM Depth",     "type": "reasoning", "provider": "nvidia"},
+    {"name": "nvidia/nemotron-3-super-120b-a12b",            "label": "CroweLM Nova",      "type": "reasoning", "provider": "nvidia"},
+    {"name": "openai/gpt-oss-120b",                          "label": "CroweLM Open",      "type": "reasoning", "provider": "nvidia"},
+    {"name": "meta/llama-4-maverick-17b-128e-instruct",      "label": "CroweLM Maverick",  "type": "reasoning", "provider": "nvidia"},
 
     # Code specialists
-    {"name": "qwen/qwen3-coder-480b-a35b-instruct",          "label": "CroweLM Coder Pro",  "type": "code",      "provider": "nvidia"},
-    {"name": "mistralai/devstral-2-123b-instruct-2512",      "label": "CroweLM Devstral",   "type": "code",      "provider": "nvidia"},
+    {"name": "qwen/qwen3-coder-480b-a35b-instruct",          "label": "CroweLM Coder",     "type": "code",      "provider": "nvidia"},
+    {"name": "mistralai/devstral-2-123b-instruct-2512",      "label": "CroweLM Dev",       "type": "code",      "provider": "nvidia"},
 
     # Mid-tier (faster, still capable)
-    {"name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",     "label": "CroweLM Super",      "type": "reasoning", "provider": "nvidia"},
-    {"name": "z-ai/glm5",                                    "label": "CroweLM Cloud",      "type": "reasoning", "provider": "nvidia"},
-    {"name": "openai/gpt-oss-20b",                           "label": "CroweLM Lite",       "type": "reasoning", "provider": "nvidia"},
+    {"name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",     "label": "CroweLM Swift",     "type": "reasoning", "provider": "nvidia"},
+    {"name": "z-ai/glm5",                                    "label": "CroweLM Mesh",      "type": "reasoning", "provider": "nvidia"},
+    {"name": "openai/gpt-oss-20b",                           "label": "CroweLM Lite",      "type": "reasoning", "provider": "nvidia"},
 
     # Vision (multimodal)
-    {"name": "nvidia/nemotron-nano-12b-v2-vl",               "label": "CroweLM Vision",     "type": "vision",    "provider": "nvidia"},
+    {"name": "nvidia/nemotron-nano-12b-v2-vl",               "label": "CroweLM Vision",    "type": "vision",    "provider": "nvidia"},
 
     # Local fallbacks (Ollama on the user's machine)
-    {"name": "kimi-k2.5:cloud",                              "label": "CroweLM K2 Local",      "type": "reasoning", "provider": "ollama"},
-    {"name": "glm-4.6:cloud",                                "label": "CroweLM Cloud (local)", "type": "reasoning", "provider": "ollama"},
+    {"name": "kimi-k2.5:cloud",                              "label": "CroweLM Local",     "type": "reasoning", "provider": "ollama"},
+    {"name": "glm-4.6:cloud",                                "label": "CroweLM LocalMesh", "type": "reasoning", "provider": "ollama"},
 ]
 
 
 def _selector_key(value: str) -> str:
-    """Normalize model selectors so 'crowelm-pro' matches 'CroweLM Pro'."""
+    """Normalize model selectors so legacy and rebranded names resolve identically."""
     return "".join(ch.lower() for ch in value if ch.isalnum())
 
 
@@ -442,7 +447,7 @@ NEON_API_KEY = os.environ.get("NEON_API_KEY", "")
 
 # Agent identity
 AGENT_NAME = "crowe-logic"
-AGENT_VERSION = "0.2.4"
+AGENT_VERSION = "0.2.5"
 
 SYSTEM_INSTRUCTIONS = """You are Crowe Logic, a universal AI agent created by Michael Crowe.
 

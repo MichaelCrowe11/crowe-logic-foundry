@@ -856,7 +856,7 @@ def build_toolbar():
     """Build the prompt_toolkit bottom toolbar HTML string.
 
     Format:
-      CroweLM v0.1.0      45s · 3 tools · 1247 tok @ 89/s · CroweLM Core · LIVE
+      CroweLM v0.1.0      45s · 3 tools · 1247 tok @ 89/s · CroweLM Nexus · LIVE
 
     All separators are the DOT token, applied uniformly. Status is
     color-coded: green for LIVE, amber for THROTTLED, red for DOWN.
