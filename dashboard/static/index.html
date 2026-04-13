@@ -3,825 +3,849 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Crowe Logic Foundry</title>
+<title>Crowe Logic Foundry — Research Workstation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* ── Crowe Logic Design System v2 ──────────────────────────────────── */
 :root {
-  --cl-blue:     #1a56db;
-  --cl-blue-d:   #163caa;
-  --cl-blue-l:   #2d6ff2;
-  --cl-gold:     #e5a100;
-  --cl-gold-l:   #f0b829;
-  --cl-navy:     #0f1729;
-  --cl-navy-2:   #141e33;
-  --cl-navy-3:   #1a2744;
-  --cl-navy-4:   #213054;
-  --cl-slate:    #2a3a5c;
-  --cl-border:   rgba(42,58,92,0.6);
-  --cl-border-l: rgba(42,58,92,0.35);
-  --text-1:      #edf2f7;
-  --text-2:      #a0aec0;
-  --text-3:      #64748b;
-  --green:       #10b981;
-  --green-bg:    rgba(16,185,129,0.12);
-  --red:         #ef4444;
-  --red-bg:      rgba(239,68,68,0.12);
-  --amber:       #f59e0b;
-  --amber-bg:    rgba(245,158,11,0.12);
-  --purple:      #8b5cf6;
-  --purple-bg:   rgba(139,92,246,0.12);
-  --cyan:        #06b6d4;
-  --cyan-bg:     rgba(6,182,212,0.12);
-  --blue-bg:     rgba(26,86,219,0.12);
-  --gold-bg:     rgba(229,161,0,0.12);
-  --r:           10px;
-  --r-lg:        14px;
-  --r-sm:        6px;
-  --shadow-sm:   0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md:   0 4px 16px rgba(0,0,0,0.35);
-  --shadow-lg:   0 12px 40px rgba(0,0,0,0.5);
-  --font:        'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --mono:        'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  --transition:  150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --cl-blue:#1a56db;--cl-blue-d:#163caa;--cl-blue-l:#2d6ff2;
+  --cl-gold:#e5a100;--cl-gold-l:#f0b829;
+  --navy-1:#080d19;--navy-2:#0c1220;--navy-3:#111828;--navy-4:#161f35;--navy-5:#1c2844;--navy-6:#243356;
+  --border:rgba(36,51,86,0.65);--border-l:rgba(36,51,86,0.35);--border-focus:rgba(26,86,219,0.5);
+  --t1:#edf2f7;--t2:#a0aec0;--t3:#64748b;--t4:#475569;
+  --green:#10b981;--green-bg:rgba(16,185,129,0.1);--green-glow:rgba(16,185,129,0.3);
+  --red:#ef4444;--red-bg:rgba(239,68,68,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --purple:#8b5cf6;--purple-bg:rgba(139,92,246,0.1);
+  --cyan:#06b6d4;--cyan-bg:rgba(6,182,212,0.1);
+  --blue-bg:rgba(26,86,219,0.1);--gold-bg:rgba(229,161,0,0.1);
+  --r:8px;--r-sm:5px;--r-lg:12px;
+  --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono','SF Mono',monospace;
+  --ease:150ms cubic-bezier(.4,0,.2,1);
 }
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{font-size:13px;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);background:var(--navy-1);color:var(--t1);min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
+::selection{background:var(--cl-blue);color:#fff}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--navy-6);border-radius:3px}
+.mono{font-family:var(--mono);font-size:11px}
+.pulse{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-body { font-family: var(--font); background: var(--cl-navy); color: var(--text-1); min-height: 100vh; display: flex; overflow: hidden; }
+.shell{display:flex;flex:1;overflow:hidden}
+.sidebar{width:220px;background:var(--navy-2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:50}
+.main-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
 
-/* ── SVG Icon System ───────────────────────────────────────────────── */
-.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-.ic-lg { width: 22px; height: 22px; }
-.ic-xl { width: 28px; height: 28px; }
+.topbar{height:42px;background:var(--navy-2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
+.topbar-title{font-size:13px;font-weight:700;letter-spacing:-0.3px}
+.topbar-breadcrumb{font-size:11px;color:var(--t3);font-weight:500}
+.topbar-sep{color:var(--t4);font-size:10px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.topbar-clock{font-family:var(--mono);font-size:11px;color:var(--t3);letter-spacing:0.5px}
+.topbar-status{display:flex;gap:6px;align-items:center}
+.status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.status-dot.on{background:var(--green);box-shadow:0 0 6px var(--green-glow)}
+.status-dot.off{background:var(--t4)}
+.status-dot.warn{background:var(--amber)}
+.status-label{font-size:10px;color:var(--t3);font-weight:500}
 
-/* ── Sidebar ───────────────────────────────────────────────────────── */
-.sidebar {
-  width: 256px; background: var(--cl-navy-2); border-right: 1px solid var(--cl-border);
-  display: flex; flex-direction: column; position: fixed;
-  top: 0; left: 0; bottom: 0; z-index: 100;
-}
-.sidebar-brand {
-  padding: 20px; border-bottom: 1px solid var(--cl-border);
-  display: flex; align-items: center; gap: 14px;
-}
-.brand-mark {
-  width: 38px; height: 38px; position: relative; flex-shrink: 0;
-}
-.brand-mark svg { width: 100%; height: 100%; }
-.brand-text h1 { font-size: 15px; font-weight: 700; color: var(--text-1); letter-spacing: -0.3px; }
-.brand-text span { font-size: 11px; color: var(--text-3); font-weight: 500; letter-spacing: 0.5px; }
+.sidebar-brand{padding:14px 14px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;flex-shrink:0}
+.brand-mark svg{width:100%;height:100%}
+.brand-name{font-size:13px;font-weight:800;letter-spacing:-0.4px}
+.brand-ver{font-size:9px;color:var(--t4);font-weight:600;letter-spacing:0.8px;text-transform:uppercase}
+.sidebar-nav{flex:1;padding:8px 6px;overflow-y:auto}
+.nav-section{margin-bottom:14px}
+.nav-section-label{font-size:9px;text-transform:uppercase;letter-spacing:1.8px;color:var(--t4);padding:4px 10px 6px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--t3);font-size:12px;font-weight:500;transition:all var(--ease);position:relative;user-select:none}
+.nav-item:hover{background:var(--navy-4);color:var(--t2)}
+.nav-item.active{background:var(--blue-bg);color:var(--cl-blue-l)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:2.5px;border-radius:0 2px 2px 0;background:var(--cl-blue)}
+.nav-item .ic{width:15px;height:15px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.nav-count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--t4)}
+.sidebar-footer{padding:10px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.plan-pill{font-size:9px;font-weight:700;padding:2px 7px;border-radius:var(--r-sm);background:var(--gold-bg);color:var(--cl-gold);text-transform:uppercase;letter-spacing:0.8px}
+.sidebar-footer .org{font-size:11px;color:var(--t3);font-weight:500}
 
-.sidebar-nav { flex: 1; padding: 12px 10px; overflow-y: auto; }
-.sidebar-nav::-webkit-scrollbar { width: 4px; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: var(--cl-slate); border-radius: 2px; }
-.nav-group { margin-bottom: 20px; }
-.nav-label {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 1.6px;
-  color: var(--text-3); padding: 4px 10px 8px; font-weight: 600;
-}
-.nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer;
-  color: var(--text-2); transition: all var(--transition);
-  font-size: 13px; font-weight: 500; position: relative;
-  text-decoration: none; user-select: none;
-}
-.nav-item:hover { background: var(--cl-navy-3); color: var(--text-1); }
-.nav-item.active {
-  background: var(--blue-bg); color: var(--cl-blue-l);
-}
-.nav-item.active::before {
-  content: ''; position: absolute; left: 0; top: 6px; bottom: 6px;
-  width: 3px; border-radius: 0 3px 3px 0; background: var(--cl-blue);
-}
-.nav-badge {
-  margin-left: auto; font-size: 10px; font-weight: 600;
-  padding: 1px 7px; border-radius: 10px;
-  background: var(--cl-blue); color: #fff; line-height: 1.6;
-}
-.sidebar-footer {
-  padding: 14px 16px; border-top: 1px solid var(--cl-border);
-  display: flex; align-items: center; gap: 10px;
-}
-.plan-pill {
-  font-size: 10px; font-weight: 700; padding: 3px 8px;
-  border-radius: var(--r-sm); background: var(--gold-bg); color: var(--cl-gold);
-  text-transform: uppercase; letter-spacing: 0.8px;
-}
-.sidebar-footer span { font-size: 12px; color: var(--text-3); }
+.statusbar{height:24px;background:var(--navy-2);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:16px;flex-shrink:0}
+.statusbar-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t4);font-weight:500}
+.statusbar-item .status-dot{width:5px;height:5px}
+.statusbar-sep{width:1px;height:12px;background:var(--border)}
 
-/* ── Main ──────────────────────────────────────────────────────────── */
-.main { margin-left: 256px; flex: 1; height: 100vh; display: flex; flex-direction: column; }
-.topbar {
-  height: 56px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--cl-border); background: var(--cl-navy-2); flex-shrink: 0;
-}
-.topbar-left { display: flex; align-items: center; gap: 12px; }
-.topbar-left h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.2px; }
-.topbar-left .breadcrumb { font-size: 12px; color: var(--text-3); }
-.topbar-right { display: flex; gap: 8px; align-items: center; }
+.content-area{flex:1;overflow-y:auto;padding:16px}
+.page{display:none}.page.active{display:block;animation:fadeIn 200ms ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
-.btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: var(--r-sm);
-  border: 1px solid var(--cl-border); background: var(--cl-navy-3);
-  color: var(--text-2); cursor: pointer; font-family: var(--font);
-  font-size: 12px; font-weight: 500; transition: all var(--transition);
-  white-space: nowrap;
-}
-.btn:hover { background: var(--cl-navy-4); color: var(--text-1); border-color: var(--cl-slate); }
-.btn-primary { background: var(--cl-blue); border-color: var(--cl-blue); color: #fff; }
-.btn-primary:hover { background: var(--cl-blue-d); }
-.btn-sm { padding: 5px 10px; font-size: 11px; }
+.stat-row{display:grid;gap:10px;margin-bottom:14px}
+.stat-row.cols-4{grid-template-columns:repeat(4,1fr)}.stat-row.cols-5{grid-template-columns:repeat(5,1fr)}
+.stat-row.cols-6{grid-template-columns:repeat(6,1fr)}.stat-row.cols-3{grid-template-columns:repeat(3,1fr)}
+.stat-card{background:var(--navy-3);border:1px solid var(--border-l);border-radius:var(--r);padding:12px 14px;position:relative;overflow:hidden;transition:border-color var(--ease)}
+.stat-card:hover{border-color:var(--border)}
+.stat-card .label{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:4px}
+.stat-card .value{font-family:var(--mono);font-size:22px;font-weight:700;letter-spacing:-0.5px;line-height:1}
+.stat-card .sub{font-size:10px;color:var(--t4);margin-top:4px;font-weight:500}
+.stat-card .indicator{position:absolute;top:12px;right:12px;width:7px;height:7px;border-radius:50%}
 
-.content-scroll { flex: 1; overflow-y: auto; }
-.content-scroll::-webkit-scrollbar { width: 6px; }
-.content-scroll::-webkit-scrollbar-thumb { background: var(--cl-slate); border-radius: 3px; }
-.content { padding: 24px 28px 40px; max-width: 1400px; }
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.grid-3-1{display:grid;grid-template-columns:3fr 1fr;gap:12px}
 
-/* ── Stat Cards ────────────────────────────────────────────────────── */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-.stat {
-  background: var(--cl-navy-2); border: 1px solid var(--cl-border-l);
-  border-radius: var(--r); padding: 20px; position: relative; overflow: hidden;
-  transition: all var(--transition);
-}
-.stat:hover { border-color: var(--cl-border); box-shadow: var(--shadow-sm); }
-.stat-icon {
-  width: 36px; height: 36px; border-radius: var(--r-sm);
-  display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
-}
-.stat-icon svg { width: 18px; height: 18px; }
-.stat-label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 6px; }
-.stat-value { font-size: 28px; font-weight: 800; letter-spacing: -1px; line-height: 1; color: var(--text-1); }
-.stat-sub { font-size: 11px; color: var(--text-3); margin-top: 6px; font-weight: 500; }
-.stat-accent { position: absolute; top: 0; right: 0; width: 80px; height: 80px; opacity: 0.04; border-radius: 0 0 0 80px; }
+.panel{background:var(--navy-3);border:1px solid var(--border-l);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+.panel-hd{padding:10px 14px;border-bottom:1px solid var(--border-l);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel-hd h3{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
+.panel-hd .sub{font-size:10px;color:var(--t4);margin-left:8px;font-weight:500}
+.panel-bd{padding:12px 14px}
+.panel-bd.flush{padding:0}
+.panel-bd.scroll{max-height:300px;overflow-y:auto}
 
-/* ── Cards ─────────────────────────────────────────────────────────── */
-.card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px; }
-.card {
-  background: var(--cl-navy-2); border: 1px solid var(--cl-border-l);
-  border-radius: var(--r); padding: 22px; cursor: pointer;
-  transition: all 200ms ease; position: relative; overflow: hidden;
-}
-.card:hover { border-color: var(--cl-blue); transform: translateY(-1px); box-shadow: var(--shadow-md); }
-.card-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
-.card-icon {
-  width: 42px; height: 42px; border-radius: var(--r-sm);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.card-icon svg { width: 20px; height: 20px; }
-.card-title { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; margin-bottom: 2px; }
-.card-desc { font-size: 12.5px; color: var(--text-2); line-height: 1.55; }
-.card-metrics { display: flex; gap: 20px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--cl-border-l); }
-.card-metric { font-size: 11px; color: var(--text-3); }
-.card-metric strong { color: var(--text-1); font-weight: 700; font-size: 13px; display: block; margin-bottom: 1px; }
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:var(--t4);font-weight:700;padding:7px 12px;text-align:left;border-bottom:1px solid var(--border-l);white-space:nowrap;position:sticky;top:0;background:var(--navy-3)}
+.tbl td{padding:7px 12px;font-size:12px;border-bottom:1px solid var(--border-l);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:rgba(26,40,68,0.4)}
+.tbl .mono{font-family:var(--mono);font-size:10.5px;color:var(--t2)}
 
-/* ── Panels ────────────────────────────────────────────────────────── */
-.panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.panel {
-  background: var(--cl-navy-2); border: 1px solid var(--cl-border-l);
-  border-radius: var(--r); overflow: hidden; margin-bottom: 16px;
-}
-.panel-head {
-  padding: 16px 20px; border-bottom: 1px solid var(--cl-border-l);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.panel-head h3 { font-size: 13px; font-weight: 700; letter-spacing: -0.1px; }
-.panel-body { padding: 16px 20px; }
+.badge{display:inline-flex;padding:2px 7px;border-radius:3px;font-size:9.5px;font-weight:600;letter-spacing:0.3px;line-height:1.5}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-blue{background:var(--blue-bg);color:var(--cl-blue-l)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+.badge-cyan{background:var(--cyan-bg);color:var(--cyan)}
+.badge-gold{background:var(--gold-bg);color:var(--cl-gold)}
+.badge-dim{background:rgba(100,116,139,0.12);color:var(--t3)}
 
-/* ── Tables ────────────────────────────────────────────────────────── */
-.tbl { width: 100%; border-collapse: collapse; }
-.tbl th {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px;
-  color: var(--text-3); font-weight: 600; padding: 8px 14px; text-align: left;
-  border-bottom: 1px solid var(--cl-border-l); white-space: nowrap;
-}
-.tbl td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--cl-border-l); }
-.tbl tr:last-child td { border-bottom: none; }
-.tbl tr:hover td { background: rgba(26,39,68,0.5); }
-.tbl .mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); }
-.tbl em { font-style: italic; }
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--navy-4);color:var(--t2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:500;transition:all var(--ease);white-space:nowrap}
+.btn:hover{background:var(--navy-5);color:var(--t1);border-color:var(--navy-6)}
+.btn-primary{background:var(--cl-blue);border-color:var(--cl-blue);color:#fff}
+.btn-primary:hover{background:var(--cl-blue-d)}
+.btn-sm{padding:3px 8px;font-size:10px}
+.w-full{width:100%}
 
-.badge {
-  display: inline-flex; padding: 2px 9px; border-radius: 20px;
-  font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px;
-}
-.badge-green { background: var(--green-bg); color: var(--green); }
-.badge-amber { background: var(--amber-bg); color: var(--amber); }
-.badge-red { background: var(--red-bg); color: var(--red); }
-.badge-blue { background: var(--blue-bg); color: var(--cl-blue-l); }
-.badge-purple { background: var(--purple-bg); color: var(--purple); }
+.input{background:var(--navy-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 10px;color:var(--t1);font-family:var(--font);font-size:12px;outline:none;transition:border-color var(--ease);width:100%}
+.input:focus{border-color:var(--border-focus)}
+.input::placeholder{color:var(--t4)}
+.input-sm{padding:4px 8px;font-size:11px}
+select.input{appearance:none;padding-right:24px}
+textarea.input{resize:vertical;min-height:60px}
+.form-group{margin-bottom:10px}
+.form-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--t3);margin-bottom:4px;display:block}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
-/* ── Activity Feed ─────────────────────────────────────────────────── */
-.feed-item { display: flex; gap: 12px; padding: 10px 0; }
-.feed-item + .feed-item { border-top: 1px solid var(--cl-border-l); }
-.feed-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-.feed-text { font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
-.feed-text strong { color: var(--text-1); font-weight: 600; }
-.feed-time { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--navy-3);border:1px solid var(--border);border-radius:var(--r-lg);width:520px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+.modal-hd{padding:14px 18px;border-bottom:1px solid var(--border-l);display:flex;align-items:center;justify-content:space-between}
+.modal-hd h2{font-size:14px;font-weight:700}
+.modal-bd{padding:18px}
+.modal-ft{padding:12px 18px;border-top:1px solid var(--border-l);display:flex;justify-content:flex-end;gap:8px}
+.modal-close{background:none;border:none;color:var(--t3);cursor:pointer;font-size:18px;line-height:1}
 
-/* ── Health Bars ───────────────────────────────────────────────────── */
-.health-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
-.health-row + .health-row { border-top: 1px solid var(--cl-border-l); }
-.health-label { width: 72px; font-size: 12px; color: var(--text-2); font-weight: 500; }
-.health-track { flex: 1; height: 6px; background: var(--cl-navy); border-radius: 3px; overflow: hidden; }
-.health-fill { height: 100%; border-radius: 3px; transition: width 600ms ease; }
-.health-val { width: 70px; font-size: 11px; font-family: var(--mono); text-align: right; }
+.console{background:var(--navy-1);border:1px solid var(--border-l);border-radius:var(--r-sm);font-family:var(--mono);font-size:10.5px;line-height:1.7;padding:8px 10px;max-height:200px;overflow-y:auto}
+.console-line{display:flex;gap:8px}
+.console-time{color:var(--t4);white-space:nowrap;flex-shrink:0}
+.console-tag{font-weight:600;white-space:nowrap;flex-shrink:0}
+.console-msg{color:var(--t2)}
 
-/* ── Pages ─────────────────────────────────────────────────────────── */
-.page { display: none; }
-.page.active { display: block; animation: fadeUp 250ms ease; }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.health-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.health-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--navy-2);border:1px solid var(--border-l);border-radius:var(--r-sm)}
+.health-item .label{font-size:11px;font-weight:500;color:var(--t2)}
 
-/* ── Responsive ────────────────────────────────────────────────────── */
-@media (max-width: 1100px) { .stats { grid-template-columns: repeat(2, 1fr); } .card-grid { grid-template-columns: 1fr; } .panel-grid { grid-template-columns: 1fr; } }
-@media (max-width: 768px) {
-  .sidebar { width: 56px; }
-  .brand-text, .nav-label, .nav-item span, .nav-badge, .sidebar-footer span { display: none; }
-  .sidebar-brand { padding: 14px; justify-content: center; }
-  .nav-item { justify-content: center; padding: 10px; }
-  .nav-item.active::before { display: none; }
-  .sidebar-footer { justify-content: center; }
-  .main { margin-left: 56px; }
-  .content { padding: 16px; }
-}
+.gauge-row{display:flex;align-items:center;gap:10px;padding:6px 0}
+.gauge-row+.gauge-row{border-top:1px solid var(--border-l)}
+.gauge-label{width:80px;font-size:11px;color:var(--t2);font-weight:500}
+.gauge-track{flex:1;height:5px;background:var(--navy-1);border-radius:3px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:3px;transition:width 800ms ease}
+.gauge-val{width:50px;font-family:var(--mono);font-size:10px;text-align:right;color:var(--t3)}
+
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-l);margin-bottom:14px}
+.tab{padding:6px 14px;font-size:11px;font-weight:500;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;transition:all var(--ease)}
+.tab:hover{color:var(--t2)}
+.tab.active{color:var(--cl-blue-l);border-bottom-color:var(--cl-blue)}
+.tab-content{display:none}.tab-content.active{display:block}
+
+.search-bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.search-bar .input{max-width:280px}
+.mt-8{margin-top:8px}.mt-16{margin-top:16px}.mb-12{margin-bottom:12px}.ml-auto{margin-left:auto}
+.flex{display:flex}.flex-col{flex-direction:column}.items-center{align-items:center}.gap-6{gap:6px}.gap-8{gap:8px}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media(max-width:1200px){.stat-row.cols-6,.stat-row.cols-5{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){.grid-2,.grid-3,.grid-3-1{grid-template-columns:1fr}.stat-row.cols-4{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
 
-<!-- ── Sidebar ──────────────────────────────────────────────────────── -->
-<aside class="sidebar">
-  <div class="sidebar-brand">
-    <div class="brand-mark">
-      <!-- Crowe Logic logomark — geometric CL hex -->
-      <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="g-blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#1a56db"/></linearGradient>
-          <linearGradient id="g-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f0b829"/><stop offset="100%" stop-color="#e5a100"/></linearGradient>
-        </defs>
-        <!-- Hex body -->
-        <path d="M20 2 L36 11 L36 29 L20 38 L4 29 L4 11 Z" fill="url(#g-blue)" opacity="0.9"/>
-        <!-- Inner cut — the C shape -->
-        <path d="M24 12 L14 12 L10 20 L14 28 L24 28 L24 24 L16 24 L14 20 L16 16 L24 16 Z" fill="#fff" opacity="0.95"/>
-        <!-- Gold arrow — the L/logic mark -->
-        <path d="M22 14 L28 14 L32 20 L28 20 L26 17 L22 17 Z" fill="url(#g-gold)"/>
-        <path d="M28 20 L32 20 L28 26 L24 26 L24 22 L28 22 Z" fill="url(#g-gold)" opacity="0.85"/>
-      </svg>
+<div class="topbar">
+  <span class="topbar-title" id="page-title">Command Center</span>
+  <span class="topbar-sep">/</span>
+  <span class="topbar-breadcrumb" id="page-crumb">Overview</span>
+  <div class="topbar-right">
+    <div class="topbar-status" title="Service health">
+      <div class="status-dot" id="dot-api"></div><span class="status-label">API</span>
+      <div class="status-dot" id="dot-router"></div><span class="status-label">Router</span>
+      <div class="status-dot" id="dot-db"></div><span class="status-label">DB</span>
+      <div class="status-dot" id="dot-ide"></div><span class="status-label">IDE</span>
     </div>
-    <div class="brand-text">
-      <h1>Crowe Logic</h1>
-      <span>Foundry v0.2.5</span>
-    </div>
-  </div>
-
-  <nav class="sidebar-nav">
-    <div class="nav-group">
-      <div class="nav-label">Platform</div>
-      <div class="nav-item active" data-page="overview">
-        <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        <span>Overview</span>
-      </div>
-      <div class="nav-item" data-page="workspaces">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-        <span>Workspaces</span>
-      </div>
-      <div class="nav-item" data-page="models">
-        <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-        <span>Model Gateway</span>
-      </div>
-      <div class="nav-item" data-page="usage">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-        <span>Usage &amp; Billing</span>
-      </div>
-    </div>
-
-    <div class="nav-group">
-      <div class="nav-label">Domain Tools</div>
-      <div class="nav-item" data-page="mycology">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 22c-4 0-8-2-8-8 0-4 4-8 8-12 4 4 8 8 8 12 0 6-4 8-8 8z"/><line x1="12" y1="10" x2="12" y2="22"/><path d="M8 14c2-1 4 0 4 2"/><path d="M16 14c-2-1-4 0-4 2"/></svg>
-        <span>Mycology Ops</span>
-        <span class="nav-badge">3</span>
-      </div>
-      <div class="nav-item" data-page="vision">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        <span>Mycelium Vision</span>
-      </div>
-      <div class="nav-item" data-page="research">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6v5a3 3 0 01-3 3v0a3 3 0 01-3-3V3z"/><path d="M12 11v4"/><path d="M8 15h8"/><path d="M10 15v5a2 2 0 002 2v0a2 2 0 002-2v-5"/></svg>
-        <span>Research Engine</span>
-      </div>
-      <div class="nav-item" data-page="compound">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M10 2v8L6 18a3 3 0 003 3h6a3 3 0 003-3l-4-8V2"/><line x1="8" y1="2" x2="16" y2="2"/><path d="M7 15h10"/></svg>
-        <span>Compound Discovery</span>
-        <span class="nav-badge">6</span>
-      </div>
-    </div>
-
-    <div class="nav-group">
-      <div class="nav-label">Knowledge</div>
-      <div class="nav-item" data-page="taxonomy">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M18 11l-6-6-6 6"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/><circle cx="12" cy="19" r="2"/></svg>
-        <span>Taxonomy</span>
-      </div>
-      <div class="nav-item" data-page="graph">
-        <svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.5 7.5L15.5 16.5M15.5 7.5L8.5 16.5"/></svg>
-        <span>Knowledge Graph</span>
-      </div>
-    </div>
-
-    <div class="nav-group">
-      <div class="nav-label">System</div>
-      <div class="nav-item" data-page="ide">
-        <svg class="ic" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        <span>IDE Sessions</span>
-      </div>
-      <div class="nav-item" data-page="settings">
-        <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-        <span>Settings</span>
-      </div>
-    </div>
-  </nav>
-
-  <div class="sidebar-footer">
-    <span class="plan-pill">Studio</span>
-    <span>Southwest Mushrooms</span>
-  </div>
-</aside>
-
-<!-- ── Main ─────────────────────────────────────────────────────────── -->
-<div class="main">
-  <div class="topbar">
-    <div class="topbar-left">
-      <h2 id="page-title">Overview</h2>
-      <span class="breadcrumb" id="page-breadcrumb"></span>
-    </div>
-    <div class="topbar-right">
-      <button class="btn" onclick="refreshData()">
-        <svg class="ic" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-        Refresh
-      </button>
-      <button class="btn btn-primary" onclick="openIDE()">
-        <svg class="ic" viewBox="0 0 24 24" style="stroke:#fff"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        Launch IDE
-      </button>
-    </div>
-  </div>
-
-  <div class="content-scroll">
-    <div class="content">
-
-    <!-- ═══ OVERVIEW ═══════════════════════════════════════════════════ -->
-    <div id="page-overview" class="page active">
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--blue-bg); color:var(--cl-blue-l)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22c-4 0-8-2-8-8 0-4 4-8 8-12 4 4 8 8 8 12 0 6-4 8-8 8z"/></svg>
-          </div>
-          <div class="stat-label">Active Strains</div>
-          <div class="stat-value" id="stat-strains">—</div>
-          <div class="stat-sub">Tracking</div>
-          <div class="stat-accent" style="background:var(--cl-blue)"></div>
-        </div>
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--green-bg); color:var(--green)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 20l4-16m2 16l4-16M3 8h18M3 16h18"/></svg>
-          </div>
-          <div class="stat-label">Active Grows</div>
-          <div class="stat-value" id="stat-grows">—</div>
-          <div class="stat-sub">In progress</div>
-          <div class="stat-accent" style="background:var(--green)"></div>
-        </div>
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--purple-bg); color:var(--purple)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 2v8L6 18a3 3 0 003 3h6a3 3 0 003-3l-4-8V2"/></svg>
-          </div>
-          <div class="stat-label">Compounds</div>
-          <div class="stat-value" id="stat-compounds">—</div>
-          <div class="stat-sub">In pipeline</div>
-          <div class="stat-accent" style="background:var(--purple)"></div>
-        </div>
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--cyan-bg); color:var(--cyan)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          </div>
-          <div class="stat-label">Research Papers</div>
-          <div class="stat-value" id="stat-papers">—</div>
-          <div class="stat-sub">Indexed</div>
-          <div class="stat-accent" style="background:var(--cyan)"></div>
-        </div>
-      </div>
-
-      <div class="card-grid">
-        <div class="card" onclick="navigateTo('mycology')">
-          <div class="card-header">
-            <div class="card-icon" style="background:var(--green-bg); color:var(--green)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22c-4 0-8-2-8-8 0-4 4-8 8-12 4 4 8 8 8 12 0 6-4 8-8 8z"/><line x1="12" y1="10" x2="12" y2="22"/></svg>
-            </div>
-            <div>
-              <div class="card-title">Mycology Operations</div>
-              <div class="card-desc">Manage strains, grow logs, cultivation protocols, harvests, and environmental monitoring for your cultivation pipeline.</div>
-            </div>
-          </div>
-          <div class="card-metrics">
-            <div class="card-metric"><strong id="myc-protocols">3</strong>Protocols</div>
-            <div class="card-metric"><strong id="myc-species">8</strong>Species</div>
-            <div class="card-metric"><strong>0%</strong>Contamination</div>
-          </div>
-        </div>
-
-        <div class="card" onclick="navigateTo('vision')">
-          <div class="card-header">
-            <div class="card-icon" style="background:var(--blue-bg); color:var(--cl-blue-l)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </div>
-            <div>
-              <div class="card-title">Mycelium Vision</div>
-              <div class="card-desc">AI-powered image analysis for contamination detection, growth stage classification, and morphological assessment.</div>
-            </div>
-          </div>
-          <div class="card-metrics">
-            <div class="card-metric"><strong>GPT-4o</strong>Backend</div>
-            <div class="card-metric"><strong>Multi</strong>Analysis</div>
-          </div>
-        </div>
-
-        <div class="card" onclick="navigateTo('research')">
-          <div class="card-header">
-            <div class="card-icon" style="background:var(--purple-bg); color:var(--purple)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 3h6v5a3 3 0 01-3 3v0a3 3 0 01-3-3V3z"/><path d="M12 11v4"/><path d="M8 15h8"/></svg>
-            </div>
-            <div>
-              <div class="card-title">Research Engine</div>
-              <div class="card-desc">Literature management, experiment tracking, research notes, and AI-generated protocols for mycological research.</div>
-            </div>
-          </div>
-          <div class="card-metrics">
-            <div class="card-metric"><strong id="res-experiments">0</strong>Experiments</div>
-            <div class="card-metric"><strong>AI</strong>Protocols</div>
-          </div>
-        </div>
-
-        <div class="card" onclick="navigateTo('compound')">
-          <div class="card-header">
-            <div class="card-icon" style="background:var(--cyan-bg); color:var(--cyan)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 2v8L6 18a3 3 0 003 3h6a3 3 0 003-3l-4-8V2"/><line x1="8" y1="2" x2="16" y2="2"/></svg>
-            </div>
-            <div>
-              <div class="card-title">Compound Discovery</div>
-              <div class="card-desc">Track bioactive compounds, run ADMET predictions, manage targets, and analyze structure-activity relationships.</div>
-            </div>
-          </div>
-          <div class="card-metrics">
-            <div class="card-metric"><strong id="cpd-total">6</strong>Compounds</div>
-            <div class="card-metric"><strong>Lipinski</strong>ADMET</div>
-            <div class="card-metric"><strong>SAR</strong>Analysis</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel-grid">
-        <div class="panel">
-          <div class="panel-head"><h3>Recent Activity</h3></div>
-          <div class="panel-body" id="activity-feed">
-            <div class="feed-item">
-              <div class="feed-dot" style="background:var(--green)"></div>
-              <div><div class="feed-text"><strong>Knowledge Plane</strong> deployed — 8 species, 6 compounds mapped</div><div class="feed-time">Just now</div></div>
-            </div>
-            <div class="feed-item">
-              <div class="feed-dot" style="background:var(--cl-blue)"></div>
-              <div><div class="feed-text"><strong>Domain Modules</strong> — Mycology, Vision, Research, Compound all online</div><div class="feed-time">2 min ago</div></div>
-            </div>
-            <div class="feed-item">
-              <div class="feed-dot" style="background:var(--purple)"></div>
-              <div><div class="feed-text"><strong>Docker Stack</strong> validated — Postgres, Control Plane, Session Router healthy</div><div class="feed-time">15 min ago</div></div>
-            </div>
-            <div class="feed-item">
-              <div class="feed-dot" style="background:var(--cl-gold)"></div>
-              <div><div class="feed-text"><strong>Stripe Billing</strong> integrated — subscriptions, usage metering, checkout</div><div class="feed-time">30 min ago</div></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head"><h3>Platform Health</h3></div>
-          <div class="panel-body">
-            <div class="health-row">
-              <div class="health-label">API</div>
-              <div class="health-track"><div class="health-fill" id="hf-api" style="width:0%;background:var(--green)"></div></div>
-              <div class="health-val" id="health-api">—</div>
-            </div>
-            <div class="health-row">
-              <div class="health-label">Router</div>
-              <div class="health-track"><div class="health-fill" id="hf-router" style="width:0%;background:var(--green)"></div></div>
-              <div class="health-val" id="health-router">—</div>
-            </div>
-            <div class="health-row">
-              <div class="health-label">Database</div>
-              <div class="health-track"><div class="health-fill" id="hf-db" style="width:0%;background:var(--green)"></div></div>
-              <div class="health-val" id="health-db">—</div>
-            </div>
-            <div class="health-row">
-              <div class="health-label">Tests</div>
-              <div class="health-track"><div class="health-fill" style="width:91%;background:var(--cl-blue)"></div></div>
-              <div class="health-val" style="color:var(--text-2)">231/253</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ MYCOLOGY ═══════════════════════════════════════════════════ -->
-    <div id="page-mycology" class="page">
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--green-bg);color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c-4 0-8-2-8-8 0-4 4-8 8-12 4 4 8 8 8 12 0 6-4 8-8 8z"/></svg></div>
-          <div class="stat-label">Strains</div>
-          <div class="stat-value" id="myc-strains-count">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--blue-bg);color:var(--cl-blue-l)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 20l4-16m2 16l4-16M3 8h18M3 16h18"/></svg></div>
-          <div class="stat-label">Grow Logs</div>
-          <div class="stat-value" id="myc-grows-count">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--purple-bg);color:var(--purple)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg></div>
-          <div class="stat-label">Protocols</div>
-          <div class="stat-value" id="myc-protos-count">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-icon" style="background:var(--amber-bg);color:var(--amber)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-          <div class="stat-label">Contamination</div>
-          <div class="stat-value" id="myc-contam-rate">0%</div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h3>Cultivation Protocols</h3>
-          <button class="btn btn-primary btn-sm" onclick="generateSOP()">
-            <svg class="ic" viewBox="0 0 24 24" style="stroke:#fff;width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Generate SOP
-          </button>
-        </div>
-        <div class="panel-body" style="padding:0">
-          <table class="tbl">
-            <thead><tr><th>Protocol</th><th>Species</th><th>Substrate</th><th>Steps</th><th>Expected Yield</th></tr></thead>
-            <tbody id="protocols-table"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ COMPOUND ═══════════════════════════════════════════════════ -->
-    <div id="page-compound" class="page">
-      <div class="stats" id="compound-stats"></div>
-      <div class="panel">
-        <div class="panel-head">
-          <h3>Compound Library</h3>
-          <button class="btn btn-primary btn-sm">
-            <svg class="ic" viewBox="0 0 24 24" style="stroke:#fff;width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New Compound
-          </button>
-        </div>
-        <div class="panel-body" style="padding:0">
-          <table class="tbl">
-            <thead><tr><th>Name</th><th>Formula</th><th>MW</th><th>Source Organism</th><th>Class</th><th>Stage</th><th>Bioactivities</th></tr></thead>
-            <tbody id="compounds-table"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ TAXONOMY ═══════════════════════════════════════════════════ -->
-    <div id="page-taxonomy" class="page">
-      <div class="panel">
-        <div class="panel-head">
-          <h3>Species Taxonomy</h3>
-          <button class="btn btn-primary btn-sm">
-            <svg class="ic" viewBox="0 0 24 24" style="stroke:#fff;width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Species
-          </button>
-        </div>
-        <div class="panel-body" style="padding:0">
-          <table class="tbl">
-            <thead><tr><th>Scientific Name</th><th>Common Name</th><th>Genus</th><th>Family</th><th>Edibility</th><th>Compounds</th></tr></thead>
-            <tbody id="taxonomy-table"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ KNOWLEDGE GRAPH ════════════════════════════════════════════ -->
-    <div id="page-graph" class="page">
-      <div class="stats" id="graph-stats-grid"></div>
-      <div class="panel">
-        <div class="panel-head">
-          <h3>Knowledge Graph Edges</h3>
-          <button class="btn btn-primary btn-sm">
-            <svg class="ic" viewBox="0 0 24 24" style="stroke:#fff;width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Relationship
-          </button>
-        </div>
-        <div class="panel-body" style="padding:0">
-          <table class="tbl">
-            <thead><tr><th>From</th><th>Relation</th><th>To</th><th>Evidence</th></tr></thead>
-            <tbody id="edges-table"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ RESEARCH ═══════════════════════════════════════════════════ -->
-    <div id="page-research" class="page">
-      <div class="stats" id="research-stats-grid"></div>
-      <div class="panel">
-        <div class="panel-head">
-          <h3>Experiments</h3>
-          <button class="btn btn-primary btn-sm">
-            <svg class="ic" viewBox="0 0 24 24" style="stroke:#fff;width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New Experiment
-          </button>
-        </div>
-        <div class="panel-body">
-          <p style="color:var(--text-3);font-size:13px">No experiments yet. Create one to get started.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ PLACEHOLDER PAGES ══════════════════════════════════════════ -->
-    <div id="page-workspaces" class="page">
-      <div class="panel"><div class="panel-body"><p style="color:var(--text-3);font-size:13px">Workspace management — create, configure, and manage team workspaces.</p></div></div>
-    </div>
-    <div id="page-models" class="page">
-      <div class="panel"><div class="panel-body"><p style="color:var(--text-3);font-size:13px">Model Gateway — 11 CroweLM model tiers with plan-based access control.</p></div></div>
-    </div>
-    <div id="page-usage" class="page">
-      <div class="panel"><div class="panel-body"><p style="color:var(--text-3);font-size:13px">Usage analytics and Stripe subscription management.</p></div></div>
-    </div>
-    <div id="page-vision" class="page">
-      <div class="panel"><div class="panel-body"><p style="color:var(--text-3);font-size:13px">Mycelium Vision — AI-powered contamination detection and growth stage classification.</p></div></div>
-    </div>
-    <div id="page-ide" class="page">
-      <div class="panel"><div class="panel-body"><p style="color:var(--text-3);font-size:13px">IDE session management — containers, runtime classes, metering.</p></div></div>
-    </div>
-    <div id="page-settings" class="page">
-      <div class="panel"><div class="panel-body"><p style="color:var(--text-3);font-size:13px">Platform settings, API keys, team management.</p></div></div>
-    </div>
-
-    </div>
+    <div style="width:1px;height:16px;background:var(--border)"></div>
+    <span class="topbar-clock" id="clock"></span>
+    <button class="btn btn-sm" onclick="refreshCurrentPage()">Refresh</button>
+    <button class="btn btn-primary btn-sm" onclick="openIDE()">Launch IDE</button>
   </div>
 </div>
 
+<div class="shell">
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="gb" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#1a56db"/></linearGradient><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f0b829"/><stop offset="100%" stop-color="#e5a100"/></linearGradient></defs>
+        <path d="M20 2L36 11L36 29L20 38L4 29L4 11Z" fill="url(#gb)" opacity=".9"/>
+        <path d="M24 12L14 12L10 20L14 28L24 28L24 24L16 24L14 20L16 16L24 16Z" fill="#fff" opacity=".95"/>
+        <path d="M22 14L28 14L32 20L28 20L26 17L22 17Z" fill="url(#gg)"/>
+        <path d="M28 20L32 20L28 26L24 26L24 22L28 22Z" fill="url(#gg)" opacity=".85"/>
+      </svg>
+    </div>
+    <div><div class="brand-name">Crowe Logic</div><div class="brand-ver">Foundry v0.2.5</div></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-section-label">Operations</div>
+      <div class="nav-item active" data-page="overview"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Command Center</span></div>
+      <div class="nav-item" data-page="mycology"><svg class="ic" viewBox="0 0 24 24"><path d="M12 22c-4 0-8-2-8-8 0-4 4-8 8-12 4 4 8 8 8 12 0 6-4 8-8 8z"/><line x1="12" y1="10" x2="12" y2="22"/></svg><span>Mycology Ops</span><span class="nav-count" id="nav-myc-count"></span></div>
+      <div class="nav-item" data-page="compound"><svg class="ic" viewBox="0 0 24 24"><path d="M10 2v8L6 18a3 3 0 003 3h6a3 3 0 003-3l-4-8V2"/><line x1="8" y1="2" x2="16" y2="2"/></svg><span>Compounds</span><span class="nav-count" id="nav-cpd-count"></span></div>
+      <div class="nav-item" data-page="vision"><svg class="ic" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span>Vision</span></div>
+      <div class="nav-item" data-page="research"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6v5a3 3 0 01-3 3 3 3 0 01-3-3V3z"/><path d="M12 11v4M8 15h8"/></svg><span>Research</span></div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <div class="nav-item" data-page="taxonomy"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg><span>Taxonomy</span><span class="nav-count" id="nav-tax-count"></span></div>
+      <div class="nav-item" data-page="graph"><svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="12" cy="12" r="2.5"/><line x1="8" y1="7" x2="10.5" y2="10.5"/><line x1="16" y1="7" x2="13.5" y2="10.5"/></svg><span>Knowledge Graph</span></div>
+      <div class="nav-item" data-page="embeddings"><svg class="ic" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span>Embeddings</span></div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Platform</div>
+      <div class="nav-item" data-page="models"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4"/></svg><span>Model Gateway</span></div>
+      <div class="nav-item" data-page="billing"><svg class="ic" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span>Usage &amp; Billing</span></div>
+      <div class="nav-item" data-page="ide"><svg class="ic" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>IDE Sessions</span></div>
+      <div class="nav-item" data-page="settings"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>Settings</span></div>
+    </div>
+  </nav>
+  <div class="sidebar-footer"><div class="plan-pill">Studio</div><span class="org">Southwest Mushrooms</span></div>
+</aside>
+
+<div class="main-area">
+<div class="content-area">
+
+<!-- COMMAND CENTER -->
+<div id="page-overview" class="page active">
+  <div class="stat-row cols-6">
+    <div class="stat-card"><div class="label">Species</div><div class="value" id="s-species">--</div><div class="sub">In taxonomy</div><div class="indicator on" style="background:var(--green)"></div></div>
+    <div class="stat-card"><div class="label">Compounds</div><div class="value" id="s-compounds">--</div><div class="sub">In pipeline</div></div>
+    <div class="stat-card"><div class="label">Protocols</div><div class="value" id="s-protocols">--</div><div class="sub">Cultivation SOPs</div></div>
+    <div class="stat-card"><div class="label">Experiments</div><div class="value" id="s-experiments">--</div><div class="sub">Research engine</div></div>
+    <div class="stat-card"><div class="label">Papers</div><div class="value" id="s-papers">--</div><div class="sub">Literature index</div></div>
+    <div class="stat-card"><div class="label">Graph Edges</div><div class="value" id="s-edges">--</div><div class="sub">Knowledge links</div></div>
+  </div>
+  <div class="grid-3-1" style="margin-bottom:12px">
+    <div class="panel">
+      <div class="panel-hd"><h3>Operations Log</h3><span class="sub">Real-time system activity</span></div>
+      <div class="panel-bd flush"><div class="console" id="ops-console"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-hd"><h3>Quick Actions</h3></div>
+      <div class="panel-bd flex flex-col gap-6">
+        <button class="btn w-full" onclick="showModal('strain')">+ New Strain</button>
+        <button class="btn w-full" onclick="showModal('compound')">+ New Compound</button>
+        <button class="btn w-full" onclick="showModal('experiment')">+ New Experiment</button>
+        <button class="btn w-full" onclick="showModal('paper')">+ Index Paper</button>
+        <button class="btn w-full" onclick="showModal('growlog')">+ Start Grow Log</button>
+        <button class="btn w-full" onclick="navigateTo('vision')">+ Analyze Image</button>
+        <hr style="border:none;border-top:1px solid var(--border-l)">
+        <button class="btn btn-primary w-full" onclick="openIDE()">Launch IDE</button>
+      </div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-hd"><h3>System Health</h3></div><div class="panel-bd"><div class="health-grid" id="health-grid"></div></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Compound Pipeline</h3></div><div class="panel-bd">
+      <div class="gauge-row"><div class="gauge-label">Discovery</div><div class="gauge-track"><div class="gauge-fill" style="width:0;background:var(--cyan)"></div></div><div class="gauge-val" id="pipe-discovery">--</div></div>
+      <div class="gauge-row"><div class="gauge-label">Screening</div><div class="gauge-track"><div class="gauge-fill" style="width:0;background:var(--cl-blue)"></div></div><div class="gauge-val" id="pipe-screening">--</div></div>
+      <div class="gauge-row"><div class="gauge-label">Lead Opt</div><div class="gauge-track"><div class="gauge-fill" style="width:0;background:var(--purple)"></div></div><div class="gauge-val" id="pipe-lead">--</div></div>
+      <div class="gauge-row"><div class="gauge-label">Preclinical</div><div class="gauge-track"><div class="gauge-fill" style="width:0;background:var(--amber)"></div></div><div class="gauge-val" id="pipe-preclinical">--</div></div>
+      <div class="gauge-row"><div class="gauge-label">Clinical</div><div class="gauge-track"><div class="gauge-fill" style="width:0;background:var(--green)"></div></div><div class="gauge-val" id="pipe-clinical">--</div></div>
+    </div></div>
+  </div>
+</div>
+
+<!-- MYCOLOGY OPS -->
+<div id="page-mycology" class="page">
+  <div class="stat-row cols-4">
+    <div class="stat-card"><div class="label">Strains</div><div class="value" id="myc-strains">--</div></div>
+    <div class="stat-card"><div class="label">Grow Logs</div><div class="value" id="myc-grows">--</div></div>
+    <div class="stat-card"><div class="label">Protocols</div><div class="value" id="myc-protos">--</div></div>
+    <div class="stat-card"><div class="label">Contamination</div><div class="value" id="myc-contam">0%</div></div>
+  </div>
+  <div class="tabs" id="myc-tabs"><div class="tab active" data-tab="myc-strains-tab">Strains</div><div class="tab" data-tab="myc-grows-tab">Grow Logs</div><div class="tab" data-tab="myc-protocols-tab">Protocols</div><div class="tab" data-tab="myc-harvests-tab">Harvests</div></div>
+  <div class="tab-content active" id="myc-strains-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search strains..." onkeyup="filterTable('myc-strains-tbody',this.value)"><button class="btn btn-primary btn-sm" onclick="showModal('strain')">+ Add Strain</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>ID</th><th>Name</th><th>Species</th><th>Source</th><th>Generation</th><th>Status</th></tr></thead><tbody id="myc-strains-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="myc-grows-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search grows..."><button class="btn btn-primary btn-sm" onclick="showModal('growlog')">+ New Grow Log</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>ID</th><th>Strain</th><th>Substrate</th><th>Phase</th><th>Started</th><th>Status</th></tr></thead><tbody id="myc-grows-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="myc-protocols-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search protocols..."><button class="btn btn-primary btn-sm" onclick="showModal('protocol')">+ New Protocol</button><button class="btn btn-sm" onclick="generateSOP()">Generate SOP (AI)</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Name</th><th>Species</th><th>Substrate</th><th>Steps</th><th>Expected Yield</th></tr></thead><tbody id="myc-protos-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="myc-harvests-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search harvests..."><button class="btn btn-primary btn-sm" onclick="showModal('harvest')">+ Log Harvest</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Grow Log</th><th>Weight (g)</th><th>Quality</th><th>Flush #</th><th>Date</th><th>Notes</th></tr></thead><tbody id="myc-harvests-tbody"></tbody></table></div></div>
+  </div>
+</div>
+
+<!-- COMPOUND DISCOVERY -->
+<div id="page-compound" class="page">
+  <div class="stat-row cols-5" id="cpd-stats"></div>
+  <div class="tabs"><div class="tab active" data-tab="cpd-library-tab">Library</div><div class="tab" data-tab="cpd-targets-tab">Targets</div><div class="tab" data-tab="cpd-assays-tab">Assays</div><div class="tab" data-tab="cpd-admet-tab">ADMET</div><div class="tab" data-tab="cpd-sar-tab">SAR</div></div>
+  <div class="tab-content active" id="cpd-library-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search compounds..." onkeyup="filterTable('cpd-library-tbody',this.value)"><button class="btn btn-primary btn-sm" onclick="showModal('compound')">+ New Compound</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Name</th><th>Formula</th><th>MW</th><th>Source</th><th>Class</th><th>Stage</th><th>Bioactivities</th></tr></thead><tbody id="cpd-library-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="cpd-targets-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search targets..."><button class="btn btn-primary btn-sm" onclick="showModal('target')">+ Add Target</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Name</th><th>Type</th><th>Organism</th><th>Gene</th><th>Indication</th></tr></thead><tbody id="cpd-targets-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="cpd-assays-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search assays..."><button class="btn btn-primary btn-sm" onclick="showModal('assay')">+ New Assay</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Compound</th><th>Target</th><th>Type</th><th>Result</th><th>Unit</th><th>Date</th></tr></thead><tbody id="cpd-assays-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="cpd-admet-tab">
+    <div class="panel"><div class="panel-hd"><h3>ADMET / Lipinski Prediction</h3></div><div class="panel-bd">
+      <div class="form-row"><div class="form-group"><label class="form-label">Compound</label><select class="input input-sm" id="admet-compound"></select></div><div class="form-group"><label class="form-label">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="runADMET()">Run Prediction</button></div></div>
+      <div id="admet-results" class="mt-16"></div>
+    </div></div>
+  </div>
+  <div class="tab-content" id="cpd-sar-tab">
+    <div class="panel"><div class="panel-hd"><h3>Structure-Activity Relationships</h3></div><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Compound A</th><th>Compound B</th><th>Structural Diff</th><th>Activity Diff</th><th>Insight</th></tr></thead><tbody id="cpd-sar-tbody"></tbody></table></div></div>
+  </div>
+</div>
+
+<!-- VISION -->
+<div id="page-vision" class="page">
+  <div class="grid-2" style="margin-bottom:14px">
+    <div class="panel"><div class="panel-hd"><h3>Image Analysis</h3></div><div class="panel-bd">
+      <div class="form-group"><label class="form-label">Image URL</label><input class="input input-sm" id="vision-url" placeholder="https://... paste image URL"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Analysis Type</label><select class="input input-sm" id="vision-type"><option value="general">General Assessment</option><option value="contamination">Contamination Check</option><option value="growth_stage">Growth Stage</option><option value="morphology">Morphology</option></select></div>
+        <div class="form-group"><label class="form-label">Species (optional)</label><input class="input input-sm" id="vision-species" placeholder="e.g., Pleurotus ostreatus"></div>
+      </div>
+      <button class="btn btn-primary btn-sm mt-8" onclick="runVisionAnalysis()">Analyze</button>
+      <div id="vision-result" class="mt-16" style="font-size:12px;color:var(--t2);white-space:pre-wrap"></div>
+    </div></div>
+    <div class="panel"><div class="panel-hd"><h3>Contamination Quick-Check</h3></div><div class="panel-bd">
+      <div class="form-group"><label class="form-label">Image URL</label><input class="input input-sm" id="contam-url" placeholder="Image URL for contamination check"></div>
+      <button class="btn btn-sm mt-8" onclick="runContamCheck()">Run Check</button>
+      <div id="contam-result" class="mt-16" style="font-size:12px;color:var(--t2);white-space:pre-wrap"></div>
+    </div></div>
+  </div>
+  <div class="panel"><div class="panel-hd"><h3>Analysis History</h3></div><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>ID</th><th>Type</th><th>Species</th><th>Confidence</th><th>Classification</th><th>Timestamp</th></tr></thead><tbody id="vision-history-tbody"></tbody></table></div></div>
+</div>
+
+<!-- RESEARCH -->
+<div id="page-research" class="page">
+  <div class="stat-row cols-3" id="res-stats"></div>
+  <div class="tabs"><div class="tab active" data-tab="res-experiments-tab">Experiments</div><div class="tab" data-tab="res-papers-tab">Literature</div><div class="tab" data-tab="res-notes-tab">Notes</div><div class="tab" data-tab="res-protocols-tab">AI Protocols</div></div>
+  <div class="tab-content active" id="res-experiments-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search experiments..." onkeyup="filterTable('res-exp-tbody',this.value)"><button class="btn btn-primary btn-sm" onclick="showModal('experiment')">+ New Experiment</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>ID</th><th>Title</th><th>Hypothesis</th><th>Status</th><th>Data Points</th></tr></thead><tbody id="res-exp-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="res-papers-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search papers..." onkeyup="filterTable('res-papers-tbody',this.value)"><button class="btn btn-primary btn-sm" onclick="showModal('paper')">+ Index Paper</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Title</th><th>Authors</th><th>Journal</th><th>Year</th><th>DOI</th><th>Tags</th></tr></thead><tbody id="res-papers-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="res-notes-tab">
+    <div class="search-bar"><input class="input input-sm" placeholder="Search notes..."><button class="btn btn-primary btn-sm" onclick="showModal('note')">+ New Note</button></div>
+    <div class="panel"><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Title</th><th>Category</th><th>Tags</th><th>Created</th></tr></thead><tbody id="res-notes-tbody"></tbody></table></div></div>
+  </div>
+  <div class="tab-content" id="res-protocols-tab">
+    <div class="panel"><div class="panel-hd"><h3>AI Protocol Generator</h3></div><div class="panel-bd">
+      <div class="form-group"><label class="form-label">Research Question</label><textarea class="input input-sm" id="proto-question" placeholder="Describe the research goal..."></textarea></div>
+      <div class="form-row"><div class="form-group"><label class="form-label">Species</label><input class="input input-sm" id="proto-species" placeholder="Target species"></div><div class="form-group"><label class="form-label">Technique</label><input class="input input-sm" id="proto-technique" placeholder="e.g., agar culture"></div></div>
+      <button class="btn btn-primary btn-sm mt-8" onclick="generateProtocol()">Generate Protocol</button>
+      <div id="proto-result" class="mt-16" style="font-size:12px;color:var(--t2);white-space:pre-wrap"></div>
+    </div></div>
+  </div>
+</div>
+
+<!-- TAXONOMY -->
+<div id="page-taxonomy" class="page">
+  <div class="search-bar"><input class="input input-sm" placeholder="Search species..." onkeyup="filterTable('tax-tbody',this.value)"><button class="btn btn-primary btn-sm" onclick="showModal('species')">+ Add Species</button></div>
+  <div class="panel"><div class="panel-bd flush scroll" style="max-height:500px"><table class="tbl"><thead><tr><th>Scientific Name</th><th>Common Name</th><th>Genus</th><th>Family</th><th>Edibility</th><th>Compounds</th></tr></thead><tbody id="tax-tbody"></tbody></table></div></div>
+</div>
+
+<!-- KNOWLEDGE GRAPH -->
+<div id="page-graph" class="page">
+  <div class="stat-row cols-4" id="graph-stats-row"></div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-hd"><h3>Graph Edges</h3><button class="btn btn-primary btn-sm" onclick="showModal('edge')">+ Add Edge</button></div><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>From</th><th>Relation</th><th>To</th><th>Confidence</th><th>Evidence</th></tr></thead><tbody id="graph-edges-tbody"></tbody></table></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Neighbor Explorer</h3></div><div class="panel-bd">
+      <div class="form-row"><div class="form-group"><label class="form-label">Node ID</label><input class="input input-sm" id="graph-node-id" placeholder="e.g., sp-shiitake"></div><div class="form-group"><label class="form-label">Depth</label><select class="input input-sm" id="graph-depth"><option value="1">1 hop</option><option value="2">2 hops</option><option value="3">3 hops</option></select></div></div>
+      <button class="btn btn-sm mt-8" onclick="exploreGraph()">Explore</button>
+      <div id="graph-explore-result" class="mt-16 console" style="max-height:250px"></div>
+    </div></div>
+  </div>
+</div>
+
+<!-- EMBEDDINGS -->
+<div id="page-embeddings" class="page">
+  <div class="stat-row cols-3" id="emb-stats"></div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-hd"><h3>Semantic Search</h3></div><div class="panel-bd">
+      <div class="form-group"><label class="form-label">Query</label><input class="input" id="emb-query" placeholder="Search documents by meaning..."></div>
+      <div class="form-row"><div class="form-group"><label class="form-label">Namespace</label><input class="input input-sm" id="emb-ns" placeholder="Optional namespace"></div><div class="form-group"><label class="form-label">Top K</label><input class="input input-sm" id="emb-k" type="number" value="5"></div></div>
+      <button class="btn btn-primary btn-sm mt-8" onclick="searchEmbeddings()">Search</button>
+      <div id="emb-results" class="mt-16"></div>
+    </div></div>
+    <div class="panel"><div class="panel-hd"><h3>Index Document</h3></div><div class="panel-bd">
+      <div class="form-group"><label class="form-label">Document ID</label><input class="input input-sm" id="emb-doc-id" placeholder="Unique document ID"></div>
+      <div class="form-group"><label class="form-label">Content</label><textarea class="input" id="emb-doc-content" placeholder="Document text to embed..."></textarea></div>
+      <div class="form-row"><div class="form-group"><label class="form-label">Namespace</label><input class="input input-sm" id="emb-doc-ns" placeholder="e.g., papers"></div><div class="form-group"><label class="form-label">Source</label><input class="input input-sm" id="emb-doc-source" placeholder="Origin"></div></div>
+      <button class="btn btn-primary btn-sm mt-8" onclick="indexDocument()">Index</button>
+    </div></div>
+  </div>
+</div>
+
+<!-- MODEL GATEWAY -->
+<div id="page-models" class="page">
+  <div class="panel" style="margin-bottom:14px"><div class="panel-hd"><h3>Available Models</h3><span class="sub">Plan-gated access tiers</span></div><div class="panel-bd flush scroll"><table class="tbl"><thead><tr><th>Model</th><th>Provider</th><th>Tier</th><th>Context</th><th>Plan Required</th><th>Status</th></tr></thead><tbody id="models-tbody"></tbody></table></div></div>
+  <div class="panel"><div class="panel-hd"><h3>Chat Playground</h3></div><div class="panel-bd">
+    <div class="form-row"><div class="form-group"><label class="form-label">Model</label><select class="input input-sm" id="chat-model"></select></div><div class="form-group"><label class="form-label">Workspace</label><input class="input input-sm" id="chat-ws" placeholder="workspace-id"></div></div>
+    <div class="form-group"><label class="form-label">Message</label><textarea class="input" id="chat-msg" placeholder="Type a message..."></textarea></div>
+    <button class="btn btn-primary btn-sm" onclick="sendChat()">Send</button>
+    <div id="chat-response" class="mt-16 console" style="max-height:200px;display:none"></div>
+  </div></div>
+</div>
+
+<!-- BILLING -->
+<div id="page-billing" class="page">
+  <div class="stat-row cols-4" id="billing-stats"></div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-hd"><h3>Plan Tiers</h3></div><div class="panel-bd flush"><table class="tbl"><thead><tr><th>Plan</th><th>Price</th><th>AI Tokens</th><th>IDE</th><th>Vision</th><th>Features</th></tr></thead><tbody id="plans-tbody"></tbody></table></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Billing Configuration</h3></div><div class="panel-bd" id="billing-config"></div></div>
+  </div>
+</div>
+
+<!-- IDE SESSIONS -->
+<div id="page-ide" class="page">
+  <div class="stat-row cols-3">
+    <div class="stat-card"><div class="label">Docker</div><div class="value" id="ide-docker-status">--</div><div class="sub">Engine status</div></div>
+    <div class="stat-card"><div class="label">Containers</div><div class="value" id="ide-containers">--</div><div class="sub">Active sessions</div></div>
+    <div class="stat-card"><div class="label">Session Router</div><div class="value" id="ide-router-status">--</div><div class="sub">Port 3001</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-hd"><h3>IDE Configuration</h3></div><div class="panel-bd">
+      <div class="health-grid">
+        <div class="health-item"><div class="status-dot" id="ide-h-docker"></div><span class="label">Docker Engine</span></div>
+        <div class="health-item"><div class="status-dot" id="ide-h-image"></div><span class="label">IDE Image</span></div>
+        <div class="health-item"><div class="status-dot" id="ide-h-router"></div><span class="label">Session Router</span></div>
+        <div class="health-item"><div class="status-dot" id="ide-h-nginx"></div><span class="label">Nginx Proxy</span></div>
+      </div>
+      <div class="mt-16"><button class="btn btn-primary w-full" onclick="openIDE()">Launch IDE (code-server)</button></div>
+    </div></div>
+    <div class="panel"><div class="panel-hd"><h3>Runtime Classes</h3></div><div class="panel-bd flush"><table class="tbl"><thead><tr><th>Class</th><th>CPU</th><th>Memory</th><th>GPU</th><th>Plan</th></tr></thead><tbody>
+      <tr><td>Dev Small</td><td class="mono">2</td><td class="mono">4 GB</td><td>--</td><td><span class="badge badge-dim">Developer</span></td></tr>
+      <tr><td>Research Medium</td><td class="mono">4</td><td class="mono">8 GB</td><td>--</td><td><span class="badge badge-blue">Studio</span></td></tr>
+      <tr><td>Vision Large</td><td class="mono">8</td><td class="mono">16 GB</td><td class="mono">T4</td><td><span class="badge badge-purple">Lab</span></td></tr>
+      <tr><td>Discovery GPU</td><td class="mono">16</td><td class="mono">32 GB</td><td class="mono">A100</td><td><span class="badge badge-gold">Enterprise</span></td></tr>
+    </tbody></table></div></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="page-settings" class="page">
+  <div class="grid-2">
+    <div class="panel"><div class="panel-hd"><h3>API Configuration</h3></div><div class="panel-bd">
+      <div class="form-group"><label class="form-label">API Base URL</label><input class="input input-sm" value="http://localhost:8001" readonly></div>
+      <div class="form-group"><label class="form-label">Workspace ID</label><input class="input input-sm" id="cfg-ws" placeholder="ws-..."></div>
+      <button class="btn btn-sm mt-8" onclick="testConnection()">Test Connection</button>
+      <div id="cfg-result" class="mt-8" style="font-size:11px"></div>
+    </div></div>
+    <div class="panel"><div class="panel-hd"><h3>Platform Info</h3></div><div class="panel-bd">
+      <div class="gauge-row"><div class="gauge-label">Version</div><div class="gauge-val" style="width:auto">0.2.5</div></div>
+      <div class="gauge-row"><div class="gauge-label">Python</div><div class="gauge-val" style="width:auto" id="cfg-python">--</div></div>
+      <div class="gauge-row"><div class="gauge-label">API Routes</div><div class="gauge-val" style="width:auto">60+</div></div>
+      <div class="gauge-row"><div class="gauge-label">Tests</div><div class="gauge-val" style="width:auto">231 / 253</div></div>
+      <div class="gauge-row"><div class="gauge-label">Modules</div><div class="gauge-val" style="width:auto">4 active</div></div>
+    </div></div>
+  </div>
+</div>
+
+</div></div></div>
+
+<div class="statusbar">
+  <div class="statusbar-item"><div class="status-dot on" id="sb-api"></div>API</div>
+  <div class="statusbar-sep"></div>
+  <div class="statusbar-item"><div class="status-dot" id="sb-router"></div>Router</div>
+  <div class="statusbar-sep"></div>
+  <div class="statusbar-item"><div class="status-dot" id="sb-db"></div>DB</div>
+  <div class="statusbar-sep"></div>
+  <div class="statusbar-item" id="sb-species">Species: --</div>
+  <div class="statusbar-sep"></div>
+  <div class="statusbar-item" id="sb-compounds">Compounds: --</div>
+  <div class="statusbar-sep"></div>
+  <div class="statusbar-item" id="sb-edges">Edges: --</div>
+  <div style="margin-left:auto" class="statusbar-item"><span class="mono" id="sb-clock"></span></div>
+</div>
+
+<div id="modal-root"></div>
+
 <script>
-const API = location.origin;
+var API=location.origin;
+function qs(s){return document.querySelector(s)}
+function qsa(s){return document.querySelectorAll(s)}
+function api(path,opts){return fetch(API+path,opts).then(function(r){return r.ok?r.json():null}).catch(function(){return null})}
+function apiPost(path,body){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+function setText(id,v){var el=qs('#'+id);if(el)el.textContent=v}
+function setDot(id,on){var el=qs('#'+id);if(el)el.className='status-dot '+(on?'on':'off')}
 
-const titles = {
-  overview:'Overview', workspaces:'Workspaces', models:'Model Gateway',
-  usage:'Usage & Billing', mycology:'Mycology Ops', vision:'Mycelium Vision',
-  research:'Research Engine', compound:'Compound Discovery',
-  taxonomy:'Species Taxonomy', graph:'Knowledge Graph',
-  ide:'IDE Sessions', settings:'Settings',
-};
-const crumbs = {
-  overview:'Platform', mycology:'Domain Tools', vision:'Domain Tools',
-  research:'Domain Tools', compound:'Domain Tools', taxonomy:'Knowledge',
-  graph:'Knowledge', workspaces:'Platform', models:'Platform', usage:'Platform',
-  ide:'System', settings:'System',
+var pageMeta={
+  overview:{title:'Command Center',crumb:'Operations'},mycology:{title:'Mycology Ops',crumb:'Operations'},
+  compound:{title:'Compound Discovery',crumb:'Operations'},vision:{title:'Mycelium Vision',crumb:'Operations'},
+  research:{title:'Research Engine',crumb:'Operations'},taxonomy:{title:'Species Taxonomy',crumb:'Knowledge'},
+  graph:{title:'Knowledge Graph',crumb:'Knowledge'},embeddings:{title:'Embedding Store',crumb:'Knowledge'},
+  models:{title:'Model Gateway',crumb:'Platform'},billing:{title:'Usage & Billing',crumb:'Platform'},
+  ide:{title:'IDE Sessions',crumb:'Platform'},settings:{title:'Settings',crumb:'Platform'}
 };
 
-function navigateTo(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const el = document.getElementById('page-' + page);
-  if (el) el.classList.add('active');
-  const nav = document.querySelector(`[data-page="${page}"]`);
-  if (nav) nav.classList.add('active');
-  document.getElementById('page-title').textContent = titles[page] || page;
-  document.getElementById('page-breadcrumb').textContent = crumbs[page] ? crumbs[page] + ' /' : '';
-  loadPageData(page);
+function navigateTo(page){
+  qsa('.page').forEach(function(p){p.classList.remove('active')});
+  qsa('.nav-item').forEach(function(n){n.classList.remove('active')});
+  var el=qs('#page-'+page);if(el)el.classList.add('active');
+  var nav=qs('[data-page="'+page+'"]');if(nav)nav.classList.add('active');
+  var m=pageMeta[page]||{};
+  qs('#page-title').textContent=m.title||page;
+  qs('#page-crumb').textContent=m.crumb||'';
+  loadPage(page);
 }
+qsa('.nav-item').forEach(function(n){n.addEventListener('click',function(){navigateTo(n.dataset.page)})});
 
-document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => navigateTo(item.dataset.page));
+document.addEventListener('click',function(e){
+  var tab=e.target.closest('.tab');if(!tab)return;
+  tab.parentElement.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+  tab.classList.add('active');
+  var parent=tab.parentElement.parentElement;
+  parent.querySelectorAll('.tab-content').forEach(function(c){c.classList.remove('active')});
+  var target=qs('#'+tab.dataset.tab);if(target)target.classList.add('active');
 });
 
-async function api(path) {
-  try { const r = await fetch(API + path); if (!r.ok) return null; return r.json(); }
-  catch { return null; }
+function filterTable(tbodyId,q){
+  var rows=qs('#'+tbodyId);if(!rows)return;
+  q=q.toLowerCase();
+  rows.querySelectorAll('tr').forEach(function(r){r.style.display=r.textContent.toLowerCase().indexOf(q)>=0?'':'none'});
 }
 
-async function loadOverview() {
-  const [strains, grows, compounds, papers, protocols, taxonomy] = await Promise.all([
-    api('/mycology/strains'), api('/mycology/grow-logs'), api('/compound/compounds'),
-    api('/research/papers'), api('/mycology/protocols'), api('/knowledge/taxonomy/species'),
-  ]);
-  if (strains) document.getElementById('stat-strains').textContent = strains.length;
-  if (grows) document.getElementById('stat-grows').textContent = grows.length;
-  if (compounds) { document.getElementById('stat-compounds').textContent = compounds.length; document.getElementById('cpd-total').textContent = compounds.length; }
-  if (papers) document.getElementById('stat-papers').textContent = papers.length;
-  if (protocols) document.getElementById('myc-protocols').textContent = protocols.length;
-  if (taxonomy) document.getElementById('myc-species').textContent = taxonomy.length;
+function updateClock(){
+  var now=new Date();
+  var ts=now.toLocaleTimeString('en-US',{hour12:false});
+  var el=qs('#clock');if(el)el.textContent=ts;
+  var sb=qs('#sb-clock');if(sb)sb.textContent=ts;
+}
+setInterval(updateClock,1000);updateClock();
 
-  const apiH = await api('/health');
-  setHealth('api', apiH, 'hf-api');
-  setHealth('db', apiH, 'hf-db');
-  try {
-    const rr = await fetch('http://localhost:3001/health');
-    setHealth('router', rr.ok ? await rr.json() : null, 'hf-router');
-  } catch { setHealth('router', null, 'hf-router'); }
+var consoleEl=qs('#ops-console');
+function clog(tag,msg,color){
+  if(!consoleEl)return;
+  var t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  var line=document.createElement('div');line.className='console-line';
+  line.innerHTML='<span class="console-time">'+t+'</span><span class="console-tag" style="color:'+(color||'var(--t3)')+'\">['+tag+']</span><span class="console-msg">'+msg+'</span>';
+  consoleEl.appendChild(line);consoleEl.scrollTop=consoleEl.scrollHeight;
 }
 
-function setHealth(key, data, fillId) {
-  const el = document.getElementById('health-' + key);
-  const fill = document.getElementById(fillId);
-  if (data) { el.textContent = 'Healthy'; el.style.color = 'var(--green)'; fill.style.width = '100%'; }
-  else { el.textContent = 'Offline'; el.style.color = 'var(--text-3)'; fill.style.width = '0%'; }
+function renderTable(tbodyId,items,rowFn){
+  var el=qs('#'+tbodyId);if(!el)return;
+  if(!items.length){el.innerHTML='<tr><td colspan="20" style="color:var(--t4);text-align:center;padding:20px">No data</td></tr>';return;}
+  el.innerHTML=items.map(function(i){return '<tr>'+rowFn(i)+'</tr>'}).join('');
 }
 
-async function loadMycology() {
-  const [strains, grows, protocols, contam] = await Promise.all([
-    api('/mycology/strains'), api('/mycology/grow-logs'), api('/mycology/protocols'),
-    api('/mycology/analytics/contamination-rate'),
-  ]);
-  document.getElementById('myc-strains-count').textContent = strains ? strains.length : 0;
-  document.getElementById('myc-grows-count').textContent = grows ? grows.length : 0;
-  document.getElementById('myc-protos-count').textContent = protocols ? protocols.length : 0;
-  if (contam) document.getElementById('myc-contam-rate').textContent = (contam.rate * 100).toFixed(1) + '%';
-
-  const tbody = document.getElementById('protocols-table');
-  if (protocols && protocols.length) {
-    tbody.innerHTML = protocols.map(p => `<tr><td><strong>${p.name}</strong></td><td><em>${p.species}</em></td><td>${p.substrate_type||'—'}</td><td>${(p.steps||[]).length}</td><td>${p.expected_yield||'—'}</td></tr>`).join('');
-  } else { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-3)">No protocols loaded</td></tr>'; }
+function checkHealth(){
+  api('/health').then(function(h){
+    setDot('dot-api',!!h);setDot('sb-api',!!h);setDot('dot-db',!!h);setDot('sb-db',!!h);
+    var hg=qs('#health-grid');
+    if(hg){
+      var items=[
+        {n:'Control Plane API',ok:!!h},{n:'Database',ok:!!h},{n:'Session Router',ok:false},
+        {n:'Docker Engine',ok:false},{n:'Code-Server IDE',ok:false},{n:'Nginx Proxy',ok:false},
+        {n:'Mycology Module',ok:!!h},{n:'Vision Module',ok:!!h},{n:'Research Module',ok:!!h},
+        {n:'Compound Module',ok:!!h},{n:'Knowledge Plane',ok:!!h},{n:'Billing Service',ok:!!h}
+      ];
+      fetch('http://localhost:3001/health').then(function(r){items[2].ok=r.ok;setDot('dot-router',r.ok);setDot('sb-router',r.ok)}).catch(function(){}).finally(function(){
+        fetch('http://localhost:10000/healthz').then(function(r){items[4].ok=r.ok;setDot('dot-ide',r.ok)}).catch(function(){}).finally(function(){
+          hg.innerHTML=items.map(function(i){return '<div class="health-item"><div class="status-dot '+(i.ok?'on':'off')+'"></div><span class="label">'+i.n+'</span></div>'}).join('');
+        });
+      });
+    }
+  });
 }
 
-async function loadCompound() {
-  const [compounds, pipeline] = await Promise.all([api('/compound/compounds'), api('/compound/analytics/pipeline')]);
-  const g = document.getElementById('compound-stats');
-  if (pipeline) {
-    g.innerHTML = `
-      <div class="stat"><div class="stat-icon" style="background:var(--cyan-bg);color:var(--cyan)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v8L6 18a3 3 0 003 3h6a3 3 0 003-3l-4-8V2"/></svg></div><div class="stat-label">Total</div><div class="stat-value">${pipeline.total_compounds}</div></div>
-      <div class="stat"><div class="stat-icon" style="background:var(--green-bg);color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div class="stat-label">With Assays</div><div class="stat-value">${pipeline.with_assays||0}</div></div>
-      <div class="stat"><div class="stat-icon" style="background:var(--purple-bg);color:var(--purple)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div><div class="stat-label">With Targets</div><div class="stat-value">${pipeline.with_targets||0}</div></div>
-      <div class="stat"><div class="stat-icon" style="background:var(--gold-bg);color:var(--cl-gold)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><div class="stat-label">Clinical</div><div class="stat-value">${(pipeline.by_development_stage||{}).clinical||0}</div></div>`;
-  }
-  const tbody = document.getElementById('compounds-table');
-  if (compounds && compounds.length) {
-    tbody.innerHTML = compounds.map(c => `<tr><td><strong>${c.name}</strong></td><td class="mono">${c.formula||'—'}</td><td>${c.molecular_weight?c.molecular_weight.toFixed(1):'—'}</td><td><em>${c.source_organism||'—'}</em></td><td>${c.compound_class||'—'}</td><td><span class="badge badge-green">${c.development_stage||'discovery'}</span></td><td style="font-size:12px;color:var(--text-2)">${(c.bioactivities||[]).join(', ')}</td></tr>`).join('');
-  }
+function loadOverview(){
+  clog('SYS','Loading command center data...','var(--cl-blue-l)');
+  Promise.all([
+    api('/knowledge/taxonomy/species'),api('/compound/compounds'),api('/mycology/protocols'),
+    api('/research/experiments'),api('/research/papers'),api('/knowledge/graph/stats')
+  ]).then(function(r){
+    var sc=r[0]?r[0].length:0,cc=r[1]?r[1].length:0,pc=r[2]?r[2].length:0;
+    var ec=r[3]?r[3].length:0,ppc=r[4]?r[4].length:0,ge=r[5]?r[5].total_edges:0;
+    setText('s-species',sc);setText('s-compounds',cc);setText('s-protocols',pc);
+    setText('s-experiments',ec);setText('s-papers',ppc);setText('s-edges',ge);
+    setText('nav-myc-count',pc);setText('nav-cpd-count',cc);setText('nav-tax-count',sc);
+    qs('#sb-species').textContent='Species: '+sc;
+    qs('#sb-compounds').textContent='Compounds: '+cc;
+    qs('#sb-edges').textContent='Edges: '+ge;
+    clog('SYS','Loaded: '+sc+' species, '+cc+' compounds, '+pc+' protocols, '+ec+' experiments, '+ppc+' papers, '+ge+' edges','var(--green)');
+  });
+  api('/compound/analytics/pipeline').then(function(p){
+    if(!p)return;var stages=p.by_development_stage||{};var total=p.total_compounds||1;
+    ['discovery','screening','lead_optimization','preclinical','clinical'].forEach(function(s,i){
+      var keys=['discovery','screening','lead','preclinical','clinical'];
+      var v=stages[s]||0;var el=qs('#pipe-'+keys[i]);if(el)el.textContent=v;
+      var fill=el?el.parentElement.querySelector('.gauge-fill'):null;
+      if(fill)fill.style.width=(v/total*100)+'%';
+    });
+  });
+  checkHealth();
 }
 
-async function loadTaxonomy() {
-  const species = await api('/knowledge/taxonomy/species');
-  const tbody = document.getElementById('taxonomy-table');
-  if (species && species.length) {
-    const rows = await Promise.all(species.map(async s => {
-      const cpds = await api(`/knowledge/taxonomy/species/${s.id}/compounds`);
-      const eb = s.edibility==='edible'?'badge-green':s.edibility==='medicinal'?'badge-amber':'badge-red';
-      return `<tr><td><strong><em>${s.scientific_name}</em></strong></td><td>${s.common_name||'—'}</td><td>${s.genus||'—'}</td><td>${s.family||'—'}</td><td><span class="badge ${eb}">${s.edibility||'—'}</span></td><td>${cpds?cpds.total:0}</td></tr>`;
-    }));
-    tbody.innerHTML = rows.join('');
-  }
+function loadMycology(){
+  Promise.all([
+    api('/mycology/strains'),api('/mycology/grow-logs'),api('/mycology/protocols'),
+    api('/mycology/harvests'),api('/mycology/analytics/contamination-rate')
+  ]).then(function(r){
+    setText('myc-strains',r[0]?r[0].length:0);setText('myc-grows',r[1]?r[1].length:0);
+    setText('myc-protos',r[2]?r[2].length:0);
+    if(r[4])setText('myc-contam',(r[4].rate*100).toFixed(1)+'%');
+    renderTable('myc-strains-tbody',r[0]||[],function(s){return '<td class="mono">'+(s.id||'--')+'</td><td><strong>'+(s.name||'--')+'</strong></td><td><em>'+(s.species||'--')+'</em></td><td>'+(s.source||'--')+'</td><td>'+(s.generation||'--')+'</td><td><span class="badge badge-green">'+(s.status||'active')+'</span></td>'});
+    renderTable('myc-grows-tbody',r[1]||[],function(g){return '<td class="mono">'+(g.id||'--')+'</td><td>'+(g.strain_id||'--')+'</td><td>'+(g.substrate||'--')+'</td><td><span class="badge badge-blue">'+(g.current_phase||'--')+'</span></td><td>'+(g.start_date||'--')+'</td><td><span class="badge badge-green">'+(g.status||'active')+'</span></td>'});
+    renderTable('myc-protos-tbody',r[2]||[],function(p){return '<td><strong>'+p.name+'</strong></td><td><em>'+p.species+'</em></td><td>'+(p.substrate_type||'--')+'</td><td>'+(p.steps||[]).length+'</td><td>'+(p.expected_yield||'--')+'</td>'});
+    renderTable('myc-harvests-tbody',r[3]||[],function(h){return '<td class="mono">'+(h.grow_log_id||'--')+'</td><td>'+(h.weight_grams||'--')+'g</td><td><span class="badge badge-green">'+(h.quality_grade||'--')+'</span></td><td>'+(h.flush_number||'--')+'</td><td>'+(h.harvest_date||'--')+'</td><td>'+(h.notes||'--')+'</td>'});
+  });
 }
 
-async function loadGraph() {
-  const [stats, edges] = await Promise.all([api('/knowledge/graph/stats'), api('/knowledge/graph/edges')]);
-  const g = document.getElementById('graph-stats-grid');
-  if (stats) {
-    g.innerHTML = `
-      <div class="stat"><div class="stat-label">Total Nodes</div><div class="stat-value">${stats.total_nodes}</div></div>
-      <div class="stat"><div class="stat-label">Total Edges</div><div class="stat-value">${stats.total_edges}</div></div>
-      <div class="stat"><div class="stat-label">Species</div><div class="stat-value">${(stats.node_types||{}).species||0}</div></div>
-      <div class="stat"><div class="stat-label">Compounds</div><div class="stat-value">${(stats.node_types||{}).compound||0}</div></div>`;
-  }
-  const tbody = document.getElementById('edges-table');
-  if (edges && edges.length) {
-    tbody.innerHTML = edges.map(e => `<tr><td>${e.from_type} : <strong>${e.from_id.replace(/^(sp-|cpd-)/,'')}</strong></td><td><span class="badge badge-blue">${e.relation}</span></td><td>${e.to_type} : <strong>${e.to_id.replace(/^(sp-|cpd-)/,'')}</strong></td><td style="font-size:12px;color:var(--text-2)">${e.evidence||'—'}</td></tr>`).join('');
-  }
+function loadCompound(){
+  Promise.all([
+    api('/compound/compounds'),api('/compound/targets'),api('/compound/assays'),
+    api('/compound/analytics/pipeline'),api('/compound/sar')
+  ]).then(function(r){
+    var sg=qs('#cpd-stats');
+    if(r[3]&&sg){sg.innerHTML='<div class="stat-card"><div class="label">Total</div><div class="value">'+(r[3].total_compounds||0)+'</div></div><div class="stat-card"><div class="label">With Assays</div><div class="value">'+(r[3].with_assays||0)+'</div></div><div class="stat-card"><div class="label">With Targets</div><div class="value">'+(r[3].with_targets||0)+'</div></div><div class="stat-card"><div class="label">Organisms</div><div class="value">'+(r[3].unique_organisms||'--')+'</div></div><div class="stat-card"><div class="label">Clinical</div><div class="value">'+((r[3].by_development_stage||{}).clinical||0)+'</div></div>'}
+    renderTable('cpd-library-tbody',r[0]||[],function(c){return '<td><strong>'+c.name+'</strong></td><td class="mono">'+(c.formula||'--')+'</td><td class="mono">'+(c.molecular_weight?c.molecular_weight.toFixed(1):'--')+'</td><td><em>'+(c.source_organism||'--')+'</em></td><td>'+(c.compound_class||'--')+'</td><td><span class="badge badge-cyan">'+(c.development_stage||'discovery')+'</span></td><td style="font-size:11px;color:var(--t3)">'+(c.bioactivities||[]).join(', ')+'</td>'});
+    renderTable('cpd-targets-tbody',r[1]||[],function(t){return '<td><strong>'+t.name+'</strong></td><td>'+(t.target_type||'--')+'</td><td>'+(t.organism||'--')+'</td><td class="mono">'+(t.gene_name||'--')+'</td><td>'+(t.indication||'--')+'</td>'});
+    renderTable('cpd-assays-tbody',r[2]||[],function(a){return '<td>'+(a.compound_id||'--')+'</td><td>'+(a.target_id||'--')+'</td><td>'+(a.assay_type||'--')+'</td><td class="mono">'+(a.result_value||'--')+'</td><td>'+(a.result_unit||'--')+'</td><td>'+(a.date||'--')+'</td>'});
+    renderTable('cpd-sar-tbody',r[4]||[],function(s){return '<td>'+(s.compound_a||'--')+'</td><td>'+(s.compound_b||'--')+'</td><td>'+(s.structural_difference||'--')+'</td><td>'+(s.activity_difference||'--')+'</td><td style="font-size:11px;color:var(--t2)">'+(s.insight||'--')+'</td>'});
+    var sel=qs('#admet-compound');
+    if(sel&&r[0])sel.innerHTML=r[0].map(function(c){return '<option value="'+c.id+'">'+c.name+'</option>'}).join('');
+  });
 }
 
-async function loadResearch() {
-  const ov = await api('/research/analytics/overview');
-  const g = document.getElementById('research-stats-grid');
-  if (ov) {
-    g.innerHTML = `
-      <div class="stat"><div class="stat-icon" style="background:var(--cyan-bg);color:var(--cyan)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg></div><div class="stat-label">Papers</div><div class="stat-value">${ov.papers||0}</div></div>
-      <div class="stat"><div class="stat-icon" style="background:var(--purple-bg);color:var(--purple)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6v5a3 3 0 01-3 3v0a3 3 0 01-3-3V3z"/></svg></div><div class="stat-label">Experiments</div><div class="stat-value">${ov.experiments||0}</div></div>
-      <div class="stat"><div class="stat-icon" style="background:var(--green-bg);color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div><div class="stat-label">Notes</div><div class="stat-value">${ov.notes||0}</div></div>`;
-  }
+function loadVision(){
+  api('/vision/analyses').then(function(a){
+    renderTable('vision-history-tbody',a||[],function(v){return '<td class="mono">'+(v.id||'--')+'</td><td><span class="badge badge-blue">'+(v.analysis_type||'--')+'</span></td><td><em>'+(v.species||'--')+'</em></td><td class="mono">'+(v.confidence?v.confidence.toFixed(2):'--')+'</td><td>'+(v.classification||'--')+'</td><td class="mono">'+(v.timestamp||'--')+'</td>'});
+  });
+}
+function runVisionAnalysis(){
+  var url=qs('#vision-url').value;var type=qs('#vision-type').value;var species=qs('#vision-species').value;
+  if(!url){alert('Enter an image URL');return}
+  qs('#vision-result').textContent='Analyzing...';
+  apiPost('/vision/analyze',{image_url:url,analysis_type:type,species:species||undefined}).then(function(r){
+    qs('#vision-result').textContent=r?JSON.stringify(r,null,2):'Analysis failed';
+  });
+}
+function runContamCheck(){
+  var url=qs('#contam-url').value;if(!url){alert('Enter image URL');return}
+  qs('#contam-result').textContent='Checking...';
+  apiPost('/vision/contamination-check',{image_url:url}).then(function(r){
+    qs('#contam-result').textContent=r?JSON.stringify(r,null,2):'Check failed';
+  });
 }
 
-async function loadPageData(p) {
-  const loaders = { overview:loadOverview, mycology:loadMycology, compound:loadCompound, taxonomy:loadTaxonomy, graph:loadGraph, research:loadResearch };
-  if (loaders[p]) loaders[p]();
+function loadResearch(){
+  Promise.all([api('/research/analytics/overview'),api('/research/experiments'),api('/research/papers'),api('/research/notes')]).then(function(r){
+    var sg=qs('#res-stats');
+    if(r[0]&&sg)sg.innerHTML='<div class="stat-card"><div class="label">Papers</div><div class="value">'+(r[0].papers||0)+'</div></div><div class="stat-card"><div class="label">Experiments</div><div class="value">'+(r[0].experiments||0)+'</div></div><div class="stat-card"><div class="label">Notes</div><div class="value">'+(r[0].notes||0)+'</div></div>';
+    renderTable('res-exp-tbody',r[1]||[],function(e){return '<td class="mono">'+(e.id||'--')+'</td><td><strong>'+(e.title||'--')+'</strong></td><td style="max-width:200px" class="truncate">'+(e.hypothesis||'--')+'</td><td><span class="badge badge-'+(e.status==='completed'?'green':e.status==='active'?'blue':'dim')+'">'+(e.status||'planned')+'</span></td><td class="mono">'+((e.data_points||[]).length||0)+'</td>'});
+    renderTable('res-papers-tbody',r[2]||[],function(p){return '<td><strong>'+(p.title||'--')+'</strong></td><td>'+(p.authors||[]).join(', ')+'</td><td>'+(p.journal||'--')+'</td><td class="mono">'+(p.year||'--')+'</td><td class="mono">'+(p.doi||'--')+'</td><td>'+(p.tags||[]).map(function(t){return '<span class="badge badge-dim">'+t+'</span>'}).join(' ')+'</td>'});
+    renderTable('res-notes-tbody',r[3]||[],function(n){return '<td><strong>'+(n.title||'--')+'</strong></td><td>'+(n.category||'--')+'</td><td>'+(n.tags||[]).map(function(t){return '<span class="badge badge-dim">'+t+'</span>'}).join(' ')+'</td><td class="mono">'+(n.created_at||'--')+'</td>'});
+  });
+}
+function generateProtocol(){
+  var q=qs('#proto-question').value;if(!q){alert('Enter a research question');return}
+  qs('#proto-result').textContent='Generating...';
+  apiPost('/research/protocols/generate',{research_question:q,species:qs('#proto-species').value||undefined}).then(function(r){
+    qs('#proto-result').textContent=r?JSON.stringify(r,null,2):'Generation failed';
+  });
 }
 
-function refreshData() { loadPageData(document.querySelector('.nav-item.active')?.dataset.page || 'overview'); }
-function openIDE() { window.open('http://localhost:3001', '_blank'); }
-function generateSOP() { alert('SOP generation — POST /mycology/sop/generate'); }
+function loadTaxonomy(){
+  api('/knowledge/taxonomy/species').then(function(species){
+    if(!species)return;
+    Promise.all(species.map(function(s){return api('/knowledge/taxonomy/species/'+s.id+'/compounds').then(function(c){
+      var eb=s.edibility==='edible'?'green':s.edibility==='medicinal'?'amber':'dim';
+      return '<tr><td><strong><em>'+s.scientific_name+'</em></strong></td><td>'+(s.common_name||'--')+'</td><td>'+(s.genus||'--')+'</td><td>'+(s.family||'--')+'</td><td><span class="badge badge-'+eb+'">'+(s.edibility||'--')+'</span></td><td class="mono">'+(c?c.total:0)+'</td></tr>';
+    })})).then(function(rows){qs('#tax-tbody').innerHTML=rows.join('')});
+  });
+}
+
+function loadGraph(){
+  Promise.all([api('/knowledge/graph/stats'),api('/knowledge/graph/edges')]).then(function(r){
+    var sg=qs('#graph-stats-row');
+    if(r[0]&&sg)sg.innerHTML='<div class="stat-card"><div class="label">Nodes</div><div class="value">'+(r[0].total_nodes||0)+'</div></div><div class="stat-card"><div class="label">Edges</div><div class="value">'+(r[0].total_edges||0)+'</div></div><div class="stat-card"><div class="label">Species</div><div class="value">'+((r[0].node_types||{}).species||0)+'</div></div><div class="stat-card"><div class="label">Compounds</div><div class="value">'+((r[0].node_types||{}).compound||0)+'</div></div>';
+    renderTable('graph-edges-tbody',r[1]||[],function(e){return '<td>'+e.from_type+':<strong>'+e.from_id.replace(/^(sp-|cpd-)/,'')+'</strong></td><td><span class="badge badge-blue">'+e.relation+'</span></td><td>'+e.to_type+':<strong>'+e.to_id.replace(/^(sp-|cpd-)/,'')+'</strong></td><td class="mono">'+(e.confidence||'--')+'</td><td style="font-size:11px;color:var(--t3)">'+(e.evidence||'--')+'</td>'});
+  });
+}
+function exploreGraph(){
+  var nid=qs('#graph-node-id').value;if(!nid){alert('Enter node ID');return}
+  api('/knowledge/graph/neighbors?node_id='+encodeURIComponent(nid)+'&max_depth='+qs('#graph-depth').value).then(function(r){
+    qs('#graph-explore-result').textContent=r?JSON.stringify(r,null,2):'No results';
+  });
+}
+
+function loadEmbeddings(){
+  api('/knowledge/embeddings/stats').then(function(s){
+    var sg=qs('#emb-stats');
+    if(s&&sg)sg.innerHTML='<div class="stat-card"><div class="label">Documents</div><div class="value">'+(s.total_documents||0)+'</div></div><div class="stat-card"><div class="label">Namespaces</div><div class="value">'+(s.namespaces?s.namespaces.length:0)+'</div></div><div class="stat-card"><div class="label">Dimensions</div><div class="value">'+(s.dimensions||'--')+'</div></div>';
+  });
+}
+function searchEmbeddings(){
+  var q=qs('#emb-query').value;if(!q)return;
+  var path='/knowledge/embeddings/search?query='+encodeURIComponent(q)+'&top_k='+qs('#emb-k').value;
+  var ns=qs('#emb-ns').value;if(ns)path+='&namespace='+encodeURIComponent(ns);
+  api(path).then(function(r){
+    var el=qs('#emb-results');
+    if(r&&r.results)el.innerHTML=r.results.map(function(d,i){return '<div class="panel" style="margin-bottom:8px"><div class="panel-bd"><div class="flex items-center gap-8 mb-12"><span class="badge badge-blue">#'+(i+1)+'</span><span class="mono">'+(d.id||'--')+'</span><span class="ml-auto mono" style="color:var(--cl-gold)">'+(d.score?d.score.toFixed(4):'--')+'</span></div><div style="font-size:12px;color:var(--t2)">'+(d.content?d.content.substring(0,300):'--')+'</div></div></div>'}).join('');
+    else el.innerHTML='<div style="color:var(--t4);text-align:center;padding:20px">No results</div>';
+  });
+}
+function indexDocument(){
+  var id=qs('#emb-doc-id').value;var content=qs('#emb-doc-content').value;
+  if(!id||!content){alert('Fill in ID and content');return}
+  apiPost('/knowledge/embeddings/index',{id:id,content:content,namespace:qs('#emb-doc-ns').value||'default'}).then(function(r){
+    alert(r?'Document indexed':'Indexing failed');
+  });
+}
+
+function loadModels(){
+  api('/api/gateway/models').then(function(models){
+    if(!models)return;
+    renderTable('models-tbody',models,function(m){return '<td><strong>'+(m.name||m.id||'--')+'</strong></td><td>'+(m.provider||'--')+'</td><td><span class="badge badge-blue">'+(m.tier||'--')+'</span></td><td class="mono">'+(m.context_window||'--')+'</td><td><span class="badge badge-gold">'+(m.min_plan||'--')+'</span></td><td><span class="badge badge-green">Active</span></td>'});
+    var sel=qs('#chat-model');if(sel)sel.innerHTML=models.map(function(m){return '<option value="'+(m.id||m.name)+'">'+(m.name||m.id)+'</option>'}).join('');
+  });
+}
+function sendChat(){
+  var msg=qs('#chat-msg').value;if(!msg)return;
+  var el=qs('#chat-response');el.style.display='block';el.textContent='Sending...';
+  apiPost('/api/gateway/chat',{model:qs('#chat-model').value,message:msg,workspace_id:qs('#chat-ws').value||'ws-default'}).then(function(r){
+    el.textContent=r?JSON.stringify(r,null,2):'Request failed';
+  });
+}
+
+function loadBilling(){
+  Promise.all([api('/api/plans'),api('/api/billing/config')]).then(function(r){
+    var sg=qs('#billing-stats');
+    if(sg)sg.innerHTML='<div class="stat-card"><div class="label">Plans</div><div class="value">'+(r[0]?r[0].length:0)+'</div></div><div class="stat-card"><div class="label">Current</div><div class="value" style="font-size:16px">Studio</div></div><div class="stat-card"><div class="label">Billing</div><div class="value" style="font-size:16px">Stripe</div></div><div class="stat-card"><div class="label">Status</div><div class="value" style="font-size:16px;color:var(--green)">Active</div></div>';
+    renderTable('plans-tbody',r[0]||[],function(p){return '<td><strong>'+(p.name||'--')+'</strong></td><td class="mono">$'+(p.price_monthly||0)+'/mo</td><td class="mono">'+(p.token_quota?p.token_quota.toLocaleString():'--')+'</td><td>'+(p.ide_access?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-dim">No</span>')+'</td><td>'+(p.vision_access?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-dim">No</span>')+'</td><td style="font-size:11px;color:var(--t3)">'+(p.features||[]).join(', ')+'</td>'});
+    var bc=qs('#billing-config');
+    if(bc&&r[1])bc.innerHTML='<pre class="console" style="max-height:200px">'+JSON.stringify(r[1],null,2)+'</pre>';
+  });
+}
+
+function loadIDE(){
+  var routerOk=false;
+  fetch('http://localhost:3001/health').then(function(r){routerOk=r.ok}).catch(function(){}).finally(function(){
+    setText('ide-router-status',routerOk?'Online':'Offline');
+    setDot('ide-h-router',routerOk?'on':'off');
+    fetch('http://localhost:10000/healthz').then(function(r){
+      setText('ide-docker-status',r.ok?'Running':'Stopped');
+      setText('ide-containers',r.ok?'1':'0');
+      setDot('ide-h-docker',r.ok?'on':'off');
+    }).catch(function(){
+      setText('ide-docker-status','Stopped');setText('ide-containers','0');
+      setDot('ide-h-docker','off');
+    });
+  });
+  setDot('ide-h-image','off');setDot('ide-h-nginx','off');
+}
+
+function loadSettings(){
+  api('/health').then(function(h){if(h)qs('#cfg-python').textContent=h.python||'--'});
+}
+function testConnection(){
+  var el=qs('#cfg-result');el.textContent='Testing...';el.style.color='var(--t3)';
+  api('/health').then(function(r){
+    if(r){el.textContent='Connected - API healthy';el.style.color='var(--green)'}
+    else{el.textContent='Connection failed';el.style.color='var(--red)'}
+  });
+}
+
+function openIDE(){window.open('http://localhost:10000','_blank')}
+function generateSOP(){apiPost('/mycology/sop/generate',{species:'Pleurotus ostreatus',substrate_type:'hardwood sawdust'}).then(function(r){alert(r?'SOP: '+JSON.stringify(r).substring(0,200):'Failed')})}
+function runADMET(){
+  var id=qs('#admet-compound').value;if(!id)return;
+  var el=qs('#admet-results');el.innerHTML='<div style="color:var(--t3)">Running...</div>';
+  apiPost('/compound/admet/predict-lipinski',{compound_id:id}).then(function(r){
+    if(r)el.innerHTML='<div class="panel"><div class="panel-bd">'+Object.keys(r).map(function(k){return '<div class="gauge-row"><div class="gauge-label">'+k+'</div><div class="gauge-val" style="width:auto;color:var(--t2)">'+(typeof r[k]==='number'?r[k].toFixed(2):r[k])+'</div></div>'}).join('')+'</div></div>';
+    else el.innerHTML='<div style="color:var(--red)">Prediction failed</div>';
+  });
+}
+
+var modalTemplates={
+  strain:{title:'New Strain',fields:[{id:'strain-name',l:'Name',ph:'e.g., Blue Oyster B-7'},{id:'strain-species',l:'Species',ph:'e.g., Pleurotus ostreatus'},{id:'strain-source',l:'Source',ph:'liquid culture, spore print'},{id:'strain-gen',l:'Generation',ph:'G1, G2'}],ep:'/mycology/strains',map:function(f){return{name:f['strain-name'],species:f['strain-species'],source:f['strain-source'],generation:f['strain-gen']}}},
+  compound:{title:'New Compound',fields:[{id:'cpd-name',l:'Name',ph:'Compound name'},{id:'cpd-formula',l:'Formula',ph:'C15H22O5'},{id:'cpd-mw',l:'Molecular Weight',ph:'282.33',t:'number'},{id:'cpd-source',l:'Source Organism',ph:'Ganoderma lucidum'},{id:'cpd-class',l:'Class',ph:'terpenoid'},{id:'cpd-bio',l:'Bioactivities (comma-sep)',ph:'anti-tumor, immunomodulatory'}],ep:'/compound/compounds',map:function(f){return{name:f['cpd-name'],formula:f['cpd-formula'],molecular_weight:parseFloat(f['cpd-mw'])||null,source_organism:f['cpd-source'],compound_class:f['cpd-class'],bioactivities:f['cpd-bio']?f['cpd-bio'].split(',').map(function(s){return s.trim()}):[]};}},
+  experiment:{title:'New Experiment',fields:[{id:'exp-title',l:'Title',ph:'Experiment title'},{id:'exp-hypo',l:'Hypothesis',ph:'If... then...',ta:1},{id:'exp-method',l:'Methodology',ph:'Approach',ta:1}],ep:'/research/experiments',map:function(f){return{title:f['exp-title'],hypothesis:f['exp-hypo'],methodology:f['exp-method']}}},
+  paper:{title:'Index Paper',fields:[{id:'paper-title',l:'Title',ph:'Paper title'},{id:'paper-authors',l:'Authors (comma-sep)',ph:'Smith J, Doe A'},{id:'paper-journal',l:'Journal',ph:'Nature'},{id:'paper-year',l:'Year',ph:'2024'},{id:'paper-doi',l:'DOI',ph:'10.1000/...'},{id:'paper-tags',l:'Tags (comma-sep)',ph:'mycology'}],ep:'/research/papers',map:function(f){return{title:f['paper-title'],authors:f['paper-authors']?f['paper-authors'].split(',').map(function(s){return s.trim()}):[],journal:f['paper-journal'],year:parseInt(f['paper-year'])||null,doi:f['paper-doi'],tags:f['paper-tags']?f['paper-tags'].split(',').map(function(s){return s.trim()}):[]};}},
+  growlog:{title:'New Grow Log',fields:[{id:'gl-strain',l:'Strain ID',ph:'strain-blue-oyster'},{id:'gl-substrate',l:'Substrate',ph:'hardwood sawdust'},{id:'gl-container',l:'Container',ph:'bag, jar'}],ep:'/mycology/grow-logs',map:function(f){return{strain_id:f['gl-strain'],substrate:f['gl-substrate'],container_type:f['gl-container']}}},
+  protocol:{title:'New Protocol',fields:[{id:'prt-name',l:'Name',ph:'Protocol name'},{id:'prt-sp',l:'Species',ph:'Species'},{id:'prt-sub',l:'Substrate',ph:'grain, straw'},{id:'prt-yield',l:'Expected Yield',ph:'500g per flush'}],ep:'/mycology/protocols',map:function(f){return{name:f['prt-name'],species:f['prt-sp'],substrate_type:f['prt-sub'],expected_yield:f['prt-yield']}}},
+  harvest:{title:'Log Harvest',fields:[{id:'hv-gl',l:'Grow Log ID',ph:'grow log ID'},{id:'hv-w',l:'Weight (g)',ph:'250',t:'number'},{id:'hv-q',l:'Quality',ph:'A, B, C'},{id:'hv-f',l:'Flush #',ph:'1',t:'number'},{id:'hv-n',l:'Notes',ph:'Notes',ta:1}],ep:'/mycology/harvests',map:function(f){return{grow_log_id:f['hv-gl'],weight_grams:parseFloat(f['hv-w'])||0,quality_grade:f['hv-q'],flush_number:parseInt(f['hv-f'])||1,notes:f['hv-n']}}},
+  note:{title:'New Note',fields:[{id:'note-title',l:'Title',ph:'Note title'},{id:'note-cat',l:'Category',ph:'observation, idea'},{id:'note-content',l:'Content',ph:'Content...',ta:1},{id:'note-tags',l:'Tags',ph:'mycology'}],ep:'/research/notes',map:function(f){return{title:f['note-title'],category:f['note-cat'],content:f['note-content'],tags:f['note-tags']?f['note-tags'].split(',').map(function(s){return s.trim()}):[]};}},
+  target:{title:'Add Target',fields:[{id:'tgt-name',l:'Name',ph:'Target name'},{id:'tgt-type',l:'Type',ph:'protein, enzyme'},{id:'tgt-org',l:'Organism',ph:'Homo sapiens'},{id:'tgt-gene',l:'Gene',ph:'TNF'},{id:'tgt-ind',l:'Indication',ph:'inflammation'}],ep:'/compound/targets',map:function(f){return{name:f['tgt-name'],target_type:f['tgt-type'],organism:f['tgt-org'],gene_name:f['tgt-gene'],indication:f['tgt-ind']}}},
+  assay:{title:'New Assay',fields:[{id:'asy-cpd',l:'Compound ID',ph:'compound ID'},{id:'asy-tgt',l:'Target ID',ph:'target ID'},{id:'asy-type',l:'Type',ph:'IC50, EC50'},{id:'asy-val',l:'Result',ph:'12.5',t:'number'},{id:'asy-unit',l:'Unit',ph:'uM, nM'}],ep:'/compound/assays',map:function(f){return{compound_id:f['asy-cpd'],target_id:f['asy-tgt'],assay_type:f['asy-type'],result_value:parseFloat(f['asy-val'])||0,result_unit:f['asy-unit']}}},
+  species:{title:'Add Species',fields:[{id:'sp-sci',l:'Scientific Name',ph:'Ganoderma lucidum'},{id:'sp-common',l:'Common Name',ph:'Reishi'},{id:'sp-genus',l:'Genus',ph:'Ganoderma'},{id:'sp-family',l:'Family',ph:'Ganodermataceae'},{id:'sp-ed',l:'Edibility',ph:'edible, medicinal, toxic'}],ep:'/knowledge/taxonomy/species',map:function(f){return{scientific_name:f['sp-sci'],common_name:f['sp-common'],genus:f['sp-genus'],family:f['sp-family'],edibility:f['sp-ed']}}},
+  edge:{title:'Add Edge',fields:[{id:'edge-from',l:'From Node ID',ph:'sp-reishi'},{id:'edge-to',l:'To Node ID',ph:'cpd-ganoderic-acid'},{id:'edge-rel',l:'Relation',ph:'produces, contains'},{id:'edge-conf',l:'Confidence',ph:'0.0-1.0',t:'number'},{id:'edge-ev',l:'Evidence',ph:'Reference'}],ep:'/knowledge/graph/edges',map:function(f){return{from_id:f['edge-from'],to_id:f['edge-to'],relation:f['edge-rel'],confidence:parseFloat(f['edge-conf'])||null,evidence:f['edge-ev']}}},
+  workspace:{title:'Create Workspace',fields:[{id:'ws-name',l:'Name',ph:'Workspace name'},{id:'ws-slug',l:'Slug',ph:'workspace-slug'},{id:'ws-plan',l:'Plan',ph:'developer, studio'}],ep:'/api/workspaces',map:function(f){return{name:f['ws-name'],slug:f['ws-slug'],plan:f['ws-plan']||'developer'}}}
+};
+
+function showModal(type){
+  var tmpl=modalTemplates[type];if(!tmpl)return;
+  var root=qs('#modal-root');
+  var fieldsHtml=tmpl.fields.map(function(f){
+    return '<div class="form-group"><label class="form-label">'+f.l+'</label>'+(f.ta?'<textarea class="input input-sm" id="'+f.id+'" placeholder="'+(f.ph||'')+'"></textarea>':'<input class="input input-sm" id="'+f.id+'" type="'+(f.t||'text')+'" placeholder="'+(f.ph||'')+'">')+'</div>';
+  }).join('');
+  root.innerHTML='<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-hd"><h2>'+tmpl.title+'</h2><button class="modal-close" onclick="closeModal()">&times;</button></div><div class="modal-bd">'+fieldsHtml+'</div><div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitModal(\''+type+'\')">Create</button></div></div></div>';
+}
+function closeModal(){qs('#modal-root').innerHTML=''}
+function submitModal(type){
+  var tmpl=modalTemplates[type];if(!tmpl)return;
+  var vals={};
+  tmpl.fields.forEach(function(f){var el=qs('#'+f.id);vals[f.id]=el?el.value:''});
+  var body=tmpl.map(vals);
+  apiPost(tmpl.ep,body).then(function(r){
+    if(r){closeModal();clog('CREATE','Created '+type,'var(--green)');refreshCurrentPage()}
+    else alert('Creation failed');
+  });
+}
+
+var loaders={
+  overview:loadOverview,mycology:loadMycology,compound:loadCompound,
+  vision:loadVision,research:loadResearch,taxonomy:loadTaxonomy,
+  graph:loadGraph,embeddings:loadEmbeddings,models:loadModels,
+  billing:loadBilling,ide:loadIDE,settings:loadSettings
+};
+function loadPage(p){if(loaders[p])loaders[p]()}
+function refreshCurrentPage(){var p=qs('.nav-item.active');loadPage(p?p.dataset.page:'overview')}
 
 loadOverview();
+setInterval(checkHealth,30000);
 </script>
 </body>
 </html>
