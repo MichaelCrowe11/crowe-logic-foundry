@@ -127,7 +127,26 @@ rsync -av --exclude 'node_modules' --exclude '.env' \
 
 `deploy/ide/requirements.txt` is committed to the repo and rsynced along with everything else, so the Docker build context already contains it — no separate `scp` step needed. If you change the foundry's root `requirements.txt`, copy it into `deploy/ide/requirements.txt` before rsyncing so the image stays in sync.
 
-**Verification:** `ssh crowelogic@$VM_IP "ls /opt/crowe-ide/"` should list `Dockerfile.code-server`, `docker-compose.yml`, `requirements.txt`, `nginx/`, `session-router/`, `systemd/`, `sandbox-template/`.
+**Verification:** `ssh crowelogic@$VM_IP "ls /opt/crowe-ide/"` should list `Dockerfile.code-server`, `docker-compose.yml`, `docker-compose.full.yml`, `requirements.txt`, `nginx/`, `session-router/`, `systemd/`, `sandbox-template/`, `scripts/`.
+
+### Full-stack deployment (recommended)
+
+After rsyncing files, use the one-command deploy script:
+
+```bash
+# SSH into the VM
+ssh crowelogic@$VM_IP
+
+# Set up .env from template
+cd /opt/crowe-ide
+sudo cp .env.full.example .env
+sudo nano .env  # Fill in all required values
+
+# Deploy with local Postgres + TLS auto-renewal
+sudo bash scripts/deploy.sh --build --local-db --tls
+```
+
+This builds all images, starts Postgres, Control Plane, Session Router, Admin container, Nginx, and Certbot in one command.
 
 ---
 

@@ -47,6 +47,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
+# Install Jupyter for notebook support (Lab tier and above)
+RUN pip install --no-cache-dir \
+    jupyterlab>=4.2.0 \
+    ipykernel>=6.29.0 \
+    nbformat>=5.10.0 \
+    && /opt/venv/bin/python3 -m ipykernel install --name crowe-foundry --display-name "Crowe Foundry (Python)"
+
 # Stage the extension files we'll install as the coder user. We must
 # install extensions as `coder` (not root): code-server stores them
 # under $HOME/.local/share/code-server/extensions, so installing as
@@ -73,6 +80,13 @@ RUN chmod +x /usr/local/bin/apply-product-overrides.sh \
 # but ownership is set above so coder owns the parent dir).
 COPY --chown=coder:coder settings.json /home/coder/.local/share/code-server/User/settings.json
 
+# Copy sandbox template for first-launch workspace seeding
+COPY --chown=coder:coder sandbox-template/ /opt/sandbox-template/
+
+# Install entrypoint script (needs +x, done as root before user switch)
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Switch to coder for the extension installs so they land under
 # /home/coder/.local/share/code-server/extensions where the runtime
 # code-server process actually looks.
@@ -87,3 +101,11 @@ RUN while IFS= read -r ext || [ -n "$ext" ]; do \
  && rm /tmp/extensions.txt /tmp/crowe-logic.vsix
 
 WORKDIR /workspace
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
+  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1
+
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["--bind-addr=0.0.0.0:8080", "--auth=none", "--disable-telemetry"]

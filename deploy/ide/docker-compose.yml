@@ -27,7 +27,7 @@ services:
       - --auth=none
       - --disable-telemetry
     cpus: 2.0
-    mem_limit: 2g
+    mem_limit: 4g
     networks:
       - ide-admin
     # code-server exposes /healthz (returns {"status":"alive",...} on 200).

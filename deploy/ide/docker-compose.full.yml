@@ -1,0 +1,189 @@
+# deploy/ide/docker-compose.full.yml
+#
+# Full Crowe Logic IDE stack: Postgres, Control Plane API, Session Router,
+# Admin code-server, Nginx reverse proxy. For production deployment on
+# the ide.southwestmushrooms.com Azure VM.
+#
+# Usage:
+#   docker compose -f docker-compose.full.yml up -d
+#   docker compose -f docker-compose.full.yml logs -f
+
+services:
+  # ── Postgres (local dev / fallback — production uses Neon) ────────
+  postgres:
+    image: postgres:16-bookworm
+    container_name: crowe-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crowe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-crowe_foundry}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - crowe-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crowe}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    profiles:
+      - local-db
+
+  # ── Control Plane API (FastAPI on port 8001) ──────────────────────
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: deploy/ide/Dockerfile.control-plane
+    image: crowe-control-plane:latest
+    container_name: crowe-control-plane
+    restart: unless-stopped
+    environment:
+      CONTROL_PLANE_DATABASE_URL: ${CONTROL_PLANE_DATABASE_URL:-postgresql://${POSTGRES_USER:-crowe}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-crowe_foundry}}
+      JWT_SECRET: ${IDE_JWT_SECRET:?Set IDE_JWT_SECRET in .env}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_DEVELOPER: ${STRIPE_PRICE_DEVELOPER:-}
+      STRIPE_PRICE_STUDIO: ${STRIPE_PRICE_STUDIO:-}
+      STRIPE_PRICE_LAB: ${STRIPE_PRICE_LAB:-}
+      STRIPE_PRICE_ENTERPRISE: ${STRIPE_PRICE_ENTERPRISE:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - crowe-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Session Router (Node.js on port 3001) ─────────────────────────
+  session-router:
+    build:
+      context: .
+      dockerfile: Dockerfile.session-router
+    image: crowe-session-router:latest
+    container_name: crowe-session-router
+    restart: unless-stopped
+    environment:
+      IDE_JWT_SECRET: ${IDE_JWT_SECRET:?Set IDE_JWT_SECRET in .env}
+      PORT: 3001
+      IMAGE_NAME: crowe-ide-codeserver
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-ide.southwestmushrooms.com}
+      IDLE_STOP_MINUTES: ${IDLE_STOP_MINUTES:-240}
+      IDLE_REMOVE_HOURS: ${IDLE_REMOVE_HOURS:-24}
+      IDLE_CHECK_INTERVAL_MINUTES: ${IDLE_CHECK_INTERVAL_MINUTES:-5}
+      NODE_ENV: production
+      CONTROL_PLANE_URL: http://control-plane:8001
+      CONTROL_PLANE_API_KEY: ${CONTROL_PLANE_API_KEY:-}
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - crowe-internal
+      - ide-subscribers
+    depends_on:
+      control-plane:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── Admin code-server container ───────────────────────────────────
+  admin:
+    image: crowe-ide-codeserver:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.code-server
+    container_name: crowe-ide-admin
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:10000:8080"
+    volumes:
+      - /opt/crowe-logic-foundry:/workspace/crowe-logic-foundry
+      - admin-data:/home/coder/.local
+    environment:
+      DOCKER_USER: coder
+      CROWE_USER_EMAIL: ${ADMIN_EMAIL:-admin@southwestmushrooms.com}
+      CROWE_USER_NAME: Admin
+      CONTROL_PLANE_URL: http://control-plane:8001
+    cpus: 2.0
+    mem_limit: 4g
+    networks:
+      - crowe-internal
+      - ide-subscribers
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── Nginx reverse proxy ───────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-bookworm
+    container_name: crowe-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/ide-full.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-conf:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    networks:
+      - crowe-internal
+    depends_on:
+      session-router:
+        condition: service_healthy
+        required: false
+      control-plane:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Certbot for TLS cert renewal ──────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    container_name: crowe-certbot
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    profiles:
+      - tls
+
+networks:
+  crowe-internal:
+    driver: bridge
+  ide-subscribers:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  admin-data:
+  certbot-conf:
+  certbot-www:
