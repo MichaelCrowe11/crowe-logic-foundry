@@ -233,6 +233,10 @@ def create_app():
     from knowledge.search import router as knowledge
     app.include_router(knowledge)
 
+    # Include dashboard
+    from dashboard import router as dashboard
+    app.include_router(dashboard)
+
     return app
 
 

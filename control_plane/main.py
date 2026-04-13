@@ -18,6 +18,9 @@ from domain.compound import router as compound_router
 # Knowledge plane
 from knowledge.search import router as knowledge_router
 
+# Dashboard
+from dashboard import router as dashboard_router
+
 # Attach routers
 app.include_router(gateway_router)
 app.include_router(billing_router)
@@ -26,6 +29,7 @@ app.include_router(vision_router)
 app.include_router(research_router)
 app.include_router(compound_router)
 app.include_router(knowledge_router)
+app.include_router(dashboard_router)
 
 # Wire up DB pool lifecycle
 app.router.lifespan_context = lifespan
