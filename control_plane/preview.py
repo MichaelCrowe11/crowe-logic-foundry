@@ -229,6 +229,10 @@ def create_app():
     app.include_router(research)
     app.include_router(compound)
 
+    # Include knowledge plane
+    from knowledge.search import router as knowledge
+    app.include_router(knowledge)
+
     return app
 
 
