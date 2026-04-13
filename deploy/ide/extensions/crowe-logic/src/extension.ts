@@ -57,6 +57,9 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('crowe-logic.clearTools', () => {
             toolsView.clear();
         }),
+        vscode.commands.registerCommand('crowe-logic.togglePlan', () => {
+            vscode.commands.executeCommand('crowe-logic.plan.focus');
+        }),
     );
 }
 

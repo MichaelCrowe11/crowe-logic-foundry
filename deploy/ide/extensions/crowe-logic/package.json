@@ -94,6 +94,23 @@
         "command": "crowe-logic.clearTools",
         "title": "Crowe Logic: Clear Tool Activity",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "crowe-logic.togglePlan",
+        "title": "Crowe Logic: Toggle Plan View"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "crowe-logic.openChat",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
+      },
+      {
+        "command": "crowe-logic.togglePlan",
+        "key": "ctrl+shift+p",
+        "mac": "cmd+shift+p",
+        "when": "view == crowe-logic.plan"
       }
     ],
     "menus": {
@@ -110,6 +127,11 @@
         "label": "Crowe Logic Dark",
         "uiTheme": "vs-dark",
         "path": "./themes/crowe-logic-dark-color-theme.json"
+      },
+      {
+        "label": "Crowe Logic Light",
+        "uiTheme": "vs",
+        "path": "./themes/crowe-logic-light-color-theme.json"
       }
     ],
     "configuration": {
@@ -118,17 +140,60 @@
         "croweLogic.pythonPath": {
           "type": "string",
           "default": "/opt/venv/bin/python3",
-          "description": "Path to the Python interpreter that runs the Foundry headless agent."
+          "description": "Path to the Python interpreter that runs the Foundry headless agent.",
+          "order": 1
         },
         "croweLogic.foundryPath": {
           "type": "string",
           "default": "/workspace/crowe-logic-foundry",
-          "description": "Filesystem path to the crowe-logic-foundry checkout."
+          "description": "Filesystem path to the crowe-logic-foundry checkout.",
+          "order": 2
         },
         "croweLogic.model": {
           "type": "string",
           "default": "auto",
-          "description": "Model id from MODEL_CHAIN to use for chat (or 'auto' for the first entry)."
+          "enum": [
+            "auto",
+            "CroweLM Titan",
+            "CroweLM Apex",
+            "CroweLM Oracle",
+            "CroweLM Sovereign",
+            "CroweLM Prime",
+            "CroweLM Nexus",
+            "CroweLM Reason"
+          ],
+          "enumDescriptions": [
+            "Automatically select the first available model in the chain",
+            "Titan — flagship reasoning model (gpt-5.4-pro)",
+            "Apex — high-performance reasoning (gpt-4.1)",
+            "Oracle — balanced reasoning tier",
+            "Sovereign — mid-tier reasoning",
+            "Prime — Anthropic-backed reasoning (Claude)",
+            "Nexus — efficient reasoning tier",
+            "Reason — lightweight local fallback"
+          ],
+          "description": "CroweLM model to use for chat sessions.",
+          "order": 3
+        },
+        "croweLogic.maxToolRounds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum tool-call rounds before the agent stops. Increase for complex multi-step tasks.",
+          "order": 4
+        },
+        "croweLogic.theme": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "dark", "light"],
+          "enumDescriptions": [
+            "Match the current VS Code color theme",
+            "Always use Crowe Logic Dark",
+            "Always use Crowe Logic Light"
+          ],
+          "description": "Color theme for the Crowe Logic interface.",
+          "order": 5
         }
       }
     },
