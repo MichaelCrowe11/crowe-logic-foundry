@@ -219,6 +219,16 @@ def create_app():
     from control_plane.billing import router as billing
     app.include_router(billing)
 
+    # Include domain modules
+    from domain.mycology import router as mycology
+    from domain.vision import router as vision
+    from domain.research import router as research
+    from domain.compound import router as compound
+    app.include_router(mycology)
+    app.include_router(vision)
+    app.include_router(research)
+    app.include_router(compound)
+
     return app
 
 
