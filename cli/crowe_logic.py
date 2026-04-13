@@ -288,6 +288,7 @@ def _is_model_error(error_str: str) -> bool:
         "InternalServerError", "502", "503", "504",
         "model_error", "overloaded", "capacity",
         "The server had an error", "run failed",
+        "response.completed",
     ]
     lower = error_str.lower()
     return any(ind.lower() in lower for ind in indicators)

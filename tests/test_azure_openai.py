@@ -458,3 +458,119 @@ def test_responses_provider_raises_when_tool_round_limit_is_exhausted(monkeypatc
 
     assert len(captured) == azure_mod.AzureResponsesProvider.MAX_ROUNDS
     assert provider.previous_response_id is None
+
+
+# ---------------------------------------------------------------------------
+# Stream-drop recovery (missing response.completed)
+# ---------------------------------------------------------------------------
+
+class _BrokenFakeStream:
+    """Simulates a stream that delivers events then fails on get_final_response."""
+
+    def __init__(self, events):
+        self._events = events
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def __iter__(self):
+        return iter(self._events)
+
+    def get_final_response(self):
+        raise RuntimeError("Didn't receive a `response.completed` event.")
+
+
+def _broken_stream_factory(events_per_round, captured_kwargs):
+    class _FakeResponsesApi:
+        def stream(self, **kwargs):
+            captured_kwargs.append(kwargs)
+            return _BrokenFakeStream(events_per_round.pop(0))
+
+    class _FakeOpenAI:
+        def __init__(self, *args, **kwargs):
+            self.responses = _FakeResponsesApi()
+
+    return _FakeOpenAI
+
+
+def test_responses_provider_recovers_from_missing_completed_event(monkeypatch):
+    """When the stream drops without response.completed, the provider should
+    use the text deltas it already received instead of crashing."""
+    captured = []
+    events = [[
+        SimpleNamespace(type="response.reasoning_summary_text.delta", delta="Thinking..."),
+        SimpleNamespace(type="response.output_text.delta", delta="Here is the answer."),
+    ]]
+
+    monkeypatch.setattr(azure_mod, "OpenAI", _broken_stream_factory(events, captured))
+    monkeypatch.setattr(azure_mod, "load_tools", lambda: ([], {}))
+
+    provider = azure_mod.AzureResponsesProvider(
+        model="gpt-5.4-pro",
+        system_instructions="system",
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        label="CroweLM Apex",
+    )
+    provider.add_user_message("hello")
+
+    renderer = _FakeRenderer()
+    result = provider.stream_response(
+        console=None,
+        render_tool_card=lambda *args, **kwargs: None,
+        session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+        _get_orchestrator=_noop_orchestrator,
+        renderer=renderer,
+    )
+
+    assert result == "Here is the answer."
+    assert renderer.finished is True
+    # Partial response should NOT poison previous_response_id
+    assert provider.previous_response_id == "partial_0"
+
+
+def test_responses_provider_clears_state_on_refusal(monkeypatch):
+    """Content-filter refusals should not persist previous_response_id."""
+    captured = []
+    rounds = [{
+        "events": [
+            SimpleNamespace(
+                type="response.output_text.delta",
+                delta="I'm sorry, but I cannot assist with that request.",
+            ),
+        ],
+        "response": SimpleNamespace(
+            id="resp_refusal",
+            output=[],
+            output_text="I'm sorry, but I cannot assist with that request.",
+        ),
+    }]
+
+    monkeypatch.setattr(azure_mod, "OpenAI", _fake_openai_factory(rounds, captured))
+    monkeypatch.setattr(azure_mod, "load_tools", lambda: ([], {}))
+
+    provider = azure_mod.AzureResponsesProvider(
+        model="gpt-5.4-pro",
+        system_instructions="system",
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        label="CroweLM Apex",
+    )
+    provider.add_user_message("hello")
+
+    renderer = _FakeRenderer()
+    result = provider.stream_response(
+        console=None,
+        render_tool_card=lambda *args, **kwargs: None,
+        session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+        _get_orchestrator=_noop_orchestrator,
+        renderer=renderer,
+    )
+
+    assert "cannot assist" in result
+    assert renderer.finished is True
+    # Refusal should clear previous_response_id so next turn starts fresh
+    assert provider.previous_response_id is None

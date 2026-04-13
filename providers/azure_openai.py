@@ -286,7 +286,22 @@ class AzureResponsesProvider:
                             )
                             continue
 
-                    response = stream.get_final_response()
+                    try:
+                        response = stream.get_final_response()
+                    except RuntimeError:
+                        # Azure sometimes drops the stream before sending
+                        # response.completed.  Build a synthetic response
+                        # from the events we already consumed so the turn
+                        # can still complete instead of crashing.
+                        response = SimpleNamespace(
+                            id=f"partial_{round_index}",
+                            output=[
+                                SimpleNamespace(**call)
+                                for call in stream_function_calls.values()
+                                if any(call.values())
+                            ],
+                            output_text=renderer.current_segment_text or "",
+                        )
             except KeyboardInterrupt:
                 if hasattr(renderer, "abort"):
                     renderer.abort(session_state=session_state)
@@ -315,6 +330,26 @@ class AzureResponsesProvider:
             function_calls = self._extract_function_calls(response, stream_function_calls)
 
             if not function_calls:
+                # Detect content-filter / policy refusals so we don't
+                # silently swallow them or leave previous_response_id
+                # pointing at a poisoned turn.
+                refusal = getattr(response, "refusal", None) or ""
+                if not refusal and response_text:
+                    _lower = response_text.lower()
+                    if any(phrase in _lower for phrase in (
+                        "i cannot assist",
+                        "i'm unable to",
+                        "i can't help with",
+                        "i'm not able to",
+                        "as an ai",
+                    )):
+                        refusal = response_text
+
+                if refusal:
+                    renderer.finish(session_state=session_state)
+                    self.previous_response_id = None
+                    return full_response
+
                 renderer.finish(session_state=session_state)
                 self.previous_response_id = response_id
                 break
