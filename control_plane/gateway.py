@@ -46,6 +46,122 @@ MODEL_PLAN_ACCESS = {
 PLAN_RANK = {"developer": 0, "studio": 1, "lab": 2, "enterprise": 3}
 
 
+async def _call_provider(
+    model: str,
+    messages: list[dict],
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+) -> tuple[str, int, int]:
+    """Call a CroweLM provider and return (content, prompt_tokens, completion_tokens).
+
+    Runs the synchronous OpenAI SDK call in a thread pool so the event loop
+    stays responsive.
+    """
+    import asyncio
+    import os
+    import functools
+
+    from config.agent_config import resolve_model_config, MODEL_CHAIN
+
+    cfg = resolve_model_config(model)
+    if cfg is None:
+        # Fall back to first model in chain
+        cfg = list(MODEL_CHAIN)[0] if MODEL_CHAIN else None
+    if cfg is None:
+        raise HTTPException(status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN")
+
+    provider_kind = cfg.get("provider", "azure_openai")
+    name = cfg["name"]
+
+    def _sync_call():
+        """Execute the provider call synchronously (OpenAI SDK is not async)."""
+        if provider_kind == "azure_openai":
+            from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
+            endpoint_var = cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
+            api_key_var = cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+            endpoint = os.environ.get(endpoint_var, "")
+            api_key = os.environ.get(api_key_var, "")
+            if not endpoint or not api_key:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Missing credentials for {name} ({endpoint_var}/{api_key_var})"
+                )
+
+            if cfg.get("surface") == "responses":
+                # Responses API — no direct non-streaming token count; use chat fallback
+                provider = AzureOpenAIProvider(
+                    model=name,
+                    system_instructions="You are a helpful assistant.",
+                    endpoint=endpoint,
+                    api_key=api_key,
+                    label=cfg.get("label", "CroweLM"),
+                )
+            else:
+                provider = AzureOpenAIProvider(
+                    model=name,
+                    system_instructions="You are a helpful assistant.",
+                    endpoint=endpoint,
+                    api_key=api_key,
+                    label=cfg.get("label", "CroweLM"),
+                )
+        elif provider_kind == "openrouter":
+            from providers.openrouter import OpenRouterProvider
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+            base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+            if not api_key:
+                raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not set")
+            provider = OpenRouterProvider(
+                api_key=api_key, base_url=base_url, model=name,
+                system_instructions="You are a helpful assistant.",
+                label=cfg.get("label", "CroweLM"),
+            )
+        elif provider_kind == "nvidia":
+            endpoint = os.environ.get("NVIDIA_NIM_ENDPOINT", "")
+            api_key = os.environ.get("NVIDIA_API_KEY", "")
+            if not endpoint or not api_key:
+                raise HTTPException(status_code=503, detail="NVIDIA credentials not set")
+            from providers.nvidia import NvidiaProvider
+            provider = NvidiaProvider(
+                model=name, system_instructions="You are a helpful assistant.",
+                endpoint=endpoint, api_key=api_key,
+                label=cfg.get("label", "CroweLM"),
+            )
+        elif provider_kind == "anthropic":
+            from providers.anthropic import AnthropicProvider
+            endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+            api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+            endpoint = os.environ.get(endpoint_var, "")
+            api_key = os.environ.get(api_key_var, "")
+            if not endpoint or not api_key:
+                raise HTTPException(status_code=503, detail=f"Missing credentials for {name}")
+            provider = AnthropicProvider(
+                model=name, system_instructions="You are a helpful assistant.",
+                endpoint=endpoint, api_key=api_key,
+                label=cfg.get("label", "CroweLM"),
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_kind}")
+
+        # Build messages for the OpenAI-compatible SDK call
+        sdk_messages = [{"role": "system", "content": "You are a helpful assistant."}]
+        for m in messages:
+            sdk_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+
+        kwargs = {"model": provider.model, "messages": sdk_messages, "stream": False}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
+        response = provider.client.chat.completions.create(**kwargs)
+        content = response.choices[0].message.content or ""
+        usage = response.usage
+        return content, (usage.prompt_tokens if usage else 0), (usage.completion_tokens if usage else 0)
+
+    # Run the blocking SDK call in a thread
+    return await asyncio.get_event_loop().run_in_executor(None, _sync_call)
+
+
 class GatewayRequest(BaseModel):
     model: str
     messages: list[dict]
@@ -140,14 +256,15 @@ async def gateway_chat(
     # ── Forward to provider ──
     start = time.monotonic()
 
-    # For now, return a structured stub that the real provider layer will replace.
-    # The integration point is: import the provider from config/agent_config.py
-    # and call stream_response() here. This keeps the gateway contract stable
-    # while the provider wiring is connected.
-    elapsed_ms = int((time.monotonic() - start) * 1000)
+    content, prompt_tokens, completion_tokens = await _call_provider(
+        model=model,
+        messages=req.messages,
+        max_tokens=req.max_tokens,
+        temperature=req.temperature,
+    )
 
-    # Placeholder usage — real implementation will read from provider response
-    token_count = 0
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+    token_count = prompt_tokens + completion_tokens
 
     # ── Record usage ──
     if token_count > 0:
@@ -160,8 +277,8 @@ async def gateway_chat(
     return GatewayResponse(
         id=f"gw_{int(time.time())}",
         model=model,
-        content="[gateway stub — connect provider layer]",
-        usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": token_count},
+        content=content,
+        usage={"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": token_count},
         latency_ms=elapsed_ms,
     )
 

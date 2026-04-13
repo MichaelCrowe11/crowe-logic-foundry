@@ -6,6 +6,8 @@ const { createAuthModule } = require('./auth');
 const { createContainerManager } = require('./containers');
 const { createCleanupJob } = require('./cleanup');
 const { createProxyServer } = require('./proxy');
+const { createEntitlementsChecker } = require('./entitlements');
+const { createMeteringClient } = require('./metering');
 
 // Load env from .env file if present
 try { require('dotenv').config(); } catch (_) { /* dotenv is optional */ }
@@ -14,6 +16,8 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const IDE_JWT_SECRET = process.env.IDE_JWT_SECRET;
 const IMAGE_NAME = process.env.IMAGE_NAME || 'crowe-ide-codeserver';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || undefined;
+const CONTROL_PLANE_API_KEY = process.env.CONTROL_PLANE_API_KEY || undefined;
 
 if (!IDE_JWT_SECRET) {
   console.error('IDE_JWT_SECRET is required (must match the launcher in crowe-logic-ai)');
@@ -37,6 +41,14 @@ const docker = new Docker();
 const auth = createAuthModule({ ideJwtSecret: IDE_JWT_SECRET });
 const containerMgr = createContainerManager({ docker, imageName: IMAGE_NAME });
 const proxy = createProxyServer();
+const entitlements = createEntitlementsChecker({
+  controlPlaneUrl: CONTROL_PLANE_URL,
+  controlPlaneApiKey: CONTROL_PLANE_API_KEY,
+});
+const metering = createMeteringClient({
+  controlPlaneUrl: CONTROL_PLANE_URL,
+  controlPlaneApiKey: CONTROL_PLANE_API_KEY,
+});
 
 // Cleanup job
 const cleanup = createCleanupJob({
@@ -48,7 +60,9 @@ const cleanup = createCleanupJob({
       });
       return containers.map((c) => ({
         containerId: c.Id,
+        userId: c.Labels['crowe-ide.user-id'] || null,
         role: c.Labels['crowe-ide.role'] || 'subscriber',
+        runtimeClass: c.Labels['crowe-ide.runtime-class'] || null,
         // KNOWN LIMITATION: Created time is used as a proxy for activity until
         // proper tracking is added. Set IDLE_STOP_MINUTES generously (recommend 240+).
         lastActivity: c.Created * 1000,
@@ -58,6 +72,7 @@ const cleanup = createCleanupJob({
     stopContainer: (id) => containerMgr.stopContainer(id),
     removeContainer: (id) => containerMgr.removeContainer(id),
   },
+  metering,
   idleStopMinutes: parseInt(process.env.IDLE_STOP_MINUTES || '240', 10),
   idleRemoveHours: parseInt(process.env.IDLE_REMOVE_HOURS || '24', 10),
   intervalMinutes: parseInt(process.env.IDLE_CHECK_INTERVAL_MINUTES || '5', 10),
@@ -143,7 +158,27 @@ app.use(async (req, res) => {
 
     // Get or create container
     try {
-      const { port } = await containerMgr.getOrCreateContainer(user.userId, user.role);
+      // Check entitlements before container launch
+      const ent = await entitlements.checkEntitlements(user.userId, user.email);
+      if (!ent.allowed) {
+        res.status(403).json({ error: ent.reason || 'IDE access denied by plan' });
+        return;
+      }
+
+      const { port, containerId } = await containerMgr.getOrCreateContainer(
+        user.userId, user.role, ent.runtimeClass
+      );
+
+      // Record session start (idempotent — skips if already tracked)
+      if (!metering.getActiveSession(user.userId)) {
+        await metering.recordSessionStart({
+          userId: user.userId,
+          containerId,
+          runtimeClass: ent.runtimeClass,
+          workspaceId: ent.workspaceId,
+        });
+      }
+
       proxy.proxyRequest(req, res, port);
     } catch (err) {
       console.error(`[router] Container error for user ${user.userId}: ${err.message}`);
@@ -176,7 +211,16 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   try {
-    const { port } = await containerMgr.getOrCreateContainer(user.userId, user.role);
+    // Check entitlements for WebSocket connections too
+    const ent = await entitlements.checkEntitlements(user.userId, user.email);
+    if (!ent.allowed) {
+      socket.destroy();
+      return;
+    }
+
+    const { port } = await containerMgr.getOrCreateContainer(
+      user.userId, user.role, ent.runtimeClass
+    );
     proxy.proxyWebSocket(req, socket, head, port);
   } catch (err) {
     console.error(`[router] WebSocket container error for user ${user.userId}: ${err.message}`);
