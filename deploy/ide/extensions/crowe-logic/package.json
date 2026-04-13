@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic",
   "description": "Crowe Logic Foundry agent — chat, plans, and tool execution inside the IDE.",
-  "version": "0.1.0",
+  "version": "0.2.5",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {

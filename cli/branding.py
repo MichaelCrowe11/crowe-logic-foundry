@@ -290,7 +290,7 @@ def _get_avatar_seq(width: int = 8) -> str:
     return _inline_image_seq(avatar_path, width=width)
 
 
-def welcome_screen(version: str = "0.1.0", avatar_seq: str = "") -> str:
+def welcome_screen(version: str = "0.2.5", avatar_seq: str = "") -> str:
     """Render the Crowe Logic signature welcome screen.
 
     Layout (top to bottom):
@@ -368,7 +368,7 @@ def welcome_screen(version: str = "0.1.0", avatar_seq: str = "") -> str:
     )
 
 
-def show_welcome(version: str = "0.1.0"):
+def show_welcome(version: str = "0.2.5"):
     """Print the full welcome: avatar inside the banner."""
     avatar_seq = _get_avatar_seq(width=8)
     print(welcome_screen(version, avatar_seq=avatar_seq))
@@ -910,7 +910,7 @@ def build_toolbar():
     """Build the prompt_toolkit bottom toolbar HTML string.
 
     Format:
-      CroweLM v0.1.0      45s · 3 tools · 1247 tok @ 89/s · CroweLM Nexus · LIVE
+      CroweLM v0.2.5      45s · 3 tools · 1247 tok @ 89/s · CroweLM Nexus · LIVE
 
     All separators are the DOT token, applied uniformly. Status is
     color-coded: green for LIVE, amber for THROTTLED, red for DOWN.

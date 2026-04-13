@@ -309,7 +309,10 @@ class AzureResponsesProvider:
                     renderer.stop_spinner()
                 raise
             except Exception:
-                renderer.stop_spinner()
+                if hasattr(renderer, "abort"):
+                    renderer.abort(session_state=session_state)
+                else:
+                    renderer.stop_spinner()
                 raise
 
             renderer.stop_spinner()
