@@ -43,6 +43,18 @@
           {
             "name": "explain",
             "description": "Explain the selected file or symbol."
+          },
+          {
+            "name": "dataset",
+            "description": "Show or set the active CroweLM dataset context."
+          },
+          {
+            "name": "steer",
+            "description": "Persist operator steering for this chat session."
+          },
+          {
+            "name": "transcript",
+            "description": "Show the last full answer and reasoning transcript."
           }
         ]
       }

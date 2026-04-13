@@ -10,6 +10,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { runFoundryTurn, FoundryMessage, FoundryEvent } from './agent';
 import { PlanViewProvider } from './views/planView';
 import { ToolsViewProvider, ToolEntry } from './views/toolsView';
@@ -26,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
     const participant = vscode.chat.createChatParticipant(
         'crowe-logic.foundry',
         async (request, chatContext, stream, token) => {
-            await handleChat(request, chatContext, stream, token, toolsView);
+            return handleChat(request, chatContext, stream, token, toolsView);
         }
     );
 
@@ -72,7 +73,7 @@ async function handleChat(
     stream: vscode.ChatResponseStream,
     token: vscode.CancellationToken,
     toolsView: ToolsViewProvider,
-): Promise<void> {
+): Promise<vscode.ChatResult | void> {
     const config = vscode.workspace.getConfiguration('croweLogic');
     const pythonPath = config.get<string>('pythonPath', '/opt/venv/bin/python3');
     const foundryPath = config.get<string>('foundryPath', '/workspace/crowe-logic-foundry');
@@ -104,6 +105,7 @@ async function handleChat(
         ? `/${request.command} ${request.prompt}`.trim()
         : request.prompt;
     messages.push({ role: 'user', content: prompt });
+    const sessionId = resolveSessionId(request, chatContext);
 
     // Markdown batcher: VS Code's chat webview re-renders on every
     // stream.markdown() call, and a fast model emits 50+ tokens/sec.
@@ -124,21 +126,60 @@ async function handleChat(
 
     try {
         const events = runFoundryTurn(
-            { messages, model, session: 'vscode' },
+            { messages, model, session: sessionId },
             { pythonPath, foundryPath, cancellation: token }
         );
 
         for await (const evt of events) {
             if (token.isCancellationRequested) break;
             dispatch(evt, stream, toolsView, queueMd, flushMd);
-            if (evt.type === 'error' || evt.type === 'done') break;
+            if (evt.type === 'error') {
+                return { metadata: { sessionId, errorKind: evt.kind } };
+            }
+            if (evt.type === 'done') {
+                return {
+                    metadata: {
+                        sessionId,
+                        tokens: evt.tokens,
+                        reasoningTokens: evt.reasoning_tokens,
+                        elapsedMs: evt.elapsed_ms,
+                    },
+                };
+            }
         }
     } catch (e: any) {
         flushMd();
         stream.markdown(`\n\n**Crowe Logic error:** ${e?.message || String(e)}\n`);
+        return { metadata: { sessionId, errorKind: 'host' } };
     } finally {
         flushMd();
     }
+
+    return { metadata: { sessionId } };
+}
+
+function resolveSessionId(
+    request: vscode.ChatRequest,
+    chatContext: vscode.ChatContext,
+): string {
+    for (const turn of [...chatContext.history].reverse()) {
+        if (!(turn instanceof vscode.ChatResponseTurn)) continue;
+        const sessionId = turn.result.metadata?.sessionId;
+        if (typeof sessionId === 'string' && sessionId.trim()) {
+            return sessionId;
+        }
+    }
+
+    const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? 'workspace';
+    const seed = [
+        vscode.env.sessionId,
+        workspace,
+        request.command ?? '',
+        request.prompt,
+        Date.now().toString(),
+    ].join('\n');
+    const digest = createHash('sha1').update(seed).digest('hex').slice(0, 12);
+    return `vscode-${digest}`;
 }
 
 function formatMs(ms: number): string {

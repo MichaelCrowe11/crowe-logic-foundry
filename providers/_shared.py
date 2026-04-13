@@ -103,7 +103,7 @@ class BaseOpenAIProvider:
     """
 
     SUPPORTS_REASONING: bool = True
-    MAX_ROUNDS: int = 10
+    MAX_ROUNDS: int = 20
 
     def __init__(self, model: str, system_instructions: str, label: str = "CroweLM"):
         self.model = model
@@ -114,6 +114,12 @@ class BaseOpenAIProvider:
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
+
+    def set_system_instructions(self, system_instructions: str) -> None:
+        """Update the active system prompt for cached provider instances."""
+        self.system_instructions = system_instructions
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0]["content"] = system_instructions
 
     def _next_tool_call_id(self) -> str:
         """Generate backend-safe tool_call_ids for local message history.
@@ -210,6 +216,12 @@ class BaseOpenAIProvider:
                     if finish in ("stop", "tool_calls"):
                         break
 
+            except KeyboardInterrupt:
+                if hasattr(renderer, "abort"):
+                    renderer.abort(session_state=session_state)
+                else:
+                    renderer.stop_spinner()
+                raise
             except Exception:
                 renderer.stop_spinner()
                 raise
@@ -311,6 +323,10 @@ class BaseOpenAIProvider:
                     "tool_call_id": tc["id"],
                     "content": result_str[:50000],
                 })
+        else:
+            raise RuntimeError(
+                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds without a final response."
+            )
 
         # Headless callers pass console=None — only the Rich CLI needs
         # this trailing newline to flush its prompt back into place.

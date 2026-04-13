@@ -193,3 +193,58 @@ def test_anthropic_provider_routes_json_deltas_by_index(monkeypatch):
         {"name": "tool_b", "status": "ok", "result": "B:b"},
     ]
     assert [entry["name"] for entry in session_state["recent_actions"]] == ["tool_a", "tool_b"]
+
+
+def test_anthropic_provider_raises_when_tool_round_limit_is_exhausted(monkeypatch):
+    rounds = [
+        [
+            SimpleNamespace(
+                type="content_block_start",
+                index=0,
+                content_block=SimpleNamespace(type="tool_use", id=f"tool_{index}", name="echo_tool"),
+            ),
+            SimpleNamespace(
+                type="content_block_delta",
+                index=0,
+                delta=SimpleNamespace(type="input_json_delta", partial_json='{"text":"loop"}'),
+            ),
+            SimpleNamespace(type="message_stop"),
+        ]
+        for index in range(1, anthropic_mod.AnthropicProvider.MAX_ROUNDS + 1)
+    ]
+    captured = []
+
+    def echo_tool(text):
+        return text
+
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module(rounds, captured))
+    monkeypatch.setattr(tools, "user_functions", {echo_tool})
+    monkeypatch.setattr(anthropic_mod, "_tools", {echo_tool})
+
+    provider = anthropic_mod.AnthropicProvider(
+        model="claude-opus-4-6",
+        system_instructions="system",
+        endpoint="https://example.openai.azure.com/anthropic",
+        api_key="test-key",
+        label="CroweLM Prime",
+    )
+    provider.add_user_message("hello")
+
+    renderer = _FakeRenderer()
+    try:
+        provider.stream_response(
+            console=None,
+            render_tool_card=lambda *args, **kwargs: None,
+            session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+            _get_orchestrator=_noop_orchestrator,
+            renderer=renderer,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == (
+            f"CroweLM Prime exceeded {anthropic_mod.AnthropicProvider.MAX_ROUNDS} "
+            "tool rounds without a final response."
+        )
+    else:
+        raise AssertionError("Expected provider stream_response to raise")
+
+    assert renderer.finished is False

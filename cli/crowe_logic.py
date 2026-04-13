@@ -38,9 +38,14 @@ from cli.branding import (
     welcome_screen, show_welcome, show_inline_image, get_favicon,
     session_state, reset_session_state,
     render_tool_card, render_error as render_error_block, render_transcript_markdown,
-    render_session_hud, render_recent_actions, record_action,
+    render_session_hud, render_recent_actions, record_action, show_last_transcript,
     show_retry_countdown, is_rate_limit_error,
     build_toolbar, SlashCompleter, create_chat_keybindings,
+)
+from cli.session_runtime import (
+    build_runtime_system_instructions,
+    handle_local_control_command,
+    load_session_runtime,
 )
 from config.agent_config import AGENT_VERSION, MODEL_CHAIN
 from iterm import iterm_set_var, install_iterm, uninstall_iterm, iterm_status
@@ -86,16 +91,46 @@ def _reset_model_chain():
     _model_state["anthropic_provider"] = None
 
 
-def _get_openrouter_provider(model_cfg: dict):
+def _sync_session_runtime(state: dict) -> None:
+    """Refresh in-memory session state from the persisted runtime store."""
+    session_id = state.get("session_id", "")
+    if not session_id:
+        return
+    runtime = load_session_runtime(session_id)
+    state["steering_instruction"] = runtime.get("steering_instruction", "")
+    state["dataset_selection"] = runtime.get("dataset_selection", "all")
+    state["last_answer_text"] = runtime.get("last_answer_text", "")
+    state["last_reasoning_text"] = runtime.get("last_reasoning_text", "")
+    if not state.get("active_model") and runtime.get("last_model"):
+        state["active_model"] = runtime.get("last_model", "")
+
+
+def _runtime_system_instructions(model_cfg: dict, state: dict) -> str:
+    """Compose the per-session system prompt for the active model."""
+    return build_runtime_system_instructions(
+        model_cfg,
+        session_id=state.get("session_id", ""),
+    )
+
+
+def _apply_provider_instructions(provider, system_instructions: str):
+    """Update system instructions on cached providers before each turn."""
+    if hasattr(provider, "set_system_instructions"):
+        provider.set_system_instructions(system_instructions)
+    return provider
+
+
+def _get_openrouter_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create an OpenRouterProvider for the given model."""
-    from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, build_system_instructions
+    from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL
     from providers.openrouter import OpenRouterProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("openrouter_provider")
     if current and current.model == model_name:
-        return current
+        return _apply_provider_instructions(current, system_instructions)
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
             f"OpenRouter model '{label}' is missing credentials — "
@@ -106,27 +141,28 @@ def _get_openrouter_provider(model_cfg: dict):
         api_key=OPENROUTER_API_KEY,
         base_url=OPENROUTER_BASE_URL,
         model=model_name,
-        system_instructions=build_system_instructions(model_cfg),
+        system_instructions=system_instructions,
         label=label,
     )
     _model_state["openrouter_provider"] = provider
     return provider
 
 
-def _get_ollama_provider(model_cfg: dict):
+def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create an OllamaProvider for the given model."""
-    from config.agent_config import OLLAMA_BASE_URL, build_system_instructions
+    from config.agent_config import OLLAMA_BASE_URL
     from providers.ollama import OllamaProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("ollama_provider")
     if current and current.model == model_name:
-        return current
+        return _apply_provider_instructions(current, system_instructions)
 
     provider = OllamaProvider(
         model=model_name,
-        system_instructions=build_system_instructions(model_cfg),
+        system_instructions=system_instructions,
         base_url=OLLAMA_BASE_URL,
         label=label,
     )
@@ -134,16 +170,17 @@ def _get_ollama_provider(model_cfg: dict):
     return provider
 
 
-def _get_nvidia_provider(model_cfg: dict):
+def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a NvidiaProvider for the given model."""
-    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, build_system_instructions
+    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY
     from providers.nvidia import NvidiaProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
-        return current
+        return _apply_provider_instructions(current, system_instructions)
     if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
         raise RuntimeError(
             f"NVIDIA model '{label}' is missing credentials — "
@@ -152,7 +189,7 @@ def _get_nvidia_provider(model_cfg: dict):
 
     provider = NvidiaProvider(
         model=model_name,
-        system_instructions=build_system_instructions(model_cfg),
+        system_instructions=system_instructions,
         endpoint=NVIDIA_NIM_ENDPOINT,
         api_key=NVIDIA_API_KEY,
         label=label,
@@ -161,7 +198,7 @@ def _get_nvidia_provider(model_cfg: dict):
     return provider
 
 
-def _get_azure_openai_provider(model_cfg: dict):
+def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """
     Get or create an AzureOpenAIProvider for the given model config.
 
@@ -170,11 +207,11 @@ def _get_azure_openai_provider(model_cfg: dict):
     entry — so multiple Azure Foundry resources can coexist in the same chain.
     The provider is cached by (model, endpoint) since both determine identity.
     """
-    from config.agent_config import build_system_instructions
     from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
     api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
 
@@ -190,12 +227,12 @@ def _get_azure_openai_provider(model_cfg: dict):
     current = _model_state.get("azure_openai_provider")
     if (current and current.model == model_name
             and current.endpoint == endpoint):
-        return current
+        return _apply_provider_instructions(current, system_instructions)
 
     provider_cls = AzureResponsesProvider if model_cfg.get("surface") == "responses" else AzureOpenAIProvider
     provider = provider_cls(
         model=model_name,
-        system_instructions=build_system_instructions(model_cfg),
+        system_instructions=system_instructions,
         endpoint=endpoint,
         api_key=api_key,
         label=label,
@@ -204,18 +241,18 @@ def _get_azure_openai_provider(model_cfg: dict):
     return provider
 
 
-def _get_anthropic_provider(model_cfg: dict):
+def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """
     Get or create an AnthropicProvider for the given model config.
 
     Uses Azure AI Foundry's native Anthropic API surface at /anthropic.
     Caches by (model, endpoint) like the Azure OpenAI provider.
     """
-    from config.agent_config import build_system_instructions
     from providers.anthropic import AnthropicProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
     api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
 
@@ -231,11 +268,11 @@ def _get_anthropic_provider(model_cfg: dict):
     current = _model_state.get("anthropic_provider")
     if (current and current.model == model_name
             and current.endpoint == endpoint):
-        return current
+        return _apply_provider_instructions(current, system_instructions)
 
     provider = AnthropicProvider(
         model=model_name,
-        system_instructions=build_system_instructions(model_cfg),
+        system_instructions=system_instructions,
         endpoint=endpoint,
         api_key=api_key,
         label=label,
@@ -374,6 +411,25 @@ def _render_error(msg: str, title: str = "Error"):
     """Print a styled error panel."""
     console.print()
     render_error_block(console, title, msg)
+
+
+def _handle_local_runtime_command(command_text: str, state: dict) -> bool:
+    """Execute a local slash command without calling a model provider."""
+    response = handle_local_control_command(
+        command_text,
+        session_id=state.get("session_id", ""),
+    )
+    if response is None:
+        return False
+
+    _sync_session_runtime(state)
+    if command_text.strip().lower().startswith("/transcript"):
+        show_last_transcript(console, state)
+        console.print()
+        return True
+    render_transcript_markdown(console, response, title="answer", meta="local")
+    console.print()
+    return True
 
 
 def _cancel_active_runs(client, thread_id: str):
@@ -666,12 +722,14 @@ def chat():
     reset_session_state()
     _reset_model_chain()
     iterm_set_var("crowe_logic_active", "1")
+    session_state["session_id"] = synthetic_thread_id
+    _sync_session_runtime(session_state)
     session_state["active_model"] = _current_model()["label"]
 
     show_welcome(AGENT_VERSION)
 
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
-    kb = create_chat_keybindings()
+    kb = create_chat_keybindings(console=console, state=session_state)
     session = PromptSession(
         history=FileHistory(history_file),
         completer=SlashCompleter(),
@@ -728,6 +786,8 @@ def chat():
         if user_input.lower() == "/data":
             _show_data_telemetry()
             continue
+        if _handle_local_runtime_command(user_input, session_state):
+            continue
         if user_input.lower().startswith("/model"):
             parts = user_input.strip().split(maxsplit=1)
             if len(parts) == 1:
@@ -742,6 +802,7 @@ def chat():
             continue
 
         try:
+            _sync_session_runtime(session_state)
             model_cfg = _current_model()
             ctx = orch.prepare(user_input, thread_id=_active_thread_id())
             render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
@@ -751,41 +812,57 @@ def chat():
             succeeded = False
             while not succeeded:
                 model_cfg = _current_model()
+                runtime_instructions = _runtime_system_instructions(model_cfg, session_state)
                 last_error = None
 
                 for attempt in range(2):
                     try:
                         if model_cfg.get("provider") == "azure_openai":
                             # ── Crowe Logic's own Azure Foundry (OpenAI-compat, key auth) ──
-                            provider = _get_azure_openai_provider(model_cfg)
+                            provider = _get_azure_openai_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "anthropic":
                             # ── Azure AI Foundry Anthropic (native Anthropic API) ──
-                            provider = _get_anthropic_provider(model_cfg)
+                            provider = _get_anthropic_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "nvidia":
                             # ── NVIDIA NIM path (production CroweLM) ──
-                            provider = _get_nvidia_provider(model_cfg)
+                            provider = _get_nvidia_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "openrouter":
                             # ── OpenRouter path (Chat Completions) ──
-                            provider = _get_openrouter_provider(model_cfg)
+                            provider = _get_openrouter_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "ollama":
                             # ── Ollama path (local CroweLM fallback) ──
-                            provider = _get_ollama_provider(model_cfg)
+                            provider = _get_ollama_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
                             provider.add_user_message(user_input)
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
@@ -809,6 +886,18 @@ def chat():
                         iterm_set_var("crowe_logic_api", "ok")
                         session_state["active_model"] = model_cfg["label"]
                         iterm_set_var("crowe_logic_model", model_cfg["label"])
+                        succeeded = True
+                        break
+                    except KeyboardInterrupt:
+                        session_state["api_status"] = "ok"
+                        iterm_set_var("crowe_logic_api", "ok")
+                        if (model_cfg.get("provider") == "azure"
+                                and azure_state["client"] is not None
+                                and azure_state["thread"] is not None):
+                            _cancel_active_runs(
+                                azure_state["client"], azure_state["thread"].id
+                            )
+                        console.print("\n  [dim]Interrupted current turn. You can steer or ask a new question.[/dim]\n")
                         succeeded = True
                         break
                     except Exception as stream_err:
@@ -916,6 +1005,7 @@ def _list_tools_inline():
 
 def _show_status_inline():
     model_cfg = _current_model()
+    _sync_session_runtime(session_state)
     console.print()
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="status")
     render_recent_actions(console, state=session_state)
@@ -932,6 +1022,8 @@ def _show_status_inline():
     table.add_column("Value", style="white")
     table.add_row("Active Model", model_cfg["label"])
     table.add_row("Version", AGENT_VERSION)
+    table.add_row("Steering", session_state.get("steering_instruction", "") or "[dim]off[/dim]")
+    table.add_row("Dataset Context", session_state.get("dataset_selection", "all"))
 
     # CroweLM training data summary
     try:
@@ -1206,12 +1298,20 @@ def _show_help():
     table.add_row("/model", "Show model chain and active model")
     table.add_row("/model <n>", "Switch to model by number or name")
     table.add_row("/data", "CroweLM training data telemetry")
+    table.add_row("/dataset", "Show or change dataset prompt context")
+    table.add_row("/dataset <name>", "Focus the session on a named dataset")
+    table.add_row("/dataset off", "Disable injected dataset context")
+    table.add_row("/steer <text>", "Persist direction for the current session")
+    table.add_row("/steer clear", "Clear persistent steering")
+    table.add_row("/transcript", "Show the last full answer and reasoning")
     table.add_row("/status", "Show agent info")
     table.add_row("/clear", "Clear screen")
     table.add_row("/help", "Show this help")
     table.add_row("/exit", "Quit")
     table.add_row("", "")
     table.add_row("[dim]Ctrl+E[/dim]", "[dim]Multi-line editor[/dim]")
+    table.add_row("[dim]Ctrl+T[/dim]", "[dim]Open the last transcript in the pager[/dim]")
+    table.add_row("[dim]Ctrl+C[/dim]", "[dim]Interrupt the current turn[/dim]")
     table.add_row("[dim]Tab[/dim]", "[dim]Complete / commands[/dim]")
     console.print()
     console.print(table)
@@ -1230,27 +1330,47 @@ def run(prompt: str):
     model_cfg = _current_model()
     favicon = get_favicon()
     session_state["favicon"] = favicon
-    session_state["active_model"] = model_cfg["label"]
     orch = _get_orchestrator()
     import uuid
     synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
+    session_state["session_id"] = synthetic_thread_id
+    _sync_session_runtime(session_state)
+    session_state["active_model"] = model_cfg["label"]
     orch.start_session(thread_id=synthetic_thread_id)
+    if _handle_local_runtime_command(prompt, session_state):
+        return
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
 
     provider_kind = model_cfg.get("provider")
     try:
+        runtime_instructions = _runtime_system_instructions(model_cfg, session_state)
         if provider_kind == "anthropic":
-            provider = _get_anthropic_provider(model_cfg)
+            provider = _get_anthropic_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         elif provider_kind == "azure_openai":
-            provider = _get_azure_openai_provider(model_cfg)
+            provider = _get_azure_openai_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         elif provider_kind == "nvidia":
-            provider = _get_nvidia_provider(model_cfg)
+            provider = _get_nvidia_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         elif provider_kind == "openrouter":
-            provider = _get_openrouter_provider(model_cfg)
+            provider = _get_openrouter_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         elif provider_kind == "ollama":
-            provider = _get_ollama_provider(model_cfg)
+            provider = _get_ollama_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         else:
             # Legacy Azure AI Agents path
             azure_state = {"agent_id": None, "client": None, "thread": None}
@@ -1743,9 +1863,11 @@ def resume():
     orch.start_session(thread_id=thread_id)
     reset_session_state()
     iterm_set_var("crowe_logic_active", "1")
+    session_state["session_id"] = thread_id
+    _sync_session_runtime(session_state)
 
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
-    kb = create_chat_keybindings()
+    kb = create_chat_keybindings(console=console, state=session_state)
     session = PromptSession(
         history=FileHistory(history_file),
         completer=SlashCompleter(),
@@ -1755,7 +1877,7 @@ def resume():
     prompt_html = HTML('<style fg="#bfa669">\u276f </style>')
     favicon = get_favicon()
     session_state["favicon"] = favicon
-    session_state["active_model"] = "crowe-logic"
+    session_state["active_model"] = session_state.get("active_model") or "crowe-logic"
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="resume")
     console.print()
 
@@ -1782,6 +1904,26 @@ def resume():
             orch.end_session(summary="Resumed session ended by user")
             console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
+        if user_input.lower() == "/tools":
+            _list_tools_inline()
+            continue
+        if user_input.lower() == "/clear":
+            console.clear()
+            show_welcome(AGENT_VERSION)
+            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="resume")
+            console.print()
+            continue
+        if user_input.lower() == "/status":
+            _show_status_inline()
+            continue
+        if user_input.lower() == "/help":
+            _show_help()
+            continue
+        if user_input.lower() == "/data":
+            _show_data_telemetry()
+            continue
+        if _handle_local_runtime_command(user_input, session_state):
+            continue
         try:
             _cancel_active_runs(client, thread_id)
             client.messages.create(thread_id=thread_id, role="user", content=user_input)
@@ -1806,6 +1948,12 @@ def resume():
                             continue
                     else:
                         raise
+                except KeyboardInterrupt:
+                    _cancel_active_runs(client, thread_id)
+                    session_state["api_status"] = "ok"
+                    console.print("\n  [dim]Interrupted current turn. You can steer or ask a new question.[/dim]\n")
+                    last_error = None
+                    break
             if last_error:
                 session_state["api_status"] = "down"
                 _render_error(last_error, "Run Failed (after 3 attempts)")

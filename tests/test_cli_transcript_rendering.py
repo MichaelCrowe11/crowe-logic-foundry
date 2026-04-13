@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import time
 
+from prompt_toolkit.formatted_text import to_formatted_text
 from rich.console import Console
 
 from cli.branding import (
+    build_toolbar,
     preview_tool_args,
     record_action,
     render_error,
@@ -14,6 +16,8 @@ from cli.branding import (
     render_session_hud,
     render_tool_card,
     render_transcript_markdown,
+    session_state,
+    show_last_transcript,
 )
 
 
@@ -135,3 +139,60 @@ def test_render_recent_actions_prints_timeline_panel():
     assert "#1" in output
     assert "browser_navigate" in output
     assert "loaded (11 chars)" in output
+
+
+def test_show_last_transcript_prints_answer_and_reasoning_panels():
+    console = _recorded_console(width=120)
+    state = {
+        "started_at": time.monotonic(),
+        "tool_count": 0,
+        "api_status": "ok",
+        "retry_seconds": 0,
+        "session_id": "",
+        "active_model": "CroweLM Apex",
+        "steering_instruction": "",
+        "dataset_selection": "all",
+        "last_tokens": 0,
+        "last_tps": 0.0,
+        "total_tokens": 0,
+        "last_answer_text": "## Result\n\nDone.",
+        "last_reasoning_text": "Reasoning details",
+        "recent_actions": [],
+    }
+
+    show_last_transcript(console, state)
+
+    output = console.export_text()
+    assert "ANSWER · last" in output
+    assert "REASONING · full" in output
+    assert "Done." in output
+    assert "Reasoning details" in output
+
+
+def test_build_toolbar_surfaces_steering_and_dataset_status():
+    prior = dict(session_state)
+    try:
+        session_state.update({
+            "started_at": time.monotonic() - 10,
+            "tool_count": 1,
+            "api_status": "ok",
+            "retry_seconds": 0,
+            "session_id": "test",
+            "active_model": "CroweLM Apex",
+            "steering_instruction": "Stay concise",
+            "dataset_selection": "specialized_reasoning",
+            "last_tokens": 20,
+            "last_tps": 10.0,
+            "total_tokens": 20,
+            "last_answer_text": "",
+            "last_reasoning_text": "",
+            "recent_actions": [],
+        })
+
+        toolbar = build_toolbar()
+        rendered = "".join(fragment for _style, fragment in to_formatted_text(toolbar))
+        assert "steer" in rendered
+        assert "data specialized_reas" in rendered
+    finally:
+        session_state.clear()
+        session_state.update(prior)

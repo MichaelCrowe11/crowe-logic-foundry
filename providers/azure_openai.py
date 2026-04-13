@@ -16,6 +16,7 @@ endpoint normalization.
 
 import json
 import time
+from types import SimpleNamespace
 from typing import Any
 
 from openai import OpenAI
@@ -58,7 +59,7 @@ class AzureResponsesProvider:
     """Responses-API provider for Azure-hosted CroweLM reasoning models."""
 
     SUPPORTS_REASONING: bool = True
-    MAX_ROUNDS: int = 10
+    MAX_ROUNDS: int = 20
     REASONING_CONFIG: dict[str, str] = {
         "effort": "medium",
         "summary": "auto",
@@ -84,6 +85,10 @@ class AzureResponsesProvider:
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
+
+    def set_system_instructions(self, system_instructions: str) -> None:
+        """Update the active system prompt for cached provider instances."""
+        self.system_instructions = system_instructions
 
     @staticmethod
     def _to_response_tools(tool_schemas: list[dict]) -> list[dict]:
@@ -137,6 +142,74 @@ class AzureResponsesProvider:
                 if text:
                     renderer.feed_reasoning(text)
 
+    @staticmethod
+    def _record_stream_function_call(
+        stream_function_calls: dict[int, dict[str, str]],
+        output_index: int | None,
+        *,
+        item: Any = None,
+        name: str = "",
+        arguments: str = "",
+    ) -> None:
+        """Capture function-call metadata from streaming events.
+
+        Azure's Responses API occasionally surfaces tool calls in stream events
+        even when the final `response.output` omits them. Keeping a local event-
+        level accumulator prevents us from dropping a required tool output and
+        poisoning `previous_response_id` for the next user turn.
+        """
+        if output_index is None:
+            output_index = len(stream_function_calls)
+
+        entry = stream_function_calls.setdefault(
+            output_index,
+            {"call_id": "", "name": "", "arguments": ""},
+        )
+
+        if item is not None:
+            if getattr(item, "type", None) != "function_call":
+                return
+            call_id = getattr(item, "call_id", "") or ""
+            item_name = getattr(item, "name", "") or ""
+            item_arguments = getattr(item, "arguments", "") or ""
+            if call_id:
+                entry["call_id"] = call_id
+            if item_name:
+                entry["name"] = item_name
+            if item_arguments:
+                entry["arguments"] = item_arguments
+
+        if name:
+            entry["name"] = name
+        if arguments:
+            entry["arguments"] = arguments
+
+    @classmethod
+    def _extract_function_calls(
+        cls,
+        response: Any,
+        stream_function_calls: dict[int, dict[str, str]],
+    ) -> list[Any]:
+        """Return function calls from the final response, or stream fallback."""
+        function_calls = [
+            item for item in (getattr(response, "output", []) or [])
+            if getattr(item, "type", None) == "function_call"
+        ]
+        if function_calls:
+            return function_calls
+
+        fallback_calls = []
+        for _, call in sorted(stream_function_calls.items()):
+            if not any(call.values()):
+                continue
+            fallback_calls.append(SimpleNamespace(
+                type="function_call",
+                call_id=call["call_id"],
+                name=call["name"],
+                arguments=call["arguments"],
+            ))
+        return fallback_calls
+
     def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
                         renderer=None):
         """Run a Responses API loop with local function-tool execution."""
@@ -155,6 +228,7 @@ class AzureResponsesProvider:
         for round_index in range(self.MAX_ROUNDS):
             saw_reasoning_delta = False
             saw_text_delta = False
+            stream_function_calls: dict[int, dict[str, str]] = {}
             try:
                 if round_index == 0:
                     renderer.start()
@@ -185,15 +259,46 @@ class AzureResponsesProvider:
                             if delta:
                                 saw_text_delta = True
                                 renderer.feed(delta)
+                            continue
+
+                        if event_type == "response.output_item.added":
+                            self._record_stream_function_call(
+                                stream_function_calls,
+                                getattr(event, "output_index", None),
+                                item=getattr(event, "item", None),
+                            )
+                            continue
+
+                        if event_type == "response.output_item.done":
+                            self._record_stream_function_call(
+                                stream_function_calls,
+                                getattr(event, "output_index", None),
+                                item=getattr(event, "item", None),
+                            )
+                            continue
+
+                        if event_type == "response.function_call_arguments.done":
+                            self._record_stream_function_call(
+                                stream_function_calls,
+                                getattr(event, "output_index", None),
+                                name=getattr(event, "name", "") or "",
+                                arguments=getattr(event, "arguments", "") or "",
+                            )
+                            continue
 
                     response = stream.get_final_response()
+            except KeyboardInterrupt:
+                if hasattr(renderer, "abort"):
+                    renderer.abort(session_state=session_state)
+                else:
+                    renderer.stop_spinner()
+                raise
             except Exception:
                 renderer.stop_spinner()
                 raise
 
             renderer.stop_spinner()
-            self.previous_response_id = response.id
-            previous_response_id = response.id
+            response_id = response.id
 
             if not saw_reasoning_delta:
                 self._emit_final_reasoning(response, renderer)
@@ -207,13 +312,11 @@ class AzureResponsesProvider:
             if response_text:
                 full_response += response_text
 
-            function_calls = [
-                item for item in (getattr(response, "output", []) or [])
-                if getattr(item, "type", None) == "function_call"
-            ]
+            function_calls = self._extract_function_calls(response, stream_function_calls)
 
             if not function_calls:
                 renderer.finish(session_state=session_state)
+                self.previous_response_id = response_id
                 break
 
             renderer.end_segment()
@@ -222,6 +325,7 @@ class AzureResponsesProvider:
             for call in function_calls:
                 name = call.name
                 arguments_json = call.arguments
+                call_id = getattr(call, "call_id", "") or ""
 
                 renderer.set_spinner(f"running {name}...")
                 tool_start = time.monotonic()
@@ -269,11 +373,23 @@ class AzureResponsesProvider:
                     duration_ms=duration_ms,
                 )
 
+                if not call_id:
+                    raise RuntimeError(
+                        "Responses API emitted a function call without a call_id; "
+                        "cannot safely submit tool output."
+                    )
+
                 pending_input.append({
                     "type": "function_call_output",
-                    "call_id": call.call_id,
+                    "call_id": call_id,
                     "output": result_str[:50000],
                 })
+
+            previous_response_id = response_id
+        else:
+            raise RuntimeError(
+                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds without a final response."
+            )
 
         if console is not None:
             console.print()

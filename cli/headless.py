@@ -46,6 +46,12 @@ import sys
 import time
 import argparse
 
+from cli.session_runtime import (
+    build_runtime_system_instructions,
+    handle_local_control_command,
+    update_session_runtime,
+)
+
 
 # Make sure the Foundry root is importable when this module is invoked as
 # ``python -m cli.headless`` from anywhere (e.g., the VS Code extension
@@ -93,13 +99,17 @@ class JsonStreamRenderer:
     ``end_segment`` clears it after the provider has read its contents.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, session_id: str = "", model_label: str = "") -> None:
         self._text_chunks: list[str] = []
+        self._full_text_chunks: list[str] = []
+        self._full_reasoning_chunks: list[str] = []
         self._token_count = 0
         self._reasoning_token_count = 0
         self._t_start = 0.0
         self._t_first_token = 0.0
         self._t_end = 0.0
+        self._session_id = session_id
+        self._model_label = model_label
 
     def start(self) -> None:
         self._t_start = time.monotonic()
@@ -119,10 +129,12 @@ class JsonStreamRenderer:
         if self._t_first_token == 0.0:
             self._t_first_token = time.monotonic()
         self._text_chunks.append(token)
+        self._full_text_chunks.append(token)
         self._token_count += 1
         emit("token", delta=token)
 
     def feed_reasoning(self, token: str) -> None:
+        self._full_reasoning_chunks.append(token)
         self._reasoning_token_count += 1
         emit("reasoning", delta=token)
 
@@ -135,6 +147,7 @@ class JsonStreamRenderer:
 
     def finish(self, session_state=None) -> None:
         self._t_end = time.monotonic()
+        self._persist_transcript()
         ttft_ms = (
             int((self._t_first_token - self._t_start) * 1000)
             if self._t_first_token > 0 else 0
@@ -150,6 +163,19 @@ class JsonStreamRenderer:
     @property
     def current_segment_text(self) -> str:
         return "".join(self._text_chunks)
+
+    def abort(self, session_state=None) -> None:
+        self._persist_transcript()
+
+    def _persist_transcript(self) -> None:
+        if not self._session_id:
+            return
+        update_session_runtime(
+            self._session_id,
+            last_answer_text="".join(self._full_text_chunks).strip(),
+            last_reasoning_text="".join(self._full_reasoning_chunks).strip(),
+            last_model=self._model_label,
+        )
 
 
 def json_render_tool_card(console, name, args_json, status, result, duration_ms):
@@ -210,7 +236,7 @@ def _get_orchestrator():
 # ── Provider selection ──────────────────────────────────────────────────
 
 
-def _build_provider(model_id: str):
+def _build_provider(model_id: str, *, session_id: str = ""):
     """Construct a provider for the requested model.
 
     ``model_id`` is either ``"auto"`` (use the first entry in
@@ -219,7 +245,7 @@ def _build_provider(model_id: str):
     interactive CLI agree on which models exist and how to authenticate
     against each provider type. Drift here would be very confusing.
     """
-    from config.agent_config import MODEL_CHAIN, build_system_instructions, resolve_model_config
+    from config.agent_config import MODEL_CHAIN, resolve_model_config
 
     chain = list(MODEL_CHAIN)
     if not chain:
@@ -239,7 +265,7 @@ def _build_provider(model_id: str):
     provider_kind = cfg.get("provider", "openrouter")
     label = cfg.get("label", "CroweLM")
     name = cfg["name"]
-    system_instructions = build_system_instructions(cfg)
+    system_instructions = build_runtime_system_instructions(cfg, session_id=session_id)
 
     if provider_kind == "openrouter":
         from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL
@@ -360,9 +386,17 @@ def main() -> int:
         return 2
 
     model_id = payload.get("model") or args.model
+    session_id = payload.get("session") or "headless"
+
+    local_response = handle_local_control_command(messages[-1].get("content") or "", session_id=session_id)
+    if local_response is not None:
+        emit("ready")
+        emit("token", delta=local_response)
+        emit("done", tokens=max(1, len(local_response.split())), reasoning_tokens=0, elapsed_ms=0, ttft_ms=0)
+        return 0
 
     try:
-        provider = _build_provider(model_id)
+        provider = _build_provider(model_id, session_id=session_id)
     except Exception as e:
         emit_error(str(e), kind="config")
         return 3
@@ -382,12 +416,13 @@ def main() -> int:
             provider.messages.append({"role": role, "content": msg.get("content") or ""})
     provider.add_user_message(messages[-1].get("content") or "")
 
-    renderer = JsonStreamRenderer()
     session_state = {
         "favicon": "",
         "tool_count": 0,
-        "session_id": payload.get("session") or "headless",
+        "session_id": session_id,
+        "active_model": getattr(provider, "label", ""),
     }
+    renderer = JsonStreamRenderer(session_id=session_id, model_label=getattr(provider, "label", ""))
 
     try:
         provider.stream_response(
@@ -398,6 +433,7 @@ def main() -> int:
             renderer=renderer,
         )
     except KeyboardInterrupt:
+        renderer.abort(session_state=session_state)
         emit_error("Interrupted", kind="cancelled")
         return 130
     except Exception as e:

@@ -27,7 +27,7 @@ class AnthropicProvider:
     """Anthropic SDK provider for Azure AI Foundry Claude deployments."""
 
     SUPPORTS_REASONING: bool = True
-    MAX_ROUNDS: int = 10
+    MAX_ROUNDS: int = 20
 
     def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
                  label: str = "Claude"):
@@ -49,6 +49,11 @@ class AnthropicProvider:
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
+
+    def set_system_instructions(self, system_instructions: str) -> None:
+        """Update the active system prompt for cached provider instances."""
+        self.system_instructions = system_instructions
+        self._system_block = {"type": "text", "text": system_instructions}
 
     @staticmethod
     def _decode_tool_input(raw_input: str) -> tuple[dict[str, Any], str | None]:
@@ -186,6 +191,12 @@ class AnthropicProvider:
                     elif event.type == "message_stop":
                         break
 
+            except KeyboardInterrupt:
+                if hasattr(renderer, "abort"):
+                    renderer.abort(session_state=session_state)
+                else:
+                    renderer.stop_spinner()
+                raise
             except Exception:
                 renderer.stop_spinner()
                 raise
@@ -287,6 +298,10 @@ class AnthropicProvider:
                         "content": result_str[:50000],
                     }],
                 })
+        else:
+            raise RuntimeError(
+                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds without a final response."
+            )
 
         if console is not None:
             console.print()

@@ -133,3 +133,62 @@ def test_base_provider_recovers_from_missing_tool_name_and_id(monkeypatch):
     assert re.fullmatch(r"[A-Za-z0-9]{9}", tool_call_id)
     assert assistant_msg["tool_calls"][0]["function"]["name"] == "invalid_tool_call"
     assert tool_msg["tool_call_id"] == tool_call_id
+
+
+def test_base_provider_raises_when_tool_round_limit_is_exhausted(monkeypatch):
+    captured = []
+    rounds = [
+        [
+            _chunk(
+                tool_calls=[
+                    SimpleNamespace(
+                        index=0,
+                        id="call_1",
+                        function=SimpleNamespace(name="echo_tool", arguments='{"text":"loop"}'),
+                    ),
+                ],
+                finish_reason="tool_calls",
+            ),
+        ]
+        for _ in range(shared_mod.BaseOpenAIProvider.MAX_ROUNDS)
+    ]
+
+    def echo_tool(text):
+        return text
+
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "echo_tool",
+            "description": "Echo text",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+    }
+
+    monkeypatch.setattr(shared_mod, "load_tools", lambda: ([tool_schema], {"echo_tool": echo_tool}))
+
+    provider = _DummyProvider(rounds, captured)
+    provider.add_user_message("hello")
+
+    renderer = _FakeRenderer()
+    try:
+        provider.stream_response(
+            console=None,
+            render_tool_card=lambda *args, **kwargs: None,
+            session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+            _get_orchestrator=_noop_orchestrator,
+            renderer=renderer,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == (
+            f"CroweLM Test exceeded {shared_mod.BaseOpenAIProvider.MAX_ROUNDS} "
+            "tool rounds without a final response."
+        )
+    else:
+        raise AssertionError("Expected provider stream_response to raise")
+
+    assert renderer.finished is False

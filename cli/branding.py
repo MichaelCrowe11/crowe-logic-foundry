@@ -9,6 +9,8 @@ import subprocess
 import json
 import html
 
+from cli.session_runtime import format_transcript_markdown, load_session_runtime
+
 # ── Design tokens ─────────────────────────────────────────────
 # Color palette. Hex values mirror the Rich style strings used by
 # the renderer; the ANSI escapes are used by the welcome banner
@@ -190,14 +192,15 @@ def render_transcript_markdown(console, text: str, *, title: str = "answer", met
     console.print(build_transcript_markdown(console, text, title=title, meta=meta))
 
 
-def build_reasoning_panel(console, text: str, *, live: bool = False):
+def build_reasoning_panel(console, text: str, *, live: bool = False, meta: str | None = None):
     """Build the muted reasoning block used before or between answer segments."""
     from rich.padding import Padding
     from rich.panel import Panel
     from rich.text import Text
     from rich import box
 
-    meta = "live" if live else "captured"
+    if meta is None:
+        meta = "live" if live else "captured"
     body = Text(text, style="dim") if text.strip() else Text("thinking...", style="dim italic")
     panel = Panel(
         body,
@@ -338,7 +341,7 @@ def welcome_screen(version: str = "0.1.0", avatar_seq: str = "") -> str:
     tagline_line = center(f"{WHITE}{tagline_plain}{RESET}", w)
 
     cmd_hint = f"{DIM}Type naturally. The agent selects tools automatically.{RESET}"
-    cmd_list = f"{DIM}/tools   /model   /data   /status   /help   /exit{RESET}"
+    cmd_list = f"{DIM}/tools   /model   /data   /dataset   /steer   /transcript{RESET}"
     indent = " " * GUTTER
 
     return (
@@ -388,10 +391,15 @@ session_state = {
     "tool_count": 0,
     "api_status": "ok",       # ok | throttled | down
     "retry_seconds": 0,
+    "session_id": "",
     "active_model": "",       # current model label for toolbar
+    "steering_instruction": "",
+    "dataset_selection": "all",
     "last_tokens": 0,         # tokens from last response
     "last_tps": 0.0,          # tokens/sec from last response
     "total_tokens": 0,        # cumulative tokens this session
+    "last_answer_text": "",
+    "last_reasoning_text": "",
     "recent_actions": [],     # newest action cards / timeline entries
 }
 
@@ -403,10 +411,15 @@ def ensure_session_state(state: dict | None = None) -> dict:
     state.setdefault("tool_count", 0)
     state.setdefault("api_status", "ok")
     state.setdefault("retry_seconds", 0)
+    state.setdefault("session_id", "")
     state.setdefault("active_model", "")
+    state.setdefault("steering_instruction", "")
+    state.setdefault("dataset_selection", "all")
     state.setdefault("last_tokens", 0)
     state.setdefault("last_tps", 0.0)
     state.setdefault("total_tokens", 0)
+    state.setdefault("last_answer_text", "")
+    state.setdefault("last_reasoning_text", "")
     state.setdefault("recent_actions", [])
     return state
 
@@ -417,11 +430,52 @@ def reset_session_state():
     session_state["tool_count"] = 0
     session_state["api_status"] = "ok"
     session_state["retry_seconds"] = 0
+    session_state["session_id"] = ""
     session_state["active_model"] = ""
+    session_state["steering_instruction"] = ""
+    session_state["dataset_selection"] = "all"
     session_state["last_tokens"] = 0
     session_state["last_tps"] = 0.0
     session_state["total_tokens"] = 0
+    session_state["last_answer_text"] = ""
+    session_state["last_reasoning_text"] = ""
     session_state["recent_actions"] = []
+
+
+def show_last_transcript(console, state: dict | None = None, *, use_pager: bool = False) -> None:
+    """Render the last captured answer/reasoning transcript for the session."""
+    from rich.markdown import Markdown
+
+    current = ensure_session_state(state)
+    if not current.get("last_answer_text") and not current.get("last_reasoning_text"):
+        session_id = current.get("session_id", "")
+        if session_id:
+            persisted = load_session_runtime(session_id)
+            current["last_answer_text"] = persisted.get("last_answer_text", "")
+            current["last_reasoning_text"] = persisted.get("last_reasoning_text", "")
+            current["active_model"] = current.get("active_model") or persisted.get("last_model", "")
+
+    model = current.get("active_model", "")
+    answer_text = current.get("last_answer_text", "")
+    reasoning_text = current.get("last_reasoning_text", "")
+    markdown = format_transcript_markdown({
+        "last_model": model,
+        "last_answer_text": answer_text,
+        "last_reasoning_text": reasoning_text,
+    })
+    if use_pager:
+        with console.pager(styles=True):
+            console.print(Markdown(markdown))
+        return
+
+    console.print()
+    if answer_text.strip():
+        render_transcript_markdown(console, answer_text, title="answer", meta="last")
+    if reasoning_text.strip():
+        console.print(build_reasoning_panel(console, reasoning_text, live=False, meta="full"))
+    if not answer_text.strip() and not reasoning_text.strip():
+        render_transcript_markdown(console, markdown, title="answer", meta="last")
+    console.print()
 
 
 def _action_summary(name: str, status: str, result: str) -> str:
@@ -888,6 +942,14 @@ def build_toolbar():
     if latest_action:
         parts.append(f'<style fg="{WHITE_HEX}">last {html.escape(latest_action)}</style>')
 
+    if current.get("steering_instruction", "").strip():
+        parts.append(f'<style fg="{AMBER_HEX}">steer</style>')
+
+    dataset_selection = str(current.get("dataset_selection", "all") or "all").strip()
+    if dataset_selection != "all":
+        label = "data off" if dataset_selection == "off" else f"data {dataset_selection}"
+        parts.append(f'<style fg="{WHITE_HEX}">{html.escape(_truncate(label, 24))}</style>')
+
     model_label = current.get("active_model", "")
     if model_label:
         parts.append(f'<style fg="{BLUE_HEX}">{html.escape(model_label)}</style>')
@@ -910,6 +972,9 @@ class SlashCompleter(Completer):
         "/tools":  "List available tools",
         "/model":  "Show/switch models",
         "/data":   "CroweLM training data telemetry",
+        "/dataset": "Show/set injected dataset context",
+        "/steer":  "Persist steering for this session",
+        "/transcript": "Show last full answer/reasoning",
         "/status": "Show agent info",
         "/clear":  "Clear screen",
         "/help":   "Show commands",
@@ -931,8 +996,8 @@ class SlashCompleter(Completer):
 
 
 # ── Multi-line key bindings ──────────────────────────────────
-def create_chat_keybindings():
-    """Create key bindings for the chat prompt (Ctrl+E for multi-line)."""
+def create_chat_keybindings(console=None, state: dict | None = None):
+    """Create key bindings for the chat prompt."""
     from prompt_toolkit.key_binding import KeyBindings
 
     kb = KeyBindings()
@@ -957,5 +1022,14 @@ def create_chat_keybindings():
                 event.app.current_buffer.validate_and_handle()
         except (EOFError, KeyboardInterrupt):
             pass
+
+    @kb.add("c-t")
+    def _show_transcript(event):
+        """Open the last captured transcript in the terminal pager."""
+        if console is None:
+            return
+        event.app.run_in_terminal(
+            lambda: show_last_transcript(console, state, use_pager=True)
+        )
 
     return kb

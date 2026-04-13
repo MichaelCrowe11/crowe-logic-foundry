@@ -65,6 +65,8 @@ def _fake_openai_factory(rounds, captured_kwargs):
         def stream(self, **kwargs):
             captured_kwargs.append(kwargs)
             round_data = rounds.pop(0)
+            if isinstance(round_data, Exception):
+                raise round_data
             return _FakeStream(round_data["events"], round_data["response"])
 
     class _FakeOpenAI:
@@ -247,3 +249,212 @@ def test_responses_provider_falls_back_to_final_response_content(monkeypatch):
 
     assert "".join(renderer.reasoning) == "Condensed reasoning."
     assert full_response == "OK"
+
+
+def test_responses_provider_uses_streamed_function_call_fallback(monkeypatch):
+    captured = []
+    rounds = [
+        {
+            "events": [
+                SimpleNamespace(
+                    type="response.output_item.done",
+                    output_index=0,
+                    item=SimpleNamespace(
+                        type="function_call",
+                        name="echo_tool",
+                        arguments='{"text": "hi"}',
+                        call_id="call_1",
+                    ),
+                ),
+            ],
+            "response": SimpleNamespace(id="resp_1", output=[], output_text=""),
+        },
+        {
+            "events": [
+                SimpleNamespace(type="response.output_text.delta", delta="done"),
+            ],
+            "response": SimpleNamespace(id="resp_2", output=[], output_text="done"),
+        },
+    ]
+
+    def echo_tool(text):
+        return f"tool:{text}"
+
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "echo_tool",
+            "description": "Echo text",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+    }
+
+    monkeypatch.setattr(azure_mod, "OpenAI", _fake_openai_factory(rounds, captured))
+    monkeypatch.setattr(azure_mod, "load_tools", lambda: ([tool_schema], {"echo_tool": echo_tool}))
+
+    provider = azure_mod.AzureResponsesProvider(
+        model="gpt-5.4-pro",
+        system_instructions="system",
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        label="CroweLM Apex",
+    )
+    provider.add_user_message("hello")
+
+    session_state = {"favicon": "", "tool_count": 0, "recent_actions": []}
+    full_response = provider.stream_response(
+        console=None,
+        render_tool_card=lambda *args, **kwargs: None,
+        session_state=session_state,
+        _get_orchestrator=_noop_orchestrator,
+        renderer=_FakeRenderer(),
+    )
+
+    assert full_response == "done"
+    assert session_state["tool_count"] == 1
+    assert captured[1]["previous_response_id"] == "resp_1"
+    assert captured[1]["input"] == [{
+        "type": "function_call_output",
+        "call_id": "call_1",
+        "output": "tool:hi",
+    }]
+    assert provider.previous_response_id == "resp_2"
+
+
+def test_responses_provider_does_not_persist_incomplete_response_id(monkeypatch):
+    captured = []
+    rounds = [
+        {
+            "events": [],
+            "response": SimpleNamespace(
+                id="resp_1",
+                output=[
+                    SimpleNamespace(
+                        type="function_call",
+                        name="echo_tool",
+                        arguments='{"text": "hi"}',
+                        call_id="call_1",
+                    )
+                ],
+                output_text="",
+            ),
+        },
+        RuntimeError("upstream failure"),
+    ]
+
+    def echo_tool(text):
+        return f"tool:{text}"
+
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "echo_tool",
+            "description": "Echo text",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+    }
+
+    monkeypatch.setattr(azure_mod, "OpenAI", _fake_openai_factory(rounds, captured))
+    monkeypatch.setattr(azure_mod, "load_tools", lambda: ([tool_schema], {"echo_tool": echo_tool}))
+
+    provider = azure_mod.AzureResponsesProvider(
+        model="gpt-5.4-pro",
+        system_instructions="system",
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        label="CroweLM Apex",
+    )
+    provider.add_user_message("hello")
+
+    try:
+        provider.stream_response(
+            console=None,
+            render_tool_card=lambda *args, **kwargs: None,
+            session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+            _get_orchestrator=_noop_orchestrator,
+            renderer=_FakeRenderer(),
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "upstream failure"
+    else:
+        raise AssertionError("Expected provider stream_response to raise")
+
+    assert captured[1]["previous_response_id"] == "resp_1"
+    assert provider.previous_response_id is None
+
+
+def test_responses_provider_raises_when_tool_round_limit_is_exhausted(monkeypatch):
+    captured = []
+    rounds = [
+        {
+            "events": [],
+            "response": SimpleNamespace(
+                id=f"resp_{index}",
+                output=[
+                    SimpleNamespace(
+                        type="function_call",
+                        name="echo_tool",
+                        arguments='{"text": "loop"}',
+                        call_id=f"call_{index}",
+                    )
+                ],
+                output_text="",
+            ),
+        }
+        for index in range(1, azure_mod.AzureResponsesProvider.MAX_ROUNDS + 1)
+    ]
+
+    def echo_tool(text):
+        return text
+
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "echo_tool",
+            "description": "Echo text",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+    }
+
+    monkeypatch.setattr(azure_mod, "OpenAI", _fake_openai_factory(rounds, captured))
+    monkeypatch.setattr(azure_mod, "load_tools", lambda: ([tool_schema], {"echo_tool": echo_tool}))
+
+    provider = azure_mod.AzureResponsesProvider(
+        model="gpt-5.4-pro",
+        system_instructions="system",
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        label="CroweLM Apex",
+    )
+    provider.add_user_message("hello")
+
+    try:
+        provider.stream_response(
+            console=None,
+            render_tool_card=lambda *args, **kwargs: None,
+            session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+            _get_orchestrator=_noop_orchestrator,
+            renderer=_FakeRenderer(),
+        )
+    except RuntimeError as exc:
+        assert str(exc) == (
+            f"CroweLM Apex exceeded {azure_mod.AzureResponsesProvider.MAX_ROUNDS} "
+            "tool rounds without a final response."
+        )
+    else:
+        raise AssertionError("Expected provider stream_response to raise")
+
+    assert len(captured) == azure_mod.AzureResponsesProvider.MAX_ROUNDS
+    assert provider.previous_response_id is None

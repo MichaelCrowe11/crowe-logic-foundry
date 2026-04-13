@@ -50,6 +50,10 @@ class QuantumBridge:
     def status(self) -> dict:
         return {
             "available": self.quantum_available,
+            # Preserve the original status contract for callers that still look
+            # for the older capability labels.
+            "synapse_lang": _core_available,
+            "qubit_flow": _qubit_flow_available,
             "crowe_quantum_core": _core_available,
             "crowe_qubit_flow": _qubit_flow_available,
         }
