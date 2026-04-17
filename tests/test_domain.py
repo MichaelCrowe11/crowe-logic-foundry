@@ -373,3 +373,31 @@ class TestVision:
         resp = client.get("/vision/analyses")
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
+
+    def test_analyze_image_url(self, client, monkeypatch):
+        async def fake_fetch(_image_url):
+            return b"fake-image"
+
+        monkeypatch.setattr("domain.vision._fetch_image_url", fake_fetch)
+        resp = client.post("/vision/analyze-url", json={
+            "image_url": "https://example.com/test.png",
+            "analysis_type": "general",
+            "context": "Tray photo",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["analysis_type"] == "general"
+        assert "results" in data
+
+    def test_contamination_check_url(self, client, monkeypatch):
+        async def fake_fetch(_image_url):
+            return b"fake-image"
+
+        monkeypatch.setattr("domain.vision._fetch_image_url", fake_fetch)
+        resp = client.post("/vision/contamination-check-url", json={
+            "image_url": "https://example.com/test.png",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "detected" in data
+        assert "severity" in data

@@ -331,7 +331,10 @@ def crowelm_upload_dataset(target: str = "runpod") -> str:
     """
     Upload curated dataset to cloud storage for training.
 
-    :param target: Cloud target — "runpod" or "azure".
+    :param target: Cloud target — "runpod", "azure", or "azure_ml".
+                   Use "azure_ml" to upload to an Azure ML workspace data asset
+                   for GLM 5.1 LoRA fine-tuning (requires AZURE_ML_WORKSPACE_NAME,
+                   AZURE_ML_SUBSCRIPTION_ID, AZURE_ML_RESOURCE_GROUP).
     :return: JSON with upload status.
     :rtype: str
     """
@@ -362,6 +365,67 @@ def crowelm_upload_dataset(target: str = "runpod") -> str:
                 "export_path": export_path,
                 "action_required": "Run: .venv/bin/python cloud_storage_manager.py upload",
             })
+        elif target == "azure_ml":
+            import subprocess
+            subscription_id = (
+                os.environ.get("AZURE_ML_SUBSCRIPTION_ID")
+                or os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+            )
+            resource_group = (
+                os.environ.get("AZURE_ML_RESOURCE_GROUP")
+                or os.environ.get("AZURE_RESOURCE_GROUP", "")
+            )
+            workspace_name = os.environ.get("AZURE_ML_WORKSPACE_NAME", "")
+
+            if not all([subscription_id, resource_group, workspace_name]):
+                return json.dumps({
+                    "uploaded": False,
+                    "target": target,
+                    "size_mb": round(size_mb, 2),
+                    "export_path": export_path,
+                    "error": "AZURE_ML_WORKSPACE_NAME, AZURE_ML_SUBSCRIPTION_ID, and AZURE_ML_RESOURCE_GROUP must be set",
+                    "action_required": "Set env vars then re-run, or upload manually with: az ml data create",
+                })
+
+            result = subprocess.run(
+                [
+                    "az", "ml", "data", "create",
+                    "--name", "crowelm-dense-training",
+                    "--version", "1",
+                    "--type", "uri_file",
+                    "--path", export_path,
+                    "--subscription", subscription_id,
+                    "--resource-group", resource_group,
+                    "--workspace-name", workspace_name,
+                    "--output", "json",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                import json as _json
+                data_asset = _json.loads(result.stdout)
+                return json.dumps({
+                    "uploaded": True,
+                    "target": target,
+                    "size_mb": round(size_mb, 2),
+                    "export_path": export_path,
+                    "azure_ml_asset_id": data_asset.get("id", ""),
+                    "next_step": "Run: python scripts/fine_tune.py train --base glm-5.1",
+                })
+            else:
+                return json.dumps({
+                    "uploaded": False,
+                    "target": target,
+                    "size_mb": round(size_mb, 2),
+                    "export_path": export_path,
+                    "error": result.stderr.strip(),
+                    "action_required": (
+                        f"az ml data create --name crowelm-dense-training --version 1 "
+                        f"--type uri_file --path {export_path} "
+                        f"--resource-group {resource_group} --workspace-name {workspace_name}"
+                    ),
+                })
         else:
             return json.dumps({"error": f"Unknown target: {target}"})
     except Exception as e:

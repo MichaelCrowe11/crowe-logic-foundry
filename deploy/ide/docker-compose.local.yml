@@ -1,0 +1,8 @@
+# Local development override — maps macOS project path instead of /opt/...
+services:
+  admin:
+    volumes:
+      - /Users/crowelogic/Projects/crowe-logic-foundry:/workspace/crowe-logic-foundry
+      - admin-data:/home/coder/.local
+    ports:
+      - "127.0.0.1:10000:8080"

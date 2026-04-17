@@ -111,6 +111,9 @@ class MockDatabase:
             user_id = args[0]
             orgs = [m["org_id"] for m in self.tables["org_members"] if m["user_id"] == user_id]
             return [w for w in self.tables["workspaces"] if w["org_id"] in orgs and w["status"] == "active"]
+        if "from api_keys" in q and "workspace_id" in q:
+            workspace_id = args[0]
+            return [k for k in self.tables["api_keys"] if k["workspace_id"] == workspace_id]
         if "from usage_events" in q and "group by" in q:
             ws_id = args[0]
             groups = {}
@@ -137,15 +140,19 @@ class MockDatabase:
                 org_id=args[0], user_id=args[1], role=args[2] if len(args) > 2 else "owner",
             ))
         elif q.startswith("insert into workspaces"):
+            name = args[2] if len(args) > 2 else "Default"
+            slug = args[3] if len(args) > 3 else "default"
+            ws_type = args[4] if len(args) > 4 else "personal"
+            plan_id = args[5] if len(args) > 5 else "developer"
             self.tables["workspaces"].append(MockRecord(
-                id=args[0], org_id=args[1], name="Default", slug="default",
-                ws_type="personal", plan_id="developer", status="active",
+                id=args[0], org_id=args[1], name=name, slug=slug,
+                ws_type=ws_type, plan_id=plan_id, status="active",
             ))
         elif q.startswith("insert into api_keys"):
             self.tables["api_keys"].append(MockRecord(
                 id=args[0], workspace_id=args[1], user_id=args[2],
                 key_hash=args[3], key_prefix=args[4], label=args[5],
-                scopes=args[6], revoked=False,
+                scopes=args[6], revoked=False, last_used_at=None,
             ))
         elif q.startswith("insert into usage_events"):
             self.tables["usage_events"].append(MockRecord(
@@ -250,6 +257,18 @@ class TestAuth:
         assert "access_token" in r.json()
         assert r.json()["email"] == "mike@crowelogic.com"
 
+    def test_me(self, client):
+        reg = client.post("/api/auth/register", json={
+            "email": "mike@crowelogic.com", "password": "pass123", "display_name": "Mike",
+        })
+        token = reg.json()["access_token"]
+        r = client.get("/api/auth/me", headers={
+            "Authorization": f"Bearer {token}",
+        })
+        assert r.status_code == 200
+        assert r.json()["email"] == "mike@crowelogic.com"
+        assert r.json()["display_name"] == "Mike"
+
 
 class TestPlans:
     def test_list_plans(self, client):
@@ -275,6 +294,54 @@ class TestWorkspaces:
         workspaces = r.json()
         assert len(workspaces) == 1
         assert workspaces[0]["plan_id"] == "developer"
+
+    def test_create_workspace(self, client):
+        reg = client.post("/api/auth/register", json={
+            "email": "mike@crowelogic.com", "password": "pass123",
+        })
+        token = reg.json()["access_token"]
+        r = client.post("/api/workspaces", json={
+            "name": "Discovery Lab",
+            "slug": "discovery-lab",
+            "ws_type": "team",
+            "plan_id": "studio",
+        }, headers={
+            "Authorization": f"Bearer {token}",
+        })
+        assert r.status_code == 201
+        data = r.json()
+        assert data["name"] == "Discovery Lab"
+        assert data["plan_id"] == "studio"
+
+
+class TestApiKeys:
+    def test_create_and_list_api_keys(self, client, mock_db):
+        reg = client.post("/api/auth/register", json={
+            "email": "mike@crowelogic.com", "password": "pass123",
+        })
+        token = reg.json()["access_token"]
+        ws_id = mock_db.tables["workspaces"][0]["id"]
+
+        created = client.post(
+            f"/api/workspaces/{ws_id}/keys",
+            json={"label": "dashboard", "scopes": ["chat", "vision"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert created.status_code == 201
+        created_data = created.json()
+        assert created_data["key"].startswith("cl_")
+        assert created_data["label"] == "dashboard"
+
+        listed = client.get(
+            f"/api/workspaces/{ws_id}/keys",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert listed.status_code == 200
+        data = listed.json()
+        assert len(data) == 1
+        assert data[0]["key_prefix"] == created_data["key_prefix"]
+        assert data[0]["label"] == "dashboard"
+        assert data[0]["scopes"] == ["chat", "vision"]
 
 
 class TestEntitlements:

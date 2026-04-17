@@ -2,17 +2,22 @@
 """
 Crowe Logic Agent — Fine-Tuning Pipeline
 
-Converts CroweLM unified datasets to Azure AI Foundry format and
-initiates fine-tuning of gpt-oss-120b with domain knowledge:
+Converts CroweLM unified datasets to Azure AI Foundry / Azure ML format and
+initiates fine-tuning of supported base models with domain knowledge:
   - Biotech / Pharma / Drug Discovery
   - Mycology / Mushroom Cultivation
   - Molecular Biology / Gene/RNA/Protein
   - Scientific Coding / Reasoning
 
+Supported base models:
+  gpt-oss-120b   — Azure AI Foundry managed fine-tuning (OpenAI-compatible FT API)
+  glm-5.1        — Azure ML LoRA fine-tuning job (THUDM/GLM-5.1 via HuggingFace)
+
 Usage:
     python scripts/fine_tune.py convert     # Convert datasets to Azure format
     python scripts/fine_tune.py upload       # Upload to Azure AI Foundry
     python scripts/fine_tune.py train        # Start fine-tuning job
+    python scripts/fine_tune.py train --base glm-5.1  # Fine-tune GLM 5.1 via Azure ML
     python scripts/fine_tune.py status       # Check training status
     python scripts/fine_tune.py pipeline     # Run full pipeline
 """
@@ -195,12 +200,31 @@ def cmd_upload(args):
 
 
 def cmd_train(args):
-    """Start fine-tuning job on Azure (placeholder — requires Azure ML or OpenAI FT API)."""
+    """Start fine-tuning job on Azure (gpt-oss-120b or GLM 5.1 via LoRA)."""
+    base_model = getattr(args, "base", "gpt-oss-120b")
+
     print(f"\n{'='*60}")
-    print(f"  FINE-TUNING — gpt-oss-120b + CroweLM Data")
+    print(f"  FINE-TUNING — {base_model} + CroweLM Data")
     print(f"{'='*60}\n")
 
-    print("  NOTE: gpt-oss-120b fine-tuning options:")
+    merged_path = OUTPUT_DIR / "crowelm_merged_train.jsonl"
+    if merged_path.exists():
+        line_count = sum(1 for _ in open(merged_path))
+        size_mb = merged_path.stat().st_size / (1024 * 1024)
+        print(f"  Dataset ready: {line_count:,} samples ({size_mb:.1f} MB)")
+    else:
+        print("  Dataset not converted yet. Run: python scripts/fine_tune.py convert")
+        return
+
+    if base_model == "glm-5.1":
+        _train_glm51(merged_path)
+    else:
+        _train_gpt_oss(base_model)
+
+
+def _train_gpt_oss(base_model: str):
+    """Print gpt-oss-120b fine-tuning instructions."""
+    print(f"  NOTE: {base_model} fine-tuning options:")
     print()
     print("  1. Azure AI Foundry Managed Fine-Tuning:")
     print("     az ml job create --file training_config.yaml")
@@ -210,15 +234,105 @@ def cmd_train(args):
     print()
     print("  3. HuggingFace Transformers + PEFT:")
     print("     python scripts/hf_fine_tune.py")
+
+
+def _train_glm51(dataset_path: Path):
+    """Generate and optionally submit an Azure ML LoRA fine-tune job for GLM 5.1."""
+    import os
+
+    subscription_id = (
+        os.environ.get("AZURE_ML_SUBSCRIPTION_ID")
+        or os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+    )
+    resource_group = (
+        os.environ.get("AZURE_ML_RESOURCE_GROUP")
+        or os.environ.get("AZURE_RESOURCE_GROUP", "")
+    )
+    workspace_name = os.environ.get("AZURE_ML_WORKSPACE_NAME", "")
+
+    job_yaml_path = OUTPUT_DIR / "glm51_lora_job.yaml"
+    job_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+
+    job_yaml = f"""\
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+display_name: crowelm-dense-glm51-lora
+experiment_name: crowelm-dense-glm51
+
+command: >-
+  python -m axolotl.cli.train glm51_lora_config.yaml
+
+environment:
+  image: mcr.microsoft.com/azureml/curated/acft-hf-nlp-gpu:latest
+
+inputs:
+  train_data:
+    type: uri_file
+    path: {dataset_path}
+
+compute: azureml:gpu-cluster-a100
+
+resources:
+  instance_type: Standard_NC96ads_A100_v4
+  instance_count: 1
+
+environment_variables:
+  BASE_MODEL: THUDM/GLM-5.1
+  HF_TOKEN: ${{{{inputs.hf_token}}}}
+  LORA_RANK: "64"
+  LORA_ALPHA: "128"
+  MAX_SEQ_LEN: "4096"
+  BATCH_SIZE: "4"
+  GRAD_ACCUM: "8"
+  LEARNING_RATE: "2e-4"
+  EPOCHS: "3"
+  OUTPUT_DIR: ./outputs/crowelm-dense-glm51-lora
+
+tags:
+  base_model: THUDM/GLM-5.1
+  method: lora
+  crowe_logic_tier: dense
+"""
+
+    with open(job_yaml_path, "w") as f:
+        f.write(job_yaml)
+
+    print(f"  Generated Azure ML job YAML: {job_yaml_path}")
     print()
 
-    merged_path = OUTPUT_DIR / "crowelm_merged_train.jsonl"
-    if merged_path.exists():
-        line_count = sum(1 for _ in open(merged_path))
-        size_mb = merged_path.stat().st_size / (1024 * 1024)
-        print(f"  Dataset ready: {line_count:,} samples ({size_mb:.1f} MB)")
+    if subscription_id and resource_group and workspace_name:
+        print("  Submitting job to Azure ML…")
+        import subprocess
+        result = subprocess.run(
+            [
+                "az", "ml", "job", "create",
+                "--file", str(job_yaml_path),
+                "--subscription", subscription_id,
+                "--resource-group", resource_group,
+                "--workspace-name", workspace_name,
+                "--output", "json",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            import json as _json
+            job = _json.loads(result.stdout)
+            print(f"  Job submitted: {job.get('name', 'unknown')}")
+            print(f"  Status URL:    {job.get('services', {}).get('Studio', {}).get('endpoint', '')}")
+        else:
+            print(f"  az ml job create failed:\n{result.stderr}")
+            print("  Submit manually:")
+            print(f"    az ml job create --file {job_yaml_path} \\")
+            print(f"      --subscription {subscription_id} \\")
+            print(f"      --resource-group {resource_group} \\")
+            print(f"      --workspace-name {workspace_name}")
     else:
-        print("  Dataset not converted yet. Run: python scripts/fine_tune.py convert")
+        print("  Azure ML workspace not configured. Submit manually:")
+        print(f"    az ml job create --file {job_yaml_path} \\")
+        print("      --subscription <AZURE_ML_SUBSCRIPTION_ID> \\")
+        print("      --resource-group <AZURE_ML_RESOURCE_GROUP> \\")
+        print("      --workspace-name <AZURE_ML_WORKSPACE_NAME>")
 
 
 def cmd_status(args):
@@ -247,7 +361,13 @@ def main():
     p_convert.add_argument("--max-samples", type=int, default=0, help="Limit samples (0=all)")
 
     sub.add_parser("upload", help="Upload to Azure AI Foundry")
-    sub.add_parser("train", help="Start fine-tuning")
+    p_train = sub.add_parser("train", help="Start fine-tuning")
+    p_train.add_argument(
+        "--base",
+        choices=["gpt-oss-120b", "glm-5.1"],
+        default="gpt-oss-120b",
+        help="Base model to fine-tune (default: gpt-oss-120b)",
+    )
     sub.add_parser("status", help="Check status")
     sub.add_parser("pipeline", help="Full pipeline")
 

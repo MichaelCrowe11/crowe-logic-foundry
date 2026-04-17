@@ -9,7 +9,6 @@ Integrates with existing:
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import uuid
@@ -17,6 +16,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
@@ -100,6 +100,18 @@ class TimelapseFrame(BaseModel):
     analysis: dict
 
 
+class VisionUrlRequest(BaseModel):
+    image_url: str
+    analysis_type: AnalysisType = AnalysisType.GENERAL
+    grow_log_id: Optional[str] = None
+    context: Optional[str] = None
+
+
+class ContaminationUrlRequest(BaseModel):
+    image_url: str
+    grow_log_id: Optional[str] = None
+
+
 # ── Analysis history ─────────────────────────────────────────────────
 
 _analyses: dict[str, VisionAnalysis] = {}
@@ -155,21 +167,29 @@ def _build_domain_prompt(analysis_type: AnalysisType, context: Optional[str] = N
     return prompt
 
 
-# ── Routes ───────────────────────────────────────────────────────────
+async def _fetch_image_url(image_url: str) -> bytes:
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            response = await client.get(image_url)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to fetch image URL: {exc}") from exc
 
-@router.post("/analyze", response_model=VisionAnalysis)
-async def analyze_image(
-    file: UploadFile = File(...),
-    analysis_type: AnalysisType = Form(AnalysisType.GENERAL),
-    grow_log_id: Optional[str] = Form(None),
-    context: Optional[str] = Form(None),
-):
-    """Analyze an uploaded image using the vision pipeline."""
-    contents = await file.read()
-    image_b64 = base64.b64encode(contents).decode("utf-8")
+    content_type = response.headers.get("content-type", "")
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="image_url must resolve to an image resource")
+
+    return response.content
+
+
+def _run_analysis(
+    contents: bytes,
+    analysis_type: AnalysisType,
+    grow_log_id: Optional[str] = None,
+    context: Optional[str] = None,
+) -> VisionAnalysis:
     prompt = _build_domain_prompt(analysis_type, context)
 
-    # Try the multi-backend vision tool
     backend_fn = _get_vision_backend()
     result_data = {}
     backend_name = "mock"
@@ -205,13 +225,7 @@ async def analyze_image(
     return analysis
 
 
-@router.post("/contamination-check", response_model=ContaminationResult)
-async def check_contamination(
-    file: UploadFile = File(...),
-    grow_log_id: Optional[str] = Form(None),
-):
-    """Specialized contamination detection endpoint."""
-    contents = await file.read()
+def _run_contamination_check(contents: bytes) -> ContaminationResult:
     prompt = _build_domain_prompt(AnalysisType.CONTAMINATION)
 
     backend_fn = _get_vision_backend()
@@ -228,7 +242,6 @@ async def check_contamination(
     else:
         analysis_text = "Backend not available for live analysis."
 
-    # Parse or return structured result
     is_contaminated = any(
         keyword in analysis_text.lower()
         for keyword in ["contamination", "trichoderma", "mold", "bacterial", "cobweb"]
@@ -245,6 +258,49 @@ async def check_contamination(
         ),
         analysis_details=analysis_text,
     )
+
+
+# ── Routes ───────────────────────────────────────────────────────────
+
+@router.post("/analyze", response_model=VisionAnalysis)
+async def analyze_image(
+    file: UploadFile = File(...),
+    analysis_type: AnalysisType = Form(AnalysisType.GENERAL),
+    grow_log_id: Optional[str] = Form(None),
+    context: Optional[str] = Form(None),
+):
+    """Analyze an uploaded image using the vision pipeline."""
+    contents = await file.read()
+    return _run_analysis(contents, analysis_type, grow_log_id=grow_log_id, context=context)
+
+
+@router.post("/analyze-url", response_model=VisionAnalysis)
+async def analyze_image_url(request: VisionUrlRequest):
+    """Analyze an image fetched from a remote URL."""
+    contents = await _fetch_image_url(request.image_url)
+    return _run_analysis(
+        contents,
+        request.analysis_type,
+        grow_log_id=request.grow_log_id,
+        context=request.context,
+    )
+
+
+@router.post("/contamination-check", response_model=ContaminationResult)
+async def check_contamination(
+    file: UploadFile = File(...),
+    grow_log_id: Optional[str] = Form(None),
+):
+    """Specialized contamination detection endpoint."""
+    contents = await file.read()
+    return _run_contamination_check(contents)
+
+
+@router.post("/contamination-check-url", response_model=ContaminationResult)
+async def check_contamination_url(request: ContaminationUrlRequest):
+    """Run contamination detection against an image URL."""
+    contents = await _fetch_image_url(request.image_url)
+    return _run_contamination_check(contents)
 
 
 @router.get("/analyses", response_model=list[VisionAnalysis])

@@ -245,7 +245,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
     interactive CLI agree on which models exist and how to authenticate
     against each provider type. Drift here would be very confusing.
     """
-    from config.agent_config import MODEL_CHAIN, resolve_model_config
+    from config.agent_config import MODEL_CHAIN, resolve_model_config, provider_model_name
 
     chain = list(MODEL_CHAIN)
     if not chain:
@@ -264,7 +264,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
 
     provider_kind = cfg.get("provider", "openrouter")
     label = cfg.get("label", "CroweLM")
-    name = cfg["name"]
+    name = provider_model_name(cfg)
     system_instructions = build_runtime_system_instructions(cfg, session_id=session_id)
 
     if provider_kind == "openrouter":
@@ -303,6 +303,25 @@ def _build_provider(model_id: str, *, session_id: str = ""):
             system_instructions=system_instructions,
             endpoint=NVIDIA_NIM_ENDPOINT,
             api_key=NVIDIA_API_KEY,
+            label=label,
+        )
+
+    if provider_kind == "openai_compat":
+        from providers.hosted_openai import HostedOpenAIProvider
+        endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+        api_key_var = cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
+        endpoint = os.environ.get(endpoint_var, "")
+        api_key = os.environ.get(api_key_var, "")
+        if not endpoint:
+            raise RuntimeError(
+                f"Hosted model '{label}' is missing an endpoint "
+                f"({endpoint_var})"
+            )
+        return HostedOpenAIProvider(
+            model=name,
+            system_instructions=system_instructions,
+            endpoint=endpoint,
+            api_key=api_key,
             label=label,
         )
 

@@ -1,0 +1,82 @@
+# Azure ML Managed Online Deployment — CroweLM Dense (GLM 5.1)
+#
+# Deploys THUDM/GLM-5.1 to the crowelm-dense-glm51 endpoint using
+# the official vLLM inference server container on an A100 (80 GB) GPU.
+#
+# Prerequisites:
+#   1. Endpoint created: az ml online-endpoint create --file glm51_endpoint.yaml
+#   2. Model registered:  python scripts/deploy_glm51.py register
+#
+# Deploy:
+#   az ml online-deployment create \
+#     --file deploy/azure_ml/glm51_deployment.yaml \
+#     --resource-group <rg> --workspace-name <ws>
+
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json
+
+name: blue
+endpoint_name: crowelm-dense-glm51
+
+# Model registered from HuggingFace via deploy_glm51.py
+model: azureml:glm-5-1:1
+
+# vLLM inference server — official Azure ML curated image
+environment:
+  image: mcr.microsoft.com/azureml/curated/acft-hf-nlp-gpu:latest
+  inference_config:
+    liveness_route:
+      path: /health
+      port: 8000
+    readiness_route:
+      path: /health
+      port: 8000
+    scoring_route:
+      path: /v1
+      port: 8000
+
+code_configuration:
+  code: ../../deploy/azure_ml
+  scoring_script: score.py
+
+environment_variables:
+  # vLLM server configuration
+  MODEL_ID: THUDM/GLM-5.1
+  MAX_MODEL_LEN: "32768"
+  TENSOR_PARALLEL_SIZE: "2"
+  GPU_MEMORY_UTILIZATION: "0.92"
+  DTYPE: bfloat16
+  # Expose OpenAI-compatible API on port 8000
+  VLLM_PORT: "8000"
+  # Disable usage stats reporting
+  VLLM_NO_USAGE_STATS: "1"
+
+instance_type: Standard_NC96ads_A100_v4   # 4× A100 80 GB; use Standard_NC48ads_A100_v4 for 2×
+instance_count: 1
+
+request_settings:
+  request_timeout_ms: 120000
+  max_concurrent_requests_per_instance: 32
+  max_queue_wait_ms: 30000
+
+liveness_probe:
+  initial_delay: 240
+  period: 30
+  timeout: 10
+  success_threshold: 1
+  failure_threshold: 5
+
+readiness_probe:
+  initial_delay: 240
+  period: 15
+  timeout: 10
+  success_threshold: 1
+  failure_threshold: 10
+
+scale_settings:
+  type: default
+
+tags:
+  crowe_logic_tier: dense
+  base_model: THUDM/GLM-5.1
+  serving: vllm
+  traffic_slot: blue

@@ -21,7 +21,25 @@ from typing import Any
 
 from openai import OpenAI
 
-from providers._shared import BaseOpenAIProvider, load_tools
+from providers._shared import (
+    BaseOpenAIProvider,
+    build_forced_final_answer_prompt,
+    build_tool_budget_warning,
+    load_tools,
+    should_send_tool_budget_warning,
+)
+
+
+def _normalize_azure_base_url(endpoint: str) -> str:
+    """Normalize Azure OpenAI- and Azure ML-style endpoints to an OpenAI SDK base URL."""
+    base_url = endpoint.rstrip("/")
+    if base_url.endswith("/v1") or "/openai/v1" in base_url:
+        return base_url
+    if ".inference.ml.azure.com" in base_url:
+        return f"{base_url}/v1"
+    if base_url.endswith("/openai"):
+        return f"{base_url}/v1"
+    return f"{base_url}/openai/v1"
 
 
 class AzureOpenAIProvider(BaseOpenAIProvider):
@@ -40,13 +58,7 @@ class AzureOpenAIProvider(BaseOpenAIProvider):
         # The OpenAI SDK expects a base_url that points at the "v1" root so
         # it can append `/chat/completions`. Accept a few shapes and
         # normalize.
-        base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/v1") and "/openai/v1" not in base_url:
-            if base_url.endswith("/openai"):
-                base_url += "/v1"
-            else:
-                base_url += "/openai/v1"
-
+        base_url = _normalize_azure_base_url(endpoint)
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         # cli/crowe_logic.py reads .endpoint to detect provider-recreate
         # cases when the user changes models mid-session — keep the
@@ -73,13 +85,7 @@ class AzureResponsesProvider:
         self.messages: list[dict[str, Any]] = []
         self.previous_response_id: str | None = None
 
-        base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/v1") and "/openai/v1" not in base_url:
-            if base_url.endswith("/openai"):
-                base_url += "/v1"
-            else:
-                base_url += "/openai/v1"
-
+        base_url = _normalize_azure_base_url(endpoint)
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.endpoint = endpoint
 
@@ -210,6 +216,136 @@ class AzureResponsesProvider:
             ))
         return fallback_calls
 
+    @staticmethod
+    def _is_resumable_response_id(response_id: str | None) -> bool:
+        """Only real Responses API ids are safe to feed back upstream."""
+        return isinstance(response_id, str) and response_id.startswith("resp")
+
+    def _persist_local_turn(
+        self,
+        queued_messages: list[dict[str, Any]],
+        assistant_text: str,
+    ) -> None:
+        """Keep enough local history to recover when Azure drops response.completed."""
+        self.messages.extend({
+            "role": msg.get("role", "user"),
+            "content": msg.get("content", ""),
+        } for msg in queued_messages)
+        if assistant_text.strip():
+            self.messages.append({"role": "assistant", "content": assistant_text})
+
+    def _finalize_turn_state(
+        self,
+        *,
+        response_id: str | None,
+        queued_messages: list[dict[str, Any]],
+        assistant_text: str,
+    ) -> str | None:
+        """Persist resumable upstream state, or fall back to local history."""
+        if self._is_resumable_response_id(response_id):
+            self.previous_response_id = response_id
+            return response_id
+
+        self.previous_response_id = None
+        self._persist_local_turn(queued_messages, assistant_text)
+        return None
+
+    def _force_final_response(
+        self,
+        *,
+        renderer,
+        session_state,
+        full_response: str,
+        pending_input: list[dict[str, Any]],
+        previous_response_id: str | None,
+        queued_messages: list[dict[str, Any]],
+    ) -> str:
+        """Run one final no-tools pass after the hard tool budget is exhausted."""
+        final_input = list(pending_input)
+        final_input.append({
+            "type": "message",
+            "role": "developer",
+            "content": [{
+                "type": "input_text",
+                "text": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+            }],
+        })
+
+        saw_reasoning_delta = False
+        saw_text_delta = False
+
+        try:
+            renderer.set_spinner("finalizing answer...")
+            with self.client.responses.stream(
+                model=self.model,
+                instructions=self.system_instructions,
+                input=final_input,
+                previous_response_id=(
+                    previous_response_id
+                    if self._is_resumable_response_id(previous_response_id)
+                    else None
+                ),
+                tools=[],
+                max_output_tokens=4096,
+                reasoning=self.REASONING_CONFIG,
+            ) as stream:
+                for event in stream:
+                    event_type = getattr(event, "type", "")
+
+                    if event_type == "response.reasoning_summary_text.delta":
+                        delta = getattr(event, "delta", "") or ""
+                        if delta:
+                            saw_reasoning_delta = True
+                            renderer.feed_reasoning(delta)
+                        continue
+
+                    if event_type == "response.output_text.delta":
+                        delta = getattr(event, "delta", "") or ""
+                        if delta:
+                            saw_text_delta = True
+                            renderer.feed(delta)
+                        continue
+
+                response = stream.get_final_response()
+        except KeyboardInterrupt:
+            if hasattr(renderer, "abort"):
+                renderer.abort(session_state=session_state)
+            else:
+                renderer.stop_spinner()
+            raise
+        except Exception:
+            if hasattr(renderer, "abort"):
+                renderer.abort(session_state=session_state)
+            else:
+                renderer.stop_spinner()
+            raise
+
+        renderer.stop_spinner()
+        response_id = response.id
+
+        if not saw_reasoning_delta:
+            self._emit_final_reasoning(response, renderer)
+
+        if not saw_text_delta:
+            response_text = getattr(response, "output_text", "") or ""
+            if response_text:
+                renderer.feed(response_text)
+
+        response_text = renderer.current_segment_text
+        if not response_text.strip():
+            raise RuntimeError(
+                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds and did not produce a forced final response."
+            )
+
+        full_response += response_text
+        self._finalize_turn_state(
+            response_id=response_id,
+            queued_messages=queued_messages,
+            assistant_text=full_response,
+        )
+        renderer.finish(session_state=session_state)
+        return full_response
+
     def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
                         renderer=None):
         """Run a Responses API loop with local function-tool execution."""
@@ -222,8 +358,22 @@ class AzureResponsesProvider:
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
         full_response = ""
+        queued_messages = [
+            {
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", ""),
+            }
+            for msg in self.messages
+        ]
         pending_input = self._build_input_items()
-        previous_response_id = self.previous_response_id
+        previous_response_id = (
+            self.previous_response_id
+            if self._is_resumable_response_id(self.previous_response_id)
+            else None
+        )
+        if previous_response_id is None:
+            self.previous_response_id = None
+        budget_warning_sent = False
 
         for round_index in range(self.MAX_ROUNDS):
             saw_reasoning_delta = False
@@ -354,14 +504,27 @@ class AzureResponsesProvider:
                     return full_response
 
                 renderer.finish(session_state=session_state)
-                self.previous_response_id = response_id
+                self._finalize_turn_state(
+                    response_id=response_id,
+                    queued_messages=queued_messages,
+                    assistant_text=full_response,
+                )
                 break
+
+            if not self._is_resumable_response_id(response_id):
+                self.previous_response_id = None
+                raise RuntimeError(
+                    f"{self.label} lost the upstream response id before tool outputs "
+                    "could be submitted; retry the turn."
+                )
 
             renderer.end_segment()
             pending_input = []
+            round_tool_names: list[str] = []
 
             for call in function_calls:
                 name = call.name
+                round_tool_names.append(name)
                 arguments_json = call.arguments
                 call_id = getattr(call, "call_id", "") or ""
 
@@ -423,10 +586,26 @@ class AzureResponsesProvider:
                     "output": result_str[:50000],
                 })
 
+            if should_send_tool_budget_warning(round_index + 1, round_tool_names, budget_warning_sent):
+                pending_input.append({
+                    "type": "message",
+                    "role": "developer",
+                    "content": [{
+                        "type": "input_text",
+                        "text": build_tool_budget_warning(round_index + 1, self.MAX_ROUNDS),
+                    }],
+                })
+                budget_warning_sent = True
+
             previous_response_id = response_id
         else:
-            raise RuntimeError(
-                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds without a final response."
+            return self._force_final_response(
+                renderer=renderer,
+                session_state=session_state,
+                full_response=full_response,
+                pending_input=pending_input,
+                previous_response_id=previous_response_id,
+                queued_messages=queued_messages,
             )
 
         if console is not None:

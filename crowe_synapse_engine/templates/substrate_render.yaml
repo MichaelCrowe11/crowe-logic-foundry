@@ -1,0 +1,13 @@
+name: substrate_render
+description: "Render Substrate album — check status, render tracks, verify output"
+trigger: "render substrate|substrate render|render album|build album|render.*track"
+steps:
+  - tool: substrate_list_tracks
+    description: "Inventory all 8 tracks and their builder/render status"
+  - tool: substrate_render_album
+    input_args:
+      instrumental: true
+    description: "Render all tracks as instrumentals via abletonctl builders"
+    max_retries: 1
+  - tool: substrate_render_status
+    description: "Verify all masters were produced with correct sizes"

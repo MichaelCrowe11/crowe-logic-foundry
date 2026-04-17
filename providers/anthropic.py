@@ -20,6 +20,11 @@ import json
 import time
 from typing import Any, Optional, Union
 
+from providers._shared import (
+    build_forced_final_answer_prompt,
+    build_tool_budget_warning,
+    should_send_tool_budget_warning,
+)
 from tools import user_functions as _tools
 
 
@@ -115,6 +120,56 @@ class AnthropicProvider:
             })
         return tools
 
+    def _force_final_response(self, renderer, session_state, full_response: str) -> str:
+        """Run one final no-tools pass after the hard tool budget is exhausted."""
+        self.messages.append({
+            "role": "user",
+            "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+        })
+
+        try:
+            renderer.set_spinner("finalizing answer...")
+            stream = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=[self._system_block],
+                messages=self.messages,
+                stream=True,
+            )
+
+            for event in stream:
+                if event.type == "content_block_delta":
+                    if event.delta.type == "thinking_delta" and self.SUPPORTS_REASONING:
+                        renderer.feed_reasoning(event.delta.thinking)
+                    elif event.delta.type == "text_delta":
+                        renderer.feed(event.delta.text)
+                elif event.type == "message_stop":
+                    break
+        except KeyboardInterrupt:
+            if hasattr(renderer, "abort"):
+                renderer.abort(session_state=session_state)
+            else:
+                renderer.stop_spinner()
+            raise
+        except Exception:
+            if hasattr(renderer, "abort"):
+                renderer.abort(session_state=session_state)
+            else:
+                renderer.stop_spinner()
+            raise
+
+        renderer.stop_spinner()
+        response_text = renderer.current_segment_text
+        if not response_text.strip():
+            raise RuntimeError(
+                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds and did not produce a forced final response."
+            )
+
+        full_response += response_text
+        self.messages.append({"role": "assistant", "content": response_text})
+        renderer.finish(session_state=session_state)
+        return full_response
+
     def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
                         renderer=None):
         """Stream a response with tool-calling loop using Anthropic API."""
@@ -129,6 +184,7 @@ class AnthropicProvider:
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
         full_response = ""
+        budget_warning_sent = False
 
         for _round in range(self.MAX_ROUNDS):
             try:
@@ -217,6 +273,7 @@ class AnthropicProvider:
             # Finalize segment before tool execution
             renderer.end_segment()
             renderer.stop_spinner()
+            round_tool_names = [tb["name"] for tb in tool_use_blocks]
 
             for tb in tool_use_blocks:
                 parsed_input, input_error = self._decode_tool_input(tb["input"])
@@ -301,10 +358,15 @@ class AnthropicProvider:
                         "content": result_str[:50000],
                     }],
                 })
+
+            if should_send_tool_budget_warning(_round + 1, round_tool_names, budget_warning_sent):
+                self.messages.append({
+                    "role": "user",
+                    "content": build_tool_budget_warning(_round + 1, self.MAX_ROUNDS),
+                })
+                budget_warning_sent = True
         else:
-            raise RuntimeError(
-                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds without a final response."
-            )
+            return self._force_final_response(renderer, session_state, full_response)
 
         if console is not None:
             console.print()

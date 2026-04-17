@@ -1,0 +1,65 @@
+general_settings:
+  master_key: os.environ/CROWE_OPEN_PROXY_MASTER_KEY
+  disable_spend_logs: true
+  background_health_checks: true
+
+model_list:
+  - model_name: z-ai/glm5.1
+    litellm_params:
+      model: openai/z-ai/glm5.1
+      api_base: os.environ/CROWE_GLM51_API_BASE
+      api_key: os.environ/CROWE_GLM51_API_KEY
+
+  - model_name: z-ai/glm5
+    litellm_params:
+      model: openai/z-ai/glm5
+      api_base: os.environ/CROWE_GLM5_API_BASE
+      api_key: os.environ/CROWE_GLM5_API_KEY
+
+  - model_name: qwen/qwen3.5-397b-a17b
+    litellm_params:
+      model: openai/qwen/qwen3.5-397b-a17b
+      api_base: os.environ/CROWE_QWEN35_API_BASE
+      api_key: os.environ/CROWE_QWEN35_API_KEY
+
+  - model_name: deepseek-ai/deepseek-r1
+    litellm_params:
+      model: openai/deepseek-ai/deepseek-r1
+      api_base: os.environ/CROWE_DEEPSEEK_R1_API_BASE
+      api_key: os.environ/CROWE_DEEPSEEK_R1_API_KEY
+
+  - model_name: deepseek-ai/deepseek-v3.2
+    litellm_params:
+      model: openai/deepseek-ai/deepseek-v3.2
+      api_base: os.environ/CROWE_DEEPSEEK_V3_API_BASE
+      api_key: os.environ/CROWE_DEEPSEEK_V3_API_KEY
+
+  - model_name: moonshotai/kimi-k2.5
+    litellm_params:
+      model: openai/moonshotai/kimi-k2.5
+      api_base: os.environ/CROWE_KIMI_K25_API_BASE
+      api_key: os.environ/CROWE_KIMI_K25_API_KEY
+
+  - model_name: moonshotai/kimi-k2-thinking
+    litellm_params:
+      model: openai/moonshotai/kimi-k2-thinking
+      api_base: os.environ/CROWE_KIMI_K2_THINKING_API_BASE
+      api_key: os.environ/CROWE_KIMI_K2_THINKING_API_KEY
+
+  - model_name: mistralai/mistral-large-3-675b-instruct-2512
+    litellm_params:
+      model: openai/mistralai/mistral-large-3-675b-instruct-2512
+      api_base: os.environ/CROWE_MISTRAL_LARGE_API_BASE
+      api_key: os.environ/CROWE_MISTRAL_LARGE_API_KEY
+
+  - model_name: meta/llama-4-maverick-17b-128e-instruct
+    litellm_params:
+      model: openai/meta/llama-4-maverick-17b-128e-instruct
+      api_base: os.environ/CROWE_LLAMA4_MAVERICK_API_BASE
+      api_key: os.environ/CROWE_LLAMA4_MAVERICK_API_KEY
+
+  - model_name: google/gemma-4-27b-it
+    litellm_params:
+      model: openai/google/gemma-4-27b-it
+      api_base: os.environ/CROWE_GEMMA4_API_BASE
+      api_key: os.environ/CROWE_GEMMA4_API_KEY

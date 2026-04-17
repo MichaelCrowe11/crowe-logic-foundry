@@ -195,7 +195,7 @@ def test_anthropic_provider_routes_json_deltas_by_index(monkeypatch):
     assert [entry["name"] for entry in session_state["recent_actions"]] == ["tool_a", "tool_b"]
 
 
-def test_anthropic_provider_raises_when_tool_round_limit_is_exhausted(monkeypatch):
+def test_anthropic_provider_forces_final_answer_when_tool_round_limit_is_exhausted(monkeypatch):
     rounds = [
         [
             SimpleNamespace(
@@ -212,6 +212,13 @@ def test_anthropic_provider_raises_when_tool_round_limit_is_exhausted(monkeypatc
         ]
         for index in range(1, anthropic_mod.AnthropicProvider.MAX_ROUNDS + 1)
     ]
+    rounds.append([
+        SimpleNamespace(
+            type="content_block_delta",
+            delta=SimpleNamespace(type="text_delta", text="Finalized"),
+        ),
+        SimpleNamespace(type="message_stop"),
+    ])
     captured = []
 
     def echo_tool(text):
@@ -231,20 +238,20 @@ def test_anthropic_provider_raises_when_tool_round_limit_is_exhausted(monkeypatc
     provider.add_user_message("hello")
 
     renderer = _FakeRenderer()
-    try:
-        provider.stream_response(
-            console=None,
-            render_tool_card=lambda *args, **kwargs: None,
-            session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
-            _get_orchestrator=_noop_orchestrator,
-            renderer=renderer,
-        )
-    except RuntimeError as exc:
-        assert str(exc) == (
-            f"CroweLM Prime exceeded {anthropic_mod.AnthropicProvider.MAX_ROUNDS} "
-            "tool rounds without a final response."
-        )
-    else:
-        raise AssertionError("Expected provider stream_response to raise")
+    full_response = provider.stream_response(
+        console=None,
+        render_tool_card=lambda *args, **kwargs: None,
+        session_state={"favicon": "", "tool_count": 0, "recent_actions": []},
+        _get_orchestrator=_noop_orchestrator,
+        renderer=renderer,
+    )
 
-    assert renderer.finished is False
+    assert full_response == "Finalized"
+    assert renderer.finished is True
+    assert len(captured) == anthropic_mod.AnthropicProvider.MAX_ROUNDS + 1
+    assert "tools" not in captured[-1]
+    assert any(
+        "Do not call any more tools" in str(message.get("content") or "")
+        for message in captured[-1]["messages"]
+        if isinstance(message, dict)
+    )

@@ -7,11 +7,25 @@ and project knowledge. Portable across machines via ~/.crowe-logic/memory.db.
 
 import os
 import sqlite3
+import re
 import uuid
 from datetime import datetime, timezone
 
 
 _MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "migrations")
+_SQLITE_INCOMPATIBLE_PATTERNS = (
+    re.compile(r"\bTIMESTAMPTZ\b", re.IGNORECASE),
+    re.compile(r"\bJSONB\b", re.IGNORECASE),
+    re.compile(r"\bBIGSERIAL\b", re.IGNORECASE),
+    re.compile(r"\bCREATE\s+EXTENSION\b", re.IGNORECASE),
+    re.compile(r"\bCREATE\s+OR\s+REPLACE\s+VIEW\b", re.IGNORECASE),
+    re.compile(r"\bgen_random_uuid\s*\(", re.IGNORECASE),
+    re.compile(r"\bdate_trunc\s*\(", re.IGNORECASE),
+    re.compile(r"\bUSING\s+hnsw\b", re.IGNORECASE),
+    re.compile(r"\bTEXT\[\]", re.IGNORECASE),
+    re.compile(r"::[A-Za-z_][A-Za-z0-9_]*"),
+    re.compile(r"\bvector\s*\(", re.IGNORECASE),
+)
 
 
 class MemoryStore:
@@ -33,7 +47,10 @@ class MemoryStore:
             if filename.endswith(".sql") and filename not in applied:
                 path = os.path.join(_MIGRATIONS_DIR, filename)
                 with open(path) as f:
-                    self.conn.executescript(f.read())
+                    sql = f.read()
+                if not _is_sqlite_compatible(sql):
+                    continue
+                self.conn.executescript(sql)
                 self.conn.execute("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", (filename, _now()))
                 self.conn.commit()
 
@@ -165,3 +182,10 @@ class MemoryStore:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_sqlite_compatible(sql: str) -> bool:
+    sql_without_line_comments = "\n".join(
+        line for line in sql.splitlines() if not line.lstrip().startswith("--")
+    )
+    return not any(pattern.search(sql_without_line_comments) for pattern in _SQLITE_INCOMPATIBLE_PATTERNS)

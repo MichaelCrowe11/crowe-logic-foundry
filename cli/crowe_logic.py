@@ -88,6 +88,7 @@ def _reset_model_chain():
     _model_state["openrouter_provider"] = None
     _model_state["ollama_provider"] = None
     _model_state["azure_openai_provider"] = None
+    _model_state["hosted_openai_provider"] = None
     _model_state["anthropic_provider"] = None
 
 
@@ -198,6 +199,42 @@ def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = N
     return provider
 
 
+def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
+    """Get or create a self-hosted OpenAI-compatible provider for the given model."""
+    from config.agent_config import provider_model_name
+    from providers.hosted_openai import HostedOpenAIProvider
+
+    model_name = provider_model_name(model_cfg)
+    label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    endpoint_var = model_cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
+
+    endpoint = os.environ.get(endpoint_var, "")
+    api_key = os.environ.get(api_key_var, "")
+
+    if not endpoint:
+        raise RuntimeError(
+            f"Hosted model '{label}' is missing an endpoint — "
+            f"set {endpoint_var} in .env"
+        )
+
+    current = _model_state.get("hosted_openai_provider")
+    if (current and current.model == model_name
+            and current.endpoint == endpoint):
+        return _apply_provider_instructions(current, system_instructions)
+
+    provider = HostedOpenAIProvider(
+        model=model_name,
+        system_instructions=system_instructions,
+        endpoint=endpoint,
+        api_key=api_key,
+        label=label,
+    )
+    _model_state["hosted_openai_provider"] = provider
+    return provider
+
+
 def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """
     Get or create an AzureOpenAIProvider for the given model config.
@@ -209,7 +246,9 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
     """
     from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
 
-    model_name = model_cfg["name"]
+    from config.agent_config import provider_model_name
+
+    model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
@@ -250,7 +289,9 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
     """
     from providers.anthropic import AnthropicProvider
 
-    model_name = model_cfg["name"]
+    from config.agent_config import provider_model_name
+
+    model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
@@ -848,6 +889,16 @@ def chat():
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
+                        elif model_cfg.get("provider") == "openai_compat":
+                            # ── Crowe-managed self-hosted OpenAI-compatible stack ──
+                            provider = _get_hosted_openai_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
                         elif model_cfg.get("provider") == "openrouter":
                             # ── OpenRouter path (Chat Completions) ──
                             provider = _get_openrouter_provider(
@@ -1143,6 +1194,11 @@ def _model_switch_error(model_cfg: dict) -> str | None:
                 + " in .env"
             )
 
+    if provider == "openai_compat":
+        endpoint_var = model_cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+        if not os.environ.get(endpoint_var, "").strip():
+            return f"Cannot switch to {label} — missing {endpoint_var} in .env"
+
     if provider == "openrouter" and not os.environ.get("OPENROUTER_API_KEY", "").strip():
         return f"Cannot switch to {label} — missing OPENROUTER_API_KEY in .env"
 
@@ -1161,9 +1217,9 @@ def _switch_model(azure_state: dict, target: str):
 
         _model_state["chain_index"] = idx
         provider = model.get("provider")
-        if provider in ("anthropic", "azure_openai", "nvidia", "openrouter", "ollama"):
+        if provider in ("anthropic", "azure_openai", "nvidia", "openai_compat", "openrouter", "ollama"):
             # Reset cached provider so the next turn rebuilds with the new model
-            cache_key = f"{provider}_provider"
+            cache_key = "hosted_openai_provider" if provider == "openai_compat" else f"{provider}_provider"
             _model_state[cache_key] = None
             session_state["active_model"] = model["label"]
             console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
@@ -1357,6 +1413,11 @@ def run(prompt: str):
                 model_cfg,
                 system_instructions=runtime_instructions,
             )
+        elif provider_kind == "openai_compat":
+            provider = _get_hosted_openai_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         elif provider_kind == "nvidia":
             provider = _get_nvidia_provider(
                 model_cfg,
@@ -1434,6 +1495,7 @@ def deploy():
         AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
         AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
         AZURE_ANTHROPIC_ENDPOINT, AZURE_ANTHROPIC_API_KEY,
+        provider_model_name,
     )
     import requests
 
@@ -1462,7 +1524,7 @@ def deploy():
     timeout_seconds = _deploy_timeout_seconds()
 
     for model in MODEL_CHAIN:
-        name = model["name"]
+        name = provider_model_name(model)
         label = model["label"]
         provider = model.get("provider", "unknown")
         status = "skip"
@@ -1504,6 +1566,29 @@ def deploy():
                             model=name, messages=test_msg, **_token_limit_kwargs(name),
                         )
                         status = "live" if resp.choices else "empty"
+
+            elif provider == "openai_compat":
+                endpoint_var = model.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+                api_key_var = model.get("api_key_env", "CROWE_OPEN_API_KEY")
+                endpoint = os.environ.get(endpoint_var, "")
+                api_key = os.environ.get(api_key_var, "")
+                if not endpoint:
+                    status = "no endpoint"
+                else:
+                    base_url = endpoint.rstrip("/")
+                    if not base_url.endswith("/v1"):
+                        base_url += "/v1"
+                    client = OpenAI(
+                        api_key=api_key or "crowe-logic",
+                        base_url=base_url,
+                        timeout=timeout_seconds,
+                        max_retries=0,
+                    )
+                    resp = client.chat.completions.create(
+                        model=name, messages=test_msg, **_token_limit_kwargs(name),
+                    )
+                    content = (resp.choices[0].message.content or "").strip()
+                    status = "live" if resp.choices else "empty"
 
             elif provider == "anthropic":
                 from anthropic import Anthropic
@@ -1600,7 +1685,7 @@ def deploy():
             status_fmt = "[bold #6fbf73]LIVE[/bold #6fbf73]"
         elif status in ("not found", "offline", "timeout"):
             status_fmt = f"[#bf6f6f]{status}[/#bf6f6f]"
-        elif status in ("no credentials", "no key", "auth failed"):
+        elif status in ("no credentials", "no key", "no endpoint", "auth failed"):
             status_fmt = f"[yellow]{status}[/yellow]"
         else:
             status_fmt = f"[red]{status}[/red]"
@@ -2032,6 +2117,142 @@ def iterm_status_cmd():
     console.print()
     console.print(table)
     console.print()
+
+
+# ── Substrate Album Commands ──────────────────────────────────────────────────
+
+@main.group()
+def substrate():
+    """Substrate album engine — render, mix, and manage the 8-track concept album."""
+    pass
+
+
+@substrate.command(name="tracks")
+def substrate_tracks_cmd():
+    """List all 8 Substrate tracks with builder and render status."""
+    from tools.substrate import substrate_list_tracks
+    import json as _json
+    data = _json.loads(substrate_list_tracks())
+    table = Table(
+        title="Substrate — Track Inventory",
+        box=box.ROUNDED, border_style="#6fbf73", show_lines=True,
+    )
+    table.add_column("#", style="bold", width=3)
+    table.add_column("Title", style="#bfa669 bold", min_width=20)
+    table.add_column("Key", width=5)
+    table.add_column("BPM", width=5)
+    table.add_column("Dur", width=6)
+    table.add_column("Inst", width=5)
+    table.add_column("Builder", width=8)
+    table.add_column("Rendered", width=10)
+    for t in data["tracks"]:
+        builder_ok = "[#6fbf73]✓[/]" if t["builder_exists"] else "[#bf6f6f]✗[/]"
+        render_ok = "[#6fbf73]✓[/]" if t["rendered"] else "[dim]—[/]"
+        table.add_row(
+            str(t["track_number"]), t["title"], t["key"], str(t["bpm"]),
+            t["duration"], str(t["instruments"]), builder_ok, render_ok,
+        )
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@substrate.command(name="render")
+@click.argument("track", default="all")
+@click.option("--vocals/--no-vocals", default=False, help="Include ElevenLabs vocal generation")
+def substrate_render_cmd(track, vocals):
+    """Render a track (or 'all') using abletonctl builders."""
+    from tools.substrate import substrate_render_track, substrate_render_album
+    import json as _json
+
+    console.print(f"\n[#bfa669 bold]Substrate Render[/] — {'full album' if track == 'all' else track}")
+    console.print(f"[dim]Mode: {'with vocals' if vocals else 'instrumental'}[/dim]\n")
+
+    if track == "all":
+        result = _json.loads(substrate_render_album(instrumental=not vocals))
+        for t in result["tracks"]:
+            status_icon = "[#6fbf73]✓[/]" if t["status"] == "success" else "[#bf6f6f]✗[/]"
+            elapsed = f"{t.get('elapsed_seconds', 0):.0f}s"
+            console.print(f"  {status_icon} {t['track']}  [dim]{elapsed}[/dim]")
+        console.print(f"\n[dim]Total: {result['total_elapsed_seconds']:.0f}s[/dim]\n")
+    else:
+        result = _json.loads(substrate_render_track(track, instrumental=not vocals))
+        if "error" in result:
+            console.print(f"  [#bf6f6f]Error:[/] {result['error']}")
+        else:
+            console.print(f"  Status: {result['status']}")
+            if result.get("master_mp3"):
+                console.print(f"  Master: {result['master_mp3']}")
+            console.print(f"  Elapsed: {result['elapsed_seconds']:.0f}s\n")
+
+
+@substrate.command(name="status")
+def substrate_status_cmd():
+    """Check render status for all tracks."""
+    from tools.substrate import substrate_render_status
+    import json as _json
+    data = _json.loads(substrate_render_status())
+    table = Table(
+        title="Substrate — Render Status",
+        box=box.ROUNDED, border_style="#6fbf73",
+    )
+    table.add_column("#", width=3)
+    table.add_column("Title", style="#bfa669 bold", min_width=18)
+    table.add_column("WAV", width=5)
+    table.add_column("MP3", width=5)
+    table.add_column("Size", width=8)
+    table.add_column("Stems", width=6)
+    for t in data["tracks"]:
+        wav_ok = "[#6fbf73]✓[/]" if t["has_master_wav"] else "[dim]—[/]"
+        mp3_ok = "[#6fbf73]✓[/]" if t["has_master_mp3"] else "[dim]—[/]"
+        size = f"{t['master_size_mb']} MB" if t['master_size_mb'] > 0 else "—"
+        table.add_row(
+            str(t["track_number"]), t["title"], wav_ok, mp3_ok, size, str(t["stem_count"]),
+        )
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@substrate.command(name="vocals")
+def substrate_vocals_cmd():
+    """Check vocal clip inventory."""
+    from tools.substrate import substrate_vocal_status
+    import json as _json
+    data = _json.loads(substrate_vocal_status())
+    console.print(f"\n[#bfa669 bold]Substrate Vocals[/] — {data['total_clips']} clips total\n")
+    for t in data["inventory"]:
+        count = t["clip_count"]
+        icon = "[#6fbf73]✓[/]" if count > 0 else "[dim]—[/]"
+        console.print(f"  {icon} {t['track']}: {count} clips")
+    console.print()
+
+
+@substrate.command(name="open")
+@click.argument("track", default="all")
+def substrate_open_cmd(track):
+    """Open a rendered track (or 'all') in the default audio player."""
+    from tools.substrate import substrate_open_track
+    import json as _json
+    result = _json.loads(substrate_open_track(track))
+    if "error" in result:
+        console.print(f"  [#bf6f6f]{result['error']}[/]")
+    elif "opened" in result and isinstance(result["opened"], list):
+        console.print(f"\n  Opened {result['count']} tracks\n")
+    else:
+        console.print(f"\n  Opened {result['opened']}\n")
+
+
+@substrate.command(name="dna")
+def substrate_dna_cmd():
+    """Display the Substrate DNA specification."""
+    from tools.substrate import substrate_dna
+    from rich.markdown import Markdown
+    content = substrate_dna()
+    if content.startswith("{"):
+        console.print(f"  [#bf6f6f]{content}[/]")
+    else:
+        console.print(Markdown(content))
 
 
 if __name__ == "__main__":

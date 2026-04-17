@@ -46,6 +46,24 @@ MODEL_PLAN_ACCESS = {
 PLAN_RANK = {"developer": 0, "studio": 1, "lab": 2, "enterprise": 3}
 
 
+def _build_model_catalog() -> list[dict]:
+    from config.agent_config import resolve_model_config
+
+    catalog = []
+    for model, min_plan in MODEL_PLAN_ACCESS.items():
+        cfg = resolve_model_config(model) or {}
+        catalog.append(
+            {
+                "model": model,
+                "provider": cfg.get("provider", "unknown"),
+                "surface": cfg.get("surface", "chat"),
+                "label": cfg.get("label"),
+                "min_plan": min_plan,
+            }
+        )
+    return sorted(catalog, key=lambda item: (PLAN_RANK.get(item["min_plan"], 99), item["model"]))
+
+
 async def _call_provider(
     model: str,
     messages: list[dict],
@@ -61,7 +79,7 @@ async def _call_provider(
     import os
     import functools
 
-    from config.agent_config import resolve_model_config, MODEL_CHAIN
+    from config.agent_config import resolve_model_config, MODEL_CHAIN, provider_model_name
 
     cfg = resolve_model_config(model)
     if cfg is None:
@@ -71,7 +89,7 @@ async def _call_provider(
         raise HTTPException(status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN")
 
     provider_kind = cfg.get("provider", "azure_openai")
-    name = cfg["name"]
+    name = provider_model_name(cfg)
 
     def _sync_call():
         """Execute the provider call synchronously (OpenAI SDK is not async)."""
@@ -104,6 +122,24 @@ async def _call_provider(
                     api_key=api_key,
                     label=cfg.get("label", "CroweLM"),
                 )
+        elif provider_kind == "openai_compat":
+            from providers.hosted_openai import HostedOpenAIProvider
+            endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+            api_key_var = cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
+            endpoint = os.environ.get(endpoint_var, "")
+            api_key = os.environ.get(api_key_var, "")
+            if not endpoint:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Missing endpoint for {name} ({endpoint_var})"
+                )
+            provider = HostedOpenAIProvider(
+                model=name,
+                system_instructions="You are a helpful assistant.",
+                endpoint=endpoint,
+                api_key=api_key,
+                label=cfg.get("label", "CroweLM"),
+            )
         elif provider_kind == "openrouter":
             from providers.openrouter import OpenRouterProvider
             api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -176,6 +212,12 @@ class GatewayResponse(BaseModel):
     content: str
     usage: dict
     latency_ms: int
+
+
+@router.get("/catalog")
+async def list_model_catalog():
+    """Return the public model catalog without requiring an API key."""
+    return {"models": _build_model_catalog()}
 
 
 async def _resolve_api_key(

@@ -5,6 +5,7 @@ Auth, workspace management, plan enforcement, usage metering,
 and model gateway. Extends the existing CroweLM API.
 """
 
+import json
 import os
 import hashlib
 import secrets
@@ -67,6 +68,13 @@ class TokenResponse(BaseModel):
     email: str
 
 
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    display_name: Optional[str] = None
+    role: str = "researcher"
+
+
 class WorkspaceCreate(BaseModel):
     name: str
     slug: str
@@ -95,6 +103,15 @@ class ApiKeyResponse(BaseModel):
     key_prefix: str
     label: str
     scopes: list[str]
+
+
+class ApiKeySummary(BaseModel):
+    id: str
+    key_prefix: str
+    label: str
+    scopes: list[str]
+    revoked: bool = False
+    last_used_at: Optional[str] = None
 
 
 class UsageResponse(BaseModel):
@@ -253,6 +270,16 @@ async def refresh(user: dict = Depends(get_current_user)):
     return TokenResponse(access_token=token, user_id=user["id"], email=user["email"])
 
 
+@app.get("/api/auth/me", response_model=UserResponse)
+async def auth_me(user: dict = Depends(get_current_user)):
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        display_name=user.get("display_name"),
+        role=user.get("role", "researcher"),
+    )
+
+
 # ─── Plans ───────────────────────────────────────────────────────────
 
 @app.get("/api/plans", response_model=list[PlanResponse])
@@ -322,12 +349,49 @@ async def create_api_key(
         """INSERT INTO api_keys (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
            VALUES ($1, $2, $3, $4, $5, $6, $7)""",
         key_id, workspace_id, user["id"], key_hash, key_prefix,
-        req.label, req.scopes,
+        req.label, json.dumps(req.scopes),
     )
     return ApiKeyResponse(
         id=key_id, key=raw_key, key_prefix=key_prefix,
         label=req.label, scopes=req.scopes,
     )
+
+
+@app.get("/api/workspaces/{workspace_id}/keys", response_model=list[ApiKeySummary])
+async def list_api_keys(
+    workspace_id: str,
+    user: dict = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    await _resolve_workspace(workspace_id, user, db)
+    rows = await db.fetch(
+        """SELECT id, key_prefix, label, scopes, revoked, last_used_at
+           FROM api_keys
+           WHERE workspace_id = $1
+           ORDER BY id DESC""",
+        workspace_id,
+    )
+    items = []
+    for row in rows:
+        raw_scopes = row["scopes"]
+        if isinstance(raw_scopes, str):
+            try:
+                scopes = json.loads(raw_scopes)
+            except json.JSONDecodeError:
+                scopes = [raw_scopes]
+        else:
+            scopes = list(raw_scopes or [])
+        items.append(
+            ApiKeySummary(
+                id=row["id"],
+                key_prefix=row["key_prefix"],
+                label=row["label"],
+                scopes=scopes,
+                revoked=bool(row["revoked"]),
+                last_used_at=row.get("last_used_at"),
+            )
+        )
+    return items
 
 
 @app.delete("/api/workspaces/{workspace_id}/keys/{key_id}", status_code=204)
