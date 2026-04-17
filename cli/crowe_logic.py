@@ -16,6 +16,7 @@ import os
 import sys
 import json
 import time
+import uuid
 
 _PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PACKAGE_ROOT)
@@ -351,16 +352,49 @@ def _get_tool_map() -> dict:
 
 _orchestrator = None
 
+class _NoopOrchestrator:
+    """Fallback when Crowe Synapse is unavailable (e.g. fresh Codespace).
+
+    Mirrors the real Orchestrator's method signatures exactly so callers
+    don't need to know which implementation they have.
+    """
+
+    def start_session(self, thread_id="", project_context=""):
+        return f"noop-{uuid.uuid4().hex[:8]}"
+
+    def end_session(self, summary=""):
+        pass
+
+    def get_history(self, limit=10):
+        return []
+
+    def prepare(self, user_input="", thread_id=""):
+        return {"mode": "direct", "pipeline_name": None, "injection": ""}
+
+    def record_execution(self, tool_name="", arguments="", output="", duration_ms=0, status="success"):
+        pass
+
+    def list_agents(self):
+        return []
+
+    def list_pipelines(self):
+        return []
+
+
 def _get_orchestrator():
-    """Lazy-loaded Crowe-Synapse orchestrator."""
+    """Lazy-loaded Crowe-Synapse orchestrator. Falls back to noop on failure."""
     global _orchestrator
     if _orchestrator is None:
-        from crowe_synapse_engine import Orchestrator
-        _orchestrator = Orchestrator(
-            db_path=os.path.expanduser("~/.crowe-logic/memory.db"),
-            agents_dir=os.path.join(PROJECT_ROOT, "agents"),
-            templates_dir=os.path.join(PROJECT_ROOT, "crowe_synapse_engine", "templates"),
-        )
+        try:
+            from crowe_synapse_engine import Orchestrator
+            _orchestrator = Orchestrator(
+                db_path=os.path.expanduser("~/.crowe-logic/memory.db"),
+                agents_dir=os.path.join(PROJECT_ROOT, "agents"),
+                templates_dir=os.path.join(PROJECT_ROOT, "crowe_synapse_engine", "templates"),
+            )
+        except Exception as exc:
+            console.print(f"  [dim]Synapse engine unavailable ({exc}). Using stateless mode.[/dim]\n")
+            _orchestrator = _NoopOrchestrator()
     return _orchestrator
 
 
