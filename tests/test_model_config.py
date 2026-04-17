@@ -11,7 +11,7 @@ def test_primary_models_are_crowelm_titan_and_sovereign():
     assert MODEL_CHAIN[0]["name"] == "gpt-5.4"
     assert MODEL_CHAIN[0]["label"] == "CroweLM Titan"
     assert MODEL_CHAIN[0]["provider"] == "openai_compat"
-    assert provider_model_name(MODEL_CHAIN[0]) == "z-ai/glm5.1"
+    assert provider_model_name(MODEL_CHAIN[0]) == "z-ai/glm-5.1"
     assert MODEL_CHAIN[1]["name"] == "gpt-5.4-pro"
     assert MODEL_CHAIN[1]["label"] == "CroweLM Apex"
     assert MODEL_CHAIN[1]["provider"] == "openai_compat"
@@ -45,9 +45,9 @@ def test_open_source_first_tiers_keep_stable_public_ids_with_backend_mapping():
     sovereign = resolve_model_config("CroweLM Sovereign")
 
     assert dense["provider"] == "openai_compat"
-    assert provider_model_name(dense) == "z-ai/glm5.1"
+    assert provider_model_name(dense) == "z-ai/glm-5.1"
     assert sovereign["provider"] == "openai_compat"
-    assert provider_model_name(sovereign) == "deepseek-ai/deepseek-v3.2"
+    assert provider_model_name(sovereign) == "deepseek/deepseek-v3.2"
 
 
 def test_model_chain_loads_extra_models_from_json_file(tmp_path, monkeypatch):

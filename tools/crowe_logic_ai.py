@@ -13,15 +13,22 @@ import httpx
 
 def crowe_chat(message: str, context: str = "") -> str:
     """
-    Chat with CroweLM for mycology and cultivation expertise.
+    Call the external Crowe Logic platform at ai.southwestmushrooms.com for
+    *mycology and cultivation domain questions only*. Requires
+    CROWE_LOGIC_KEY (or an active trial session cookie). DO NOT use this
+    tool for greetings, meta-questions, or general conversation — the
+    active model answers those directly.
 
-    :param message: The user message to send to CroweLM.
+    :param message: A mushroom-cultivation or mycology domain question.
     :param context: Optional conversation context.
-    :return: JSON with CroweLM response.
+    :return: JSON with the platform response.
     :rtype: str
     """
     try:
-        result = _crowe_request("POST", "/api/chat", json={"message": message, "context": context})
+        payload = {"messages": [{"role": "user", "content": message}]}
+        if context:
+            payload["messages"].insert(0, {"role": "system", "content": context})
+        result = _crowe_request("POST", "/api/chat", json=payload)
         return json.dumps(result)
     except Exception as e:
         return json.dumps({"error": str(e)})
