@@ -14,6 +14,11 @@ import { createHash } from 'crypto';
 import { runFoundryTurn, FoundryMessage, FoundryEvent } from './agent';
 import { PlanViewProvider } from './views/planView';
 import { ToolsViewProvider, ToolEntry } from './views/toolsView';
+import { signIn, signOut } from './commands/signIn';
+import { openInRemoteIde } from './commands/openInRemoteIde';
+import { askWithContext } from './commands/askWithContext';
+import { CroweCodeActionProvider, CROWE_CODE_ACTION_KINDS } from './codeActions';
+import { registerStatusBar } from './statusBar';
 
 export function activate(context: vscode.ExtensionContext) {
     const planView = new PlanViewProvider();
@@ -60,7 +65,18 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('crowe-logic.togglePlan', () => {
             vscode.commands.executeCommand('crowe-logic.plan.focus');
         }),
+        vscode.commands.registerCommand('crowe-logic.signIn', () => signIn(context)),
+        vscode.commands.registerCommand('crowe-logic.signOut', () => signOut(context)),
+        vscode.commands.registerCommand('crowe-logic.openInRemoteIde', () => openInRemoteIde(context)),
+        vscode.commands.registerCommand('crowe-logic.askWithContext', (args) => askWithContext(args)),
+        vscode.languages.registerCodeActionsProvider(
+            { scheme: 'file' },
+            new CroweCodeActionProvider(),
+            { providedCodeActionKinds: CROWE_CODE_ACTION_KINDS },
+        ),
     );
+
+    void registerStatusBar(context);
 }
 
 export function deactivate() { /* no-op */ }

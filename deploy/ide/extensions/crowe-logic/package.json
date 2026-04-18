@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic",
   "description": "Crowe Logic Foundry agent — chat, plans, and tool execution inside the IDE.",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -43,6 +43,22 @@
           {
             "name": "explain",
             "description": "Explain the selected file or symbol."
+          },
+          {
+            "name": "refactor",
+            "description": "Refactor the selection for readability and correctness."
+          },
+          {
+            "name": "tests",
+            "description": "Write unit tests for the selection."
+          },
+          {
+            "name": "find-bugs",
+            "description": "Review the selection for bugs and edge cases."
+          },
+          {
+            "name": "docs",
+            "description": "Write documentation/docstrings for the selection."
           },
           {
             "name": "dataset",
@@ -98,6 +114,27 @@
       {
         "command": "crowe-logic.togglePlan",
         "title": "Crowe Logic: Toggle Plan View"
+      },
+      {
+        "command": "crowe-logic.signIn",
+        "title": "Crowe Logic: Sign In (API Token)"
+      },
+      {
+        "command": "crowe-logic.signOut",
+        "title": "Crowe Logic: Sign Out"
+      },
+      {
+        "command": "crowe-logic.openInRemoteIde",
+        "title": "Crowe Logic: Open in Remote IDE",
+        "icon": "$(remote)"
+      },
+      {
+        "command": "crowe-logic.askWithContext",
+        "title": "Crowe Logic: Ask about selection"
+      },
+      {
+        "command": "crowe-logic.statusBarMenu",
+        "title": "Crowe Logic: Show status menu"
       }
     ],
     "keybindings": [
@@ -108,8 +145,8 @@
       },
       {
         "command": "crowe-logic.togglePlan",
-        "key": "ctrl+shift+p",
-        "mac": "cmd+shift+p",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p",
         "when": "view == crowe-logic.plan"
       }
     ],
@@ -119,6 +156,23 @@
           "command": "crowe-logic.clearTools",
           "when": "view == crowe-logic.tools",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "crowe-logic.askWithContext",
+          "when": "editorHasSelection",
+          "group": "croweLogic@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "crowe-logic.askWithContext",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "crowe-logic.statusBarMenu",
+          "when": "false"
         }
       ]
     },
@@ -194,6 +248,18 @@
           ],
           "description": "Color theme for the Crowe Logic interface.",
           "order": 5
+        },
+        "croweLogic.apiBaseUrl": {
+          "type": "string",
+          "default": "https://ai.southwestmushrooms.com",
+          "description": "Base URL for the Crowe Logic AI platform. Used for `/api/ide/launch` and other HTTP endpoints.",
+          "order": 6
+        },
+        "croweLogic.ideUrl": {
+          "type": "string",
+          "default": "https://ide.southwestmushrooms.com",
+          "description": "Remote IDE origin used as a fallback when handoff fails.",
+          "order": 7
         }
       }
     },
@@ -223,6 +289,30 @@
               "image": "media/avatar-light.png",
               "altText": "Crowe Logic avatar"
             }
+          },
+          {
+            "id": "sign-in",
+            "title": "Sign in with your API token",
+            "description": "Run **Crowe Logic: Sign In** from the command palette and paste your `crowe_pat_…` token. The token is stored in the OS keychain and unlocks programmatic access to the AI platform.\n[Sign In](command:crowe-logic.signIn)",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.signIn"
+            ]
+          },
+          {
+            "id": "open-remote-ide",
+            "title": "Hand off to the remote IDE",
+            "description": "Need a full Foundry workspace? Run **Crowe Logic: Open in Remote IDE** to launch a single-use session in your code-server container.\n[Open Remote IDE](command:crowe-logic.openInRemoteIde)",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.openInRemoteIde"
+            ]
           }
         ]
       }
