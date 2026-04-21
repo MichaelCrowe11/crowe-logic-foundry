@@ -14,6 +14,34 @@ import time
 import inspect
 
 
+def _coerce_tool_args(func, args: dict) -> dict:
+    """Coerce tool-call arguments to the types declared in function annotations.
+
+    Local/smaller LLMs frequently emit all values as JSON strings even when the
+    schema specifies integer, number, or boolean.  For example limit="10"
+    instead of limit=10.  This causes TypeErrors deep inside tool code (e.g.
+    ``min("10", 50)``).  By inspecting the function signature and casting here,
+    we fix the mismatch once for every tool instead of patching each one.
+    """
+    sig = inspect.signature(func)
+    coerced = {}
+    for key, value in args.items():
+        param = sig.parameters.get(key)
+        if param is not None and isinstance(value, str):
+            ann = param.annotation
+            try:
+                if ann is int:
+                    value = int(value)
+                elif ann is float:
+                    value = float(value)
+                elif ann is bool:
+                    value = value.lower() not in ("false", "0", "no", "")
+            except (ValueError, AttributeError):
+                pass  # leave as-is; the function will raise its own error
+        coerced[key] = value
+    return coerced
+
+
 # Module-level memoization for tool schemas. Keyed by id() of the
 # user_functions set, which tools/__init__.py builds once at import and
 # never mutates — so identity is stable for the life of the process and
@@ -552,6 +580,7 @@ class BaseOpenAIProvider:
                 elif func:
                     try:
                         args = json.loads(args_json) if args_json else {}
+                        args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
                     except Exception as e:

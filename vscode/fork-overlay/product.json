@@ -1,0 +1,22 @@
+{
+  "_comment": "Drop-in product.json overlay applied on top of microsoft/vscode by build-fork.sh. Branding only — leaves all behavior keys (extensionsGallery, etc.) untouched. The build script merges this on top of the upstream product.json instead of replacing it.",
+  "nameShort": "Crowe Logic",
+  "nameLong": "Crowe Logic Code",
+  "applicationName": "crowe-logic",
+  "dataFolderName": ".crowe-logic",
+  "win32AppUserModelId": "CroweLogic.CroweLogicCode",
+  "win32MutexName": "crowelogiccode",
+  "win32DirName": "Crowe Logic Code",
+  "win32NameVersion": "Crowe Logic Code",
+  "win32RegValueName": "Crowe Logic Code",
+  "win32ShellNameShort": "Crowe Logic",
+  "darwinBundleIdentifier": "io.crowelogic.code",
+  "linuxIconName": "crowe-logic",
+  "serverApplicationName": "crowe-logic-server",
+  "serverDataFolderName": ".crowe-logic-server",
+  "urlProtocol": "crowe-logic",
+  "reportIssueUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/issues/new",
+  "documentationUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry",
+  "releaseNotesUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/releases",
+  "licenseUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/LICENSE"
+}

@@ -23,7 +23,7 @@ def mcp_search(query: str, limit: int = 10) -> str:
     """
     import httpx
 
-    limit = min(limit, 50)
+    limit = min(int(limit), 50)
 
     try:
         resp = httpx.get(

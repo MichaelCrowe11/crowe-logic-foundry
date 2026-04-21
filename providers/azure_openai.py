@@ -536,6 +536,8 @@ class AzureResponsesProvider:
                 if func:
                     try:
                         args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+                        from providers._shared import _coerce_tool_args
+                        args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
                     except Exception as exc:

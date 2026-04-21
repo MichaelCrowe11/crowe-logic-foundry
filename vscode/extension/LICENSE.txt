@@ -1,0 +1,7 @@
+Crowe Logic VS Code Extension — Proprietary License
+Copyright (c) 2026 Michael Crowe / Crowe Logic. All rights reserved.
+
+This software is provided as part of the Crowe Logic Foundry distribution.
+Use, modification, and redistribution are governed by the LICENSE file at the
+root of the Crowe Logic Foundry repository:
+https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/LICENSE

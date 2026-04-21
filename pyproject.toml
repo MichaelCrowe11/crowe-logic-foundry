@@ -53,6 +53,7 @@ quantum = [
     "crowe-quantum-trinity>=2.0.0",
     "qiskit>=1.0.0",
     "qiskit-aer>=0.15.0",
+    "qiskit-ibm-runtime>=0.35.0",
     "cirq>=1.4.0",
     "pennylane>=0.39.0",
 ]
@@ -70,6 +71,7 @@ Repository = "https://github.com/MichaelCrowe11/crowe-logic-foundry"
 
 [project.scripts]
 crowe-logic = "cli.crowe_logic:main"
+crowe-logic-quantum-mcp = "scripts.mcp_quantum_music:main"
 
 [tool.setuptools.packages.find]
 include = ["cli*", "tools*", "config*", "scripts*", "providers*", "crowe_synapse_engine*", "iterm*"]

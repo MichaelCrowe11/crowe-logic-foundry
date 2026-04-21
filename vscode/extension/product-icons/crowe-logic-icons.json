@@ -1,0 +1,19 @@
+{
+  "fonts": [
+    {
+      "id": "crowe-logic-icons",
+      "src": [{ "path": "./crowe-logic-icons.woff", "format": "woff" }],
+      "weight": "normal",
+      "style": "normal"
+    }
+  ],
+  "iconDefinitions": {
+    "crowe-mark": { "fontCharacter": "\\E000", "fontId": "crowe-logic-icons" }
+  },
+  "_comment": "These overrides remap the most visible workbench icons to the Crowe Logic mark. To use, generate crowe-logic-icons.woff with vscode/scripts/build-icon-font.sh (which converts assets/crowe-logic-mark.svg into a single-glyph woff at codepoint U+E000).",
+  "iconSingleFolderExpanded": "folder-opened",
+  "showWelcome": "crowe-mark",
+  "default-view-icon": "crowe-mark",
+  "extensions-view-icon": "crowe-mark",
+  "remote-explorer-view-icon": "crowe-mark"
+}

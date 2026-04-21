@@ -522,6 +522,8 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
         return json.dumps({"error": f"Unknown tool: {name}"})
     try:
         args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+        from providers._shared import _coerce_tool_args
+        args = _coerce_tool_args(func, args)
         result = func(**args)
         return str(result) if result is not None else ""
     except Exception as e:

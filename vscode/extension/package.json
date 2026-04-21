@@ -1,0 +1,132 @@
+{
+  "name": "crowe-logic-vscode",
+  "displayName": "Crowe Logic",
+  "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona that replaces the default Copilot avatar.",
+  "version": "0.1.0",
+  "publisher": "crowe-logic",
+  "engines": { "vscode": "^1.90.0" },
+  "icon": "media/crowe-logic-mark.png",
+  "categories": ["Themes", "Other", "Chat"],
+  "keywords": ["crowe", "crowe-logic", "rebrand", "theme", "icon-theme"],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "themes": [
+      {
+        "label": "Crowe Logic Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/crowe-logic-dark.json"
+      },
+      {
+        "label": "Crowe Logic Light",
+        "uiTheme": "vs",
+        "path": "./themes/crowe-logic-light.json"
+      }
+    ],
+    "productIconThemes": [
+      {
+        "id": "crowe-logic-icons",
+        "label": "Crowe Logic Icons",
+        "path": "./product-icons/crowe-logic-icons.json"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "crowe-logic.getting-started",
+        "title": "Welcome to Crowe Logic",
+        "description": "Set up the Crowe Logic-branded VS Code experience.",
+        "steps": [
+          {
+            "id": "apply-theme",
+            "title": "Apply the Crowe Logic theme",
+            "description": "Switch to the gold-on-graphite Crowe Logic palette.\n[Apply Theme](command:crowe-logic.applyTheme)",
+            "media": { "image": "media/crowe-logic-mark.png", "altText": "Crowe Logic mark" },
+            "completionEvents": ["onCommand:crowe-logic.applyTheme"]
+          },
+          {
+            "id": "apply-icons",
+            "title": "Apply Crowe Logic product icons",
+            "description": "Replace the default workbench icons with the Crowe Logic mark.\n[Apply Icons](command:crowe-logic.applyProductIcons)",
+            "media": { "image": "media/crowe-logic-mark.png", "altText": "Crowe Logic mark" },
+            "completionEvents": ["onCommand:crowe-logic.applyProductIcons"]
+          },
+          {
+            "id": "open-chat",
+            "title": "Talk to Crowe Logic",
+            "description": "Open the chat panel and use `@crowe-logic` to route through the CroweLM model chain.\n[Open Chat](command:workbench.action.chat.open)",
+            "media": { "image": "media/crowe-logic-mark.png", "altText": "Crowe Logic mark" }
+          }
+        ]
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "crowe-logic.agent",
+        "name": "crowe-logic",
+        "fullName": "Crowe Logic",
+        "description": "Crowe Logic agent powered by the CroweLM model chain",
+        "isSticky": true,
+        "iconPath": "media/crowe-logic-mark.png"
+      }
+    ],
+    "commands": [
+      {
+        "command": "crowe-logic.applyTheme",
+        "title": "Crowe Logic: Apply Theme",
+        "category": "Crowe Logic"
+      },
+      {
+        "command": "crowe-logic.applyProductIcons",
+        "title": "Crowe Logic: Apply Product Icons",
+        "category": "Crowe Logic"
+      },
+      {
+        "command": "crowe-logic.applyAll",
+        "title": "Crowe Logic: Apply Full Rebrand",
+        "category": "Crowe Logic"
+      },
+      {
+        "command": "crowe-logic.showWelcome",
+        "title": "Crowe Logic: Show Welcome",
+        "category": "Crowe Logic"
+      }
+    ],
+    "configuration": {
+      "title": "Crowe Logic",
+      "properties": {
+        "croweLogic.autoApplyOnFirstRun": {
+          "type": "boolean",
+          "default": true,
+          "description": "Apply the Crowe Logic theme and product icons automatically the first time the extension activates."
+        },
+        "croweLogic.titleBarText": {
+          "type": "string",
+          "default": "Crowe Logic — ${rootName}${separator}${activeEditorShort}",
+          "description": "Override window.title with a Crowe Logic-branded format."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MichaelCrowe11/crowe-logic-foundry.git",
+    "directory": "vscode/extension"
+  },
+  "homepage": "https://github.com/MichaelCrowe11/crowe-logic-foundry#readme",
+  "bugs": {
+    "url": "https://github.com/MichaelCrowe11/crowe-logic-foundry/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}

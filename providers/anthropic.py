@@ -313,6 +313,8 @@ class AnthropicProvider:
                 elif func:
                     try:
                         args = tb.get("parsed_input", {})
+                        from providers._shared import _coerce_tool_args
+                        args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
                     except Exception as e:
