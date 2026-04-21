@@ -1,0 +1,29 @@
+# deploy/ide/systemd/crowe-control-plane.service
+[Unit]
+Description=Crowe Logic Control Plane API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=crowe-ide
+WorkingDirectory=/opt/crowe-ide
+ExecStart=/opt/crowe-ide/venv/bin/uvicorn control_plane.main:app --host 127.0.0.1 --port 8001 --workers 2
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/opt/crowe-ide
+EnvironmentFile=/opt/crowe-ide/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/crowe-ide
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crowe-control-plane
+
+[Install]
+WantedBy=multi-user.target

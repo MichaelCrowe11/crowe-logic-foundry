@@ -11,19 +11,20 @@ High-fidelity terminal rendering with real-time telemetry:
 
 import sys
 import time
-from rich.markdown import Markdown
+import re
 from rich.text import Text
-from rich.panel import Panel
 from rich.live import Live
 from rich.spinner import Spinner
-from rich import box
 
 from cli.branding import (
     DOT,
     GUTTER,
     GOLD_HEX as GOLD,
     GOLD_DIM_HEX as DIM_GOLD,
+    build_reasoning_panel,
+    build_transcript_markdown,
 )
+from cli.session_runtime import update_session_runtime
 
 # Refresh rate for live displays (frames per second).
 #
@@ -38,6 +39,9 @@ _STREAM_FPS = 20
 # can be very long, and 8 FPS feels smooth without burning CPU on
 # re-renders.
 _REASONING_FPS = 8
+_COMPACT_REASONING_LABELS = {"CroweLM Apex", "CroweLM Titan"}
+_COMPACT_REASONING_MAX_CHARS = 420
+_COMPACT_REASONING_LIVE_CHARS = 240
 
 
 def _format_duration(ms: float) -> str:
@@ -88,6 +92,8 @@ class StreamRenderer:
         # called, then end_segment() clears the buffer for the next round.
         self._text_chunks: list[str] = []
         self._reasoning_chunks: list[str] = []
+        self._full_text_chunks: list[str] = []
+        self._full_reasoning_chunks: list[str] = []
         self._token_count = 0
         self._reasoning_token_count = 0
         # Throttles for the Live widgets. Rich's Live throttles redraw at
@@ -107,6 +113,7 @@ class StreamRenderer:
 
         self._streaming = False
         self._header_shown = False
+        self._compact_reasoning = model_label in _COMPACT_REASONING_LABELS
 
         self._t_start = 0.0
         self._t_first_token = 0.0
@@ -162,11 +169,16 @@ class StreamRenderer:
         self._text_chunks = []
         self._show_header()
 
+        # Keep the live widget transient so scrollback only contains the
+        # finalized panel, not intermediate redraw frames. During the live
+        # phase we can safely crop to the viewport; _stop_md_live() prints the
+        # full final panel once streaming ends.
         self._md_live = Live(
-            Markdown(""),
+            self._build_answer_panel("", live=True),
             console=self.console,
             refresh_per_second=_STREAM_FPS,
-            vertical_overflow="visible",
+            vertical_overflow="crop",
+            transient=True,
         )
         self._md_live.start()
         self._last_md_update = 0.0
@@ -185,12 +197,13 @@ class StreamRenderer:
         if self._t_first_token == 0.0:
             self._t_first_token = time.monotonic()
         self._text_chunks.append(token)
+        self._full_text_chunks.append(token)
         self._token_count += 1
         if self._md_live is not None:
             now = time.monotonic()
             if now - self._last_md_update >= (1.0 / _STREAM_FPS):
                 self._last_md_update = now
-                self._md_live.update(Markdown("".join(self._text_chunks)))
+                self._md_live.update(self._build_answer_panel("".join(self._text_chunks), live=True))
 
     def feed_reasoning(self, token: str):
         """Append a reasoning/thinking token.
@@ -212,16 +225,21 @@ class StreamRenderer:
         if self._reasoning_live is None and not self._streaming:
             self._stop_spinner()
             self._show_header()
+            # A transient live panel prevents repeated reasoning redraw frames
+            # from being left behind in scrollback. We print one finalized
+            # "captured" panel when the reasoning phase ends.
             self._reasoning_live = Live(
-                self._build_reasoning_panel(""),
+                self._build_reasoning_panel("", live=True),
                 console=self.console,
                 refresh_per_second=_REASONING_FPS,
-                vertical_overflow="visible",
+                vertical_overflow="crop",
+                transient=True,
             )
             self._reasoning_live.start()
             self._last_reason_update = 0.0
 
         self._reasoning_chunks.append(token)
+        self._full_reasoning_chunks.append(token)
         self._reasoning_token_count += 1
 
         if self._reasoning_live is not None:
@@ -229,7 +247,7 @@ class StreamRenderer:
             if now - self._last_reason_update >= (1.0 / _REASONING_FPS):
                 self._last_reason_update = now
                 self._reasoning_live.update(
-                    self._build_reasoning_panel("".join(self._reasoning_chunks))
+                    self._build_reasoning_panel("".join(self._reasoning_chunks), live=True)
                 )
 
     def end_segment(self):
@@ -297,6 +315,15 @@ class StreamRenderer:
             session_state["last_tokens"] = self._token_count
             session_state["last_tps"] = tps
             session_state["total_tokens"] = session_state.get("total_tokens", 0) + self._token_count
+            self._persist_transcript(session_state)
+
+    def abort(self, session_state=None):
+        """Best-effort cleanup when a turn is interrupted mid-stream."""
+        self._t_end = time.monotonic()
+        self.end_segment()
+        self._stop_spinner()
+        if session_state is not None:
+            self._persist_transcript(session_state)
 
     @property
     def current_segment_text(self) -> str:
@@ -320,29 +347,84 @@ class StreamRenderer:
 
     # ── Internal ──────────────────────────────────────────────
 
-    def _build_reasoning_panel(self, text: str) -> Panel:
-        """Build the reasoning panel widget for live updates.
+    def _build_answer_panel(self, text: str, *, live: bool) -> object:
+        """Build the live/final answer renderable."""
+        meta = "streaming" if live else "final"
+        return build_transcript_markdown(self.console, text, title="answer", meta=meta)
 
-        Uses Rich Text (plain prose rendering) rather than Markdown —
-        reasoning is typically internal monologue without tables or code
-        blocks, and Text rendering is an order of magnitude cheaper than
-        Markdown parsing when streaming at high token rates.
-        """
-        body = Text(text, style="dim") if text.strip() else Text("thinking...", style="dim italic")
-        return Panel(
-            body,
-            title="[dim]reasoning[/dim]",
-            border_style="dim #bfa669",
-            box=box.ROUNDED,
-            padding=(0, 1),
-            expand=False,
-        )
+    def _build_reasoning_panel(self, text: str, *, live: bool) -> object:
+        """Build the live/final reasoning renderable."""
+        reasoning_text, meta = self._render_reasoning_text(text, live=live)
+        return build_reasoning_panel(self.console, reasoning_text, live=live, meta=meta)
 
     def _start_spinner(self, label: str):
         self._stop_spinner()
         self._spinner = Spinner("dots", text=f"  [{GOLD}]{label}[/]", style=GOLD)
         self._spin_live = Live(self._spinner, console=self.console, refresh_per_second=12, transient=True)
         self._spin_live.start()
+
+    def _persist_transcript(self, session_state: dict) -> None:
+        """Store the latest answer/reasoning transcript in memory and on disk."""
+        answer_text = "".join(self._full_text_chunks).strip()
+        reasoning_text = "".join(self._full_reasoning_chunks).strip()
+        session_state["last_answer_text"] = answer_text
+        session_state["last_reasoning_text"] = reasoning_text
+        session_state["active_model"] = self.model_label
+        session_id = session_state.get("session_id", "")
+        if session_id:
+            update_session_runtime(
+                session_id,
+                last_answer_text=answer_text,
+                last_reasoning_text=reasoning_text,
+                last_model=self.model_label,
+            )
+
+    @staticmethod
+    def _normalize_reasoning_text(text: str) -> str:
+        """Normalize streamed reasoning into readable plain-text summary prose."""
+        text = text.replace("\r\n", "\n")
+        text = re.sub(r"\*\*([^*\n]+)\*\*", r"\1", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    @classmethod
+    def _compact_reasoning_text(cls, text: str, *, live: bool) -> str:
+        """Collapse verbose reasoning into a short summary snippet."""
+        normalized = cls._normalize_reasoning_text(text)
+        if not normalized:
+            return ""
+
+        limit = _COMPACT_REASONING_LIVE_CHARS if live else _COMPACT_REASONING_MAX_CHARS
+        if len(normalized) <= limit:
+            return normalized
+
+        sentences = re.split(r"(?<=[.!?])\s+", normalized)
+        compact: list[str] = []
+        total = 0
+        for sentence in sentences:
+            if not sentence:
+                continue
+            next_total = total + len(sentence) + (1 if compact else 0)
+            if compact and next_total > limit:
+                break
+            compact.append(sentence)
+            total = next_total
+            if total >= limit:
+                break
+
+        if not compact:
+            return normalized[: limit - 1].rstrip() + "…"
+
+        compact_text = " ".join(compact).strip()
+        if len(compact_text) < len(normalized):
+            compact_text = compact_text.rstrip(". ") + "…"
+        return compact_text
+
+    def _render_reasoning_text(self, text: str, *, live: bool) -> tuple[str, str]:
+        """Select full vs compact reasoning text and panel metadata."""
+        if not self._compact_reasoning:
+            return text, "live" if live else "captured"
+        return self._compact_reasoning_text(text, live=live), "live" if live else "summary"
 
     def _stop_spinner(self):
         if self._spin_live:
@@ -353,17 +435,17 @@ class StreamRenderer:
     def _stop_md_live(self):
         """Stop the markdown Live and clear the segment buffer.
 
-        Does one final update with the completed text so scrollback captures
-        the full segment, then tears down the Live widget and resets state
-        so the next segment starts fresh. Callers must read
-        current_segment_text BEFORE calling this.
+        Tears down the transient live widget, then prints one finalized panel
+        so scrollback contains a single stable transcript block instead of a
+        series of redraw frames. Callers must read current_segment_text BEFORE
+        calling this.
         """
         if self._md_live:
             full = "".join(self._text_chunks)
-            if full.strip():
-                self._md_live.update(Markdown(full))
             self._md_live.stop()
             self._md_live = None
+            if full.strip():
+                self.console.print(self._build_answer_panel(full, live=False))
         # Reset unconditionally so _streaming and _text_chunks stay in sync
         # with the widget state even across idempotent calls.
         self._text_chunks = []
@@ -372,18 +454,18 @@ class StreamRenderer:
     def _stop_reasoning_live(self):
         """Stop the live reasoning panel if active.
 
-        Only clears _reasoning_chunks when a live panel WAS active — the
-        reasoning was already shown to the user on screen, so the chunks
-        are not needed. When no live panel was active (reasoning arrived
-        after content streaming), chunks are left in place for
-        _flush_pending_reasoning() to render inline.
+        When a transient live panel was active, print one finalized reasoning
+        panel after stopping it so scrollback captures a single stable block.
+        When no live panel was active (reasoning arrived after content
+        streaming), chunks are left in place for _flush_pending_reasoning() to
+        render inline.
         """
         if self._reasoning_live:
             full = "".join(self._reasoning_chunks).strip()
-            if full:
-                self._reasoning_live.update(self._build_reasoning_panel(full))
             self._reasoning_live.stop()
             self._reasoning_live = None
+            if full:
+                self.console.print(self._build_reasoning_panel(full, live=False))
             self._reasoning_chunks = []
             self._last_reason_update = 0.0
 
@@ -403,4 +485,4 @@ class StreamRenderer:
         if not text:
             return
         self.console.print()
-        self.console.print(self._build_reasoning_panel(text))
+        self.console.print(self._build_reasoning_panel(text, live=False))

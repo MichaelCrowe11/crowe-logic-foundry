@@ -1,5 +1,5 @@
 """
 Crowe Logic — Multi-Provider Model Backend
 
-Supports Azure AI Agent Service and OpenAI-compatible providers (OpenRouter, etc).
+Supports Azure AI Agent Service plus self-hosted and hosted OpenAI-compatible providers.
 """

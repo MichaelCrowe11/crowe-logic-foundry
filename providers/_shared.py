@@ -20,6 +20,16 @@ import inspect
 # all four providers share one cached schema list, even when the user
 # switches models mid-session.
 _TOOL_CACHE: dict[int, tuple[list[dict], dict]] = {}
+SOFT_TOOL_BUDGET_ROUND: int = 6
+_RESEARCH_LOOP_TOOLS = frozenset({
+    "web_search",
+    "browse_url",
+    "browser_navigate",
+    "browser_click",
+    "browser_type_text",
+    "browser_snapshot",
+    "browser_screenshot",
+})
 
 
 def build_tool_schemas(user_functions) -> list[dict]:
@@ -90,6 +100,180 @@ def load_tools() -> tuple[list[dict], dict]:
     return _TOOL_CACHE[key]
 
 
+def should_send_tool_budget_warning(rounds_used: int, tool_names: list[str], warning_sent: bool) -> bool:
+    """Return True when the model appears stuck in repetitive web research."""
+    if warning_sent or rounds_used < SOFT_TOOL_BUDGET_ROUND:
+        return False
+    normalized = {
+        (name or "").strip()
+        for name in tool_names
+        if (name or "").strip()
+    }
+    return bool(normalized) and normalized.issubset(_RESEARCH_LOOP_TOOLS)
+
+
+def build_tool_budget_warning(rounds_used: int, max_rounds: int) -> str:
+    """Prompt the model to stop broad browsing before it burns the full budget."""
+    return (
+        f"You have already used {rounds_used} of {max_rounds} tool rounds. "
+        "Stop broad searching or repeated browsing. "
+        "If you can answer with the information already gathered, answer now. "
+        "If one fact is still missing, make at most one more tightly targeted tool call. "
+        "If more than one additional call would be needed, ask the user for the exact missing "
+        "address, document, case number, or name instead of continuing to search."
+    )
+
+
+def build_forced_final_answer_prompt(max_rounds: int) -> str:
+    """Prompt used when the hard tool budget is exhausted."""
+    return (
+        f"Tool budget exhausted after {max_rounds} tool rounds. "
+        "Do not call any more tools. "
+        "Using only the information already gathered in this conversation, provide the best final answer now. "
+        "State any uncertainty clearly and list the exact missing facts or documents the user should provide next."
+    )
+
+
+class _InlineReasoningSplitter:
+    """Split inline ``<think>…</think>`` blocks out of a streamed content channel.
+
+    Nemotron (NVIDIA NIM), Qwen3 *thinking* variants, GPT-OSS, and several other
+    open reasoning models emit chain-of-thought tokens inline in ``delta.content``
+    wrapped in ``<think>…</think>`` rather than on a dedicated ``reasoning_content``
+    field. Without separation those tokens leak into the rendered final answer.
+    This splitter buffers just enough bytes to classify partial tags across chunk
+    boundaries and yields ``(kind, text)`` pairs where ``kind`` is ``"content"``
+    or ``"reasoning"``.
+    """
+
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self.in_think = False
+        self._buf = ""
+
+    def feed(self, chunk: str) -> list[tuple[str, str]]:
+        self._buf += chunk
+        out: list[tuple[str, str]] = []
+        while self._buf:
+            if self.in_think:
+                i = self._buf.find(self.CLOSE)
+                if i == -1:
+                    # Keep the tail that might be the start of CLOSE.
+                    safe = max(0, len(self._buf) - (len(self.CLOSE) - 1))
+                    if safe:
+                        out.append(("reasoning", self._buf[:safe]))
+                        self._buf = self._buf[safe:]
+                    break
+                if i:
+                    out.append(("reasoning", self._buf[:i]))
+                self._buf = self._buf[i + len(self.CLOSE):]
+                self.in_think = False
+            else:
+                i = self._buf.find(self.OPEN)
+                if i == -1:
+                    safe = max(0, len(self._buf) - (len(self.OPEN) - 1))
+                    if safe:
+                        out.append(("content", self._buf[:safe]))
+                        self._buf = self._buf[safe:]
+                    break
+                if i:
+                    out.append(("content", self._buf[:i]))
+                self._buf = self._buf[i + len(self.OPEN):]
+                self.in_think = True
+        return out
+
+    def flush(self) -> list[tuple[str, str]]:
+        if not self._buf:
+            return []
+        kind = "reasoning" if self.in_think else "content"
+        text, self._buf = self._buf, ""
+        return [(kind, text)]
+
+
+def _dispatch_content(renderer, splitter: _InlineReasoningSplitter, text: str) -> None:
+    """Route a streamed content chunk to ``feed`` / ``feed_reasoning`` via the splitter."""
+    for kind, piece in splitter.feed(text):
+        if not piece:
+            continue
+        if kind == "reasoning":
+            renderer.feed_reasoning(piece)
+        else:
+            renderer.feed(piece)
+
+
+def _flush_content(renderer, splitter: _InlineReasoningSplitter) -> None:
+    for kind, piece in splitter.flush():
+        if not piece:
+            continue
+        if kind == "reasoning":
+            renderer.feed_reasoning(piece)
+        else:
+            renderer.feed(piece)
+
+
+# Phrases that indicate the model announced a next action without executing it.
+# When an assistant turn ends with one of these (and no tool_calls), the runtime
+# auto-continues instead of handing control back to the user.
+_ACTION_INTENT_PATTERNS = (
+    "let me ",
+    "let's ",
+    "i'll ",
+    "i will ",
+    "i am going to ",
+    "i'm going to ",
+    "i'm about to ",
+    "i am about to ",
+    "now i'll",
+    "now i will",
+    "now let",
+    "next, i",
+    "next i'll",
+    "next i will",
+    "first, i",
+    "first i'll",
+    "starting with",
+    "i'll start",
+    "let me start",
+    "proceeding to",
+    "moving on to",
+    "i'll now",
+    "going to ",
+)
+
+
+def looks_like_stalled_announcement(text: str) -> bool:
+    """Return True when the assistant message announces intent but took no action.
+
+    The model emitted a natural-language statement like "Let me take a snapshot..."
+    and then stopped without calling the tool. We want to silently re-invoke so the
+    user doesn't have to type "continue".
+    """
+    if not text:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    # Very short "…" / ":" tails almost always signal a pending action.
+    tail = stripped[-3:]
+    if tail.endswith(":") or tail.endswith("..."):
+        return True
+    # Scan the last ~400 chars for an action-intent phrase.
+    window = stripped[-400:].lower()
+    return any(p in window for p in _ACTION_INTENT_PATTERNS)
+
+
+# Synthetic nudge appended to message history when auto-continuing. Kept short
+# so it doesn't bias the model's next output, and framed as a system reminder
+# rather than a user turn so the transcript reads cleanly.
+AUTO_CONTINUE_NUDGE = (
+    "(auto-continue) Execute the action you just described. "
+    "Call the tool now, or if no tool is needed, produce the final answer. "
+    "Do not narrate intent again."
+)
+
+
 class BaseOpenAIProvider:
     """Base class for any provider that speaks OpenAI Chat Completions.
 
@@ -103,37 +287,122 @@ class BaseOpenAIProvider:
     """
 
     SUPPORTS_REASONING: bool = True
-    MAX_ROUNDS: int = 10
+    MAX_ROUNDS: int = 20
 
     def __init__(self, model: str, system_instructions: str, label: str = "CroweLM"):
         self.model = model
         self.label = label
         self.system_instructions = system_instructions
         self.messages = [{"role": "system", "content": system_instructions}]
+        self._tool_call_seq = 0
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
 
-    def stream_response(
-        self,
-        console,
-        render_tool_card,
-        session_state,
-        _get_orchestrator,
-        renderer=None,
-    ):
+    def set_system_instructions(self, system_instructions: str) -> None:
+        """Update the active system prompt for cached provider instances."""
+        self.system_instructions = system_instructions
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0]["content"] = system_instructions
+
+    def _next_tool_call_id(self) -> str:
+        """Generate backend-safe tool_call_ids for local message history.
+
+        Some OpenAI-compatible backends emit blank or backend-specific ids during
+        streamed tool calls. We control the assistant/tool message history we send
+        back on the next round, so we synthesize compact alphanumeric ids and keep
+        them consistent within the local transcript.
+        """
+        self._tool_call_seq += 1
+        return f"tc{self._tool_call_seq:07d}"
+
+    def _force_final_response(self, renderer, session_state, full_response: str) -> str:
+        """Run one no-tools pass so the turn can finish gracefully at the budget cap."""
+        self.messages.append({
+            "role": "user",
+            "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+        })
+
+        try:
+            renderer.set_spinner("finalizing answer...")
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.messages,
+                stream=True,
+            )
+
+            splitter = _InlineReasoningSplitter()
+            for chunk in stream:
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if not delta:
+                    continue
+
+                if self.SUPPORTS_REASONING:
+                    reasoning = (
+                        getattr(delta, "reasoning", None)
+                        or getattr(delta, "reasoning_content", None)
+                    )
+                    if reasoning:
+                        renderer.feed_reasoning(reasoning)
+
+                if delta.content:
+                    _dispatch_content(renderer, splitter, delta.content)
+
+                finish = chunk.choices[0].finish_reason if chunk.choices else None
+                if finish in ("stop", "tool_calls"):
+                    _flush_content(renderer, splitter)
+                    break
+        except KeyboardInterrupt:
+            if hasattr(renderer, "abort"):
+                renderer.abort(session_state=session_state)
+            else:
+                renderer.stop_spinner()
+            raise
+        except Exception:
+            if hasattr(renderer, "abort"):
+                renderer.abort(session_state=session_state)
+            else:
+                renderer.stop_spinner()
+            raise
+
+        renderer.stop_spinner()
+        response_text = renderer.current_segment_text
+        if not response_text.strip():
+            raise RuntimeError(
+                f"{self.label} exceeded {self.MAX_ROUNDS} tool rounds and did not produce a forced final response."
+            )
+
+        full_response += response_text
+        self.messages.append({"role": "assistant", "content": response_text})
+        renderer.finish(session_state=session_state)
+        return full_response
+
+    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
+                        renderer=None):
         """Stream a response with the tool-calling loop.
 
         Drop-in compatible across all OpenAI-compatible providers.
+
+        ``renderer`` is optional; when omitted (the default for the
+        terminal CLI) a Rich-based ``StreamRenderer`` is constructed
+        from ``console`` and the favicon in ``session_state``. Headless
+        callers (the VS Code extension's stdio bridge, future HTTP
+        servers, tests) pass their own renderer that conforms to the
+        same interface (``start``, ``set_spinner``, ``stop_spinner``,
+        ``feed``, ``feed_reasoning``, ``end_segment``, ``finish``,
+        ``current_segment_text``).
         """
         tool_schemas, tool_map = load_tools()
+
         if renderer is None:
             from cli.renderer import StreamRenderer
-
             favicon = session_state.get("favicon", "")
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
         full_response = ""
+        budget_warning_sent = False
+        auto_continues_used = 0
+        MAX_AUTO_CONTINUES = 2
 
         for _round in range(self.MAX_ROUNDS):
             tool_calls_accumulator: dict[int, dict] = {}
@@ -154,6 +423,7 @@ class BaseOpenAIProvider:
 
                 stream = self.client.chat.completions.create(**create_kwargs)
 
+                splitter = _InlineReasoningSplitter()
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if not delta:
@@ -171,19 +441,20 @@ class BaseOpenAIProvider:
                             renderer.feed_reasoning(reasoning)
 
                     if delta.content:
-                        renderer.feed(delta.content)
+                        _dispatch_content(renderer, splitter, delta.content)
 
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
                             idx = tc.index
                             if idx not in tool_calls_accumulator:
                                 tool_calls_accumulator[idx] = {
-                                    "id": tc.id or "",
+                                    "id": self._next_tool_call_id(),
+                                    "raw_id": tc.id or "",
                                     "name": tc.function.name if tc.function and tc.function.name else "",
                                     "arguments": "",
                                 }
                             if tc.id:
-                                tool_calls_accumulator[idx]["id"] = tc.id
+                                tool_calls_accumulator[idx]["raw_id"] = tc.id
                             if tc.function:
                                 if tc.function.name:
                                     tool_calls_accumulator[idx]["name"] = tc.function.name
@@ -192,10 +463,20 @@ class BaseOpenAIProvider:
 
                     finish = chunk.choices[0].finish_reason if chunk.choices else None
                     if finish in ("stop", "tool_calls"):
+                        _flush_content(renderer, splitter)
                         break
 
+            except KeyboardInterrupt:
+                if hasattr(renderer, "abort"):
+                    renderer.abort(session_state=session_state)
+                else:
+                    renderer.stop_spinner()
+                raise
             except Exception:
-                renderer.stop_spinner()
+                if hasattr(renderer, "abort"):
+                    renderer.abort(session_state=session_state)
+                else:
+                    renderer.stop_spinner()
                 raise
 
             # Capture THIS round's content only — current_segment_text reads
@@ -208,6 +489,21 @@ class BaseOpenAIProvider:
                 full_response += response_text
 
             if not tool_calls_accumulator:
+                if (
+                    auto_continues_used < MAX_AUTO_CONTINUES
+                    and looks_like_stalled_announcement(response_text)
+                ):
+                    # The model announced a next action but never emitted a
+                    # tool_call — silently re-invoke instead of handing control
+                    # back to the user. The announcement still counts as an
+                    # assistant turn so the model can see its own statement.
+                    self.messages.append({"role": "assistant", "content": response_text})
+                    self.messages.append({"role": "user", "content": AUTO_CONTINUE_NUDGE})
+                    auto_continues_used += 1
+                    renderer.end_segment()
+                    renderer.stop_spinner()
+                    continue
+
                 renderer.finish(session_state=session_state)
                 self.messages.append({"role": "assistant", "content": response_text})
                 break
@@ -224,18 +520,22 @@ class BaseOpenAIProvider:
                 "content": response_text or None,
                 "tool_calls": [],
             }
+            round_tool_names: list[str] = []
             for idx in ordered_indices:
                 tc = tool_calls_accumulator[idx]
+                name = (tc["name"] or "").strip() or "invalid_tool_call"
+                round_tool_names.append(name)
                 assistant_msg["tool_calls"].append({
                     "id": tc["id"],
                     "type": "function",
-                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                    "function": {"name": name, "arguments": tc["arguments"]},
                 })
             self.messages.append(assistant_msg)
 
             for idx in ordered_indices:
                 tc = tool_calls_accumulator[idx]
-                name = tc["name"]
+                raw_name = (tc["name"] or "").strip()
+                name = raw_name or "invalid_tool_call"
                 args_json = tc["arguments"]
 
                 renderer.set_spinner(f"running {name}...")
@@ -243,7 +543,13 @@ class BaseOpenAIProvider:
 
                 func = tool_map.get(name)
                 failed = False
-                if func:
+                if not raw_name:
+                    result_str = json.dumps({
+                        "error": "Model emitted a tool call without a function name.",
+                        "raw_arguments": args_json[:2000],
+                    })
+                    failed = True
+                elif func:
                     try:
                         args = json.loads(args_json) if args_json else {}
                         result = func(**args)
@@ -265,6 +571,15 @@ class BaseOpenAIProvider:
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
+                from cli.branding import record_action
+                record_action(
+                    session_state,
+                    name=name,
+                    status="fail" if failed else "ok",
+                    result=result_str,
+                    duration_ms=duration_ms,
+                    args=args_json,
+                )
 
                 _get_orchestrator().record_execution(
                     tool_name=name,
@@ -279,6 +594,17 @@ class BaseOpenAIProvider:
                     "content": result_str[:50000],
                 })
 
+            if should_send_tool_budget_warning(_round + 1, round_tool_names, budget_warning_sent):
+                self.messages.append({
+                    "role": "user",
+                    "content": build_tool_budget_warning(_round + 1, self.MAX_ROUNDS),
+                })
+                budget_warning_sent = True
+        else:
+            return self._force_final_response(renderer, session_state, full_response)
+
+        # Headless callers pass console=None — only the Rich CLI needs
+        # this trailing newline to flush its prompt back into place.
         if console is not None:
             console.print()
         return full_response

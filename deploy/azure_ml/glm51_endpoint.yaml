@@ -1,0 +1,26 @@
+# Azure ML Managed Online Endpoint — CroweLM Dense (GLM 5.1)
+#
+# Creates a managed online endpoint that serves THUDM/GLM-5.1 via vLLM
+# with an OpenAI-compatible /v1/chat/completions API.
+#
+# Deploy via:
+#   python scripts/deploy_glm51.py
+#
+# Or directly via Azure CLI:
+#   az ml online-endpoint create \
+#     --file deploy/azure_ml/glm51_endpoint.yaml \
+#     --resource-group <rg> --workspace-name <ws>
+
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+
+name: crowelm-dense-glm51
+description: >
+  CroweLM Dense — GLM 5.1 (THUDM/GLM-5.1) served via vLLM.
+  Exposes an OpenAI-compatible /v1/chat/completions API.
+
+auth_mode: key
+
+tags:
+  crowe_logic_tier: dense
+  base_model: THUDM/GLM-5.1
+  serving: vllm

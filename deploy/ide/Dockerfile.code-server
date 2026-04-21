@@ -1,9 +1,34 @@
 # deploy/ide/Dockerfile.code-server
+#
+# Multi-stage build:
+#   1. extension-builder — Node image, builds the Crowe Logic VSIX from
+#      deploy/ide/extensions/crowe-logic. Heavy npm/typescript deps stay
+#      in this stage and never reach the runtime image.
+#   2. runtime — code-server with Python venv, Foundry deps, the prebuilt
+#      VSIX installed locally, and product.json overrides applied so the
+#      Crowe Logic chat participant takes the default chat slot.
+
+# ── Stage 1: build the VS Code extension ──────────────────────────────
+FROM node:20-bookworm-slim AS extension-builder
+
+WORKDIR /build
+COPY extensions/crowe-logic/ /build/
+
+# Install deps + compile + package. --no-dependencies tells vsce we
+# only ship the prebuilt out/ directory and static assets — the npm
+# tree is build-time only.
+RUN npm install --no-audit --no-fund \
+ && npx tsc -p ./ \
+ && npx vsce package --no-dependencies --out /build/crowe-logic.vsix
+
+
+# ── Stage 2: code-server runtime ──────────────────────────────────────
 FROM codercom/code-server:latest
 
 USER root
 
-# System dependencies for crowe-logic-foundry
+# System dependencies for crowe-logic-foundry. Python is reused for
+# the product.json merge in apply-product-overrides.sh — no jq needed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -22,20 +47,65 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
-# Install VS Code extensions
+# Install Jupyter for notebook support (Lab tier and above)
+RUN pip install --no-cache-dir \
+    jupyterlab>=4.2.0 \
+    ipykernel>=6.29.0 \
+    nbformat>=5.10.0 \
+    && /opt/venv/bin/python3 -m ipykernel install --name crowe-foundry --display-name "Crowe Foundry (Python)"
+
+# Stage the extension files we'll install as the coder user. We must
+# install extensions as `coder` (not root): code-server stores them
+# under $HOME/.local/share/code-server/extensions, so installing as
+# root puts them in /root/.local/... where the runtime user can't
+# see them (extension list comes back empty, chat participant never
+# loads). The fix is to set up /home/coder/.local up front, copy the
+# VSIX in, then switch user.
 COPY extensions.txt /tmp/extensions.txt
+COPY --from=extension-builder /build/crowe-logic.vsix /tmp/crowe-logic.vsix
+RUN mkdir -p /home/coder/.local/share/code-server/User \
+ && chown -R coder:coder /home/coder/.local \
+ && chown coder:coder /tmp/extensions.txt /tmp/crowe-logic.vsix
+
+# Apply product.json overrides while we still have root. The merged
+# file is chmod/chown'd to match the .orig in the script, so the
+# coder user can read it after this RUN exits.
+COPY product-overrides.json /tmp/product-overrides.json
+COPY scripts/apply-product-overrides.sh /usr/local/bin/apply-product-overrides.sh
+RUN chmod +x /usr/local/bin/apply-product-overrides.sh \
+ && OVERRIDES=/tmp/product-overrides.json apply-product-overrides.sh \
+ && rm /tmp/product-overrides.json
+
+# Default VS Code settings (must be in place before code-server boots,
+# but ownership is set above so coder owns the parent dir).
+COPY --chown=coder:coder settings.json /home/coder/.local/share/code-server/User/settings.json
+
+# Copy sandbox template for first-launch workspace seeding
+COPY --chown=coder:coder sandbox-template/ /opt/sandbox-template/
+
+# Install entrypoint script (needs +x, done as root before user switch)
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Switch to coder for the extension installs so they land under
+# /home/coder/.local/share/code-server/extensions where the runtime
+# code-server process actually looks.
+USER coder
+
 RUN while IFS= read -r ext || [ -n "$ext" ]; do \
       ext=$(echo "$ext" | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//'); \
       [ -z "$ext" ] && continue; \
       code-server --install-extension "$ext" || true; \
-    done < /tmp/extensions.txt && rm /tmp/extensions.txt
-
-# Default VS Code settings
-COPY settings.json /home/coder/.local/share/code-server/User/settings.json
-
-# Fix ownership
-RUN chown -R coder:coder /home/coder/.local
-
-USER coder
+    done < /tmp/extensions.txt \
+ && code-server --install-extension /tmp/crowe-logic.vsix \
+ && rm /tmp/extensions.txt /tmp/crowe-logic.vsix
 
 WORKDIR /workspace
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
+  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1
+
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["--bind-addr=0.0.0.0:8080", "--auth=none", "--disable-telemetry"]

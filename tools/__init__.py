@@ -31,6 +31,13 @@ from tools.talon_music import (
     talon_list_grooves, talon_list_emotions,
 )
 
+# Substrate Album Engine
+from tools.substrate import (
+    substrate_list_tracks, substrate_render_track, substrate_render_album,
+    substrate_render_status, substrate_vocal_status, substrate_mix_vocals,
+    substrate_open_track, substrate_dna,
+)
+
 # Quantum computing
 from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline
 
@@ -50,6 +57,17 @@ from tools.crowelm import (
 from tools.audit_log import crowelm_audit_log
 from tools.staging_pipeline import crowelm_list_staging, crowelm_promote_approved
 from tools.agent_runner import crowelm_run_agent
+
+# Arizona public records
+from tools.public_records import (
+    maricopa_assessor_search_property,
+    maricopa_assessor_search_rental,
+    maricopa_assessor_get_parcel_details,
+    maricopa_recorder_document_url,
+    adre_entity_license_search,
+    adre_entity_license_details,
+    arizona_apartment_public_records_lookup,
+)
 
 # Crowe Logic platform
 from tools.crowe_logic_ai import crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop
@@ -91,6 +109,10 @@ user_functions = {
     talon_quantum_melody, talon_quantum_chord, talon_compose_emotion,
     talon_full_composition, talon_import_midi, talon_analyze,
     talon_list_grooves, talon_list_emotions,
+    # Substrate Album
+    substrate_list_tracks, substrate_render_track, substrate_render_album,
+    substrate_render_status, substrate_vocal_status, substrate_mix_vocals,
+    substrate_open_track, substrate_dna,
     # Quantum
     run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline,
     # Vision
@@ -104,6 +126,11 @@ user_functions = {
     crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
     # CroweLM pipeline infrastructure
     crowelm_audit_log, crowelm_list_staging, crowelm_promote_approved, crowelm_run_agent,
+    # Arizona public records
+    maricopa_assessor_search_property, maricopa_assessor_search_rental,
+    maricopa_assessor_get_parcel_details, maricopa_recorder_document_url,
+    adre_entity_license_search, adre_entity_license_details,
+    arizona_apartment_public_records_lookup,
     # Crowe Logic platform
     crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop,
     # MCP ecosystem

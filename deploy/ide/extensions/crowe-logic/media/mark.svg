@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Crowe Logic activity-bar glyph: stylized C with an inset spark.
+       currentColor lets VS Code tint it via theme tokens, matching the
+       behavior of built-in codicons. -->
+  <path d="M19 6.5A8 8 0 1 0 19 17.5"/>
+  <circle cx="12.5" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+  <path d="M12.5 8.6 V10.6 M12.5 13.4 V15.4 M9 12 H10.6 M14.4 12 H16"/>
+</svg>

@@ -1,0 +1,333 @@
+# deploy/open_inference/docker-compose.yml
+#
+# CroweLM open-source-first inference stack:
+# - LiteLLM router exposes one OpenAI-compatible /v1 endpoint
+# - Optional local vLLM workers can run here if the host has enough NVIDIA GPUs
+# - External dedicated GPU workers can be used instead by pointing the .env
+#   API_BASE variables at their endpoints
+#
+# Production guidance:
+# - Use LiteLLM as the public router
+# - Run large models on dedicated GPU hosts
+# - Do not use Ollama for frontier production workloads; keep it for dev only
+
+x-vllm-common: &vllm-common
+  image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+  restart: unless-stopped
+  ipc: host
+  shm_size: "16gb"
+  environment:
+    HF_TOKEN: ${HF_TOKEN:-}
+    HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    VLLM_NO_USAGE_STATS: "1"
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+  networks:
+    - crowe-open
+  volumes:
+    - ${CROWE_OPEN_MODEL_CACHE_DIR:-./data/models}:${VLLM_DOWNLOAD_DIR:-/models}
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 10
+    start_period: 120s
+
+services:
+  router:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: crowe-open-router
+    restart: unless-stopped
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "4000"
+    ports:
+      - "${CROWE_OPEN_PORT:-4000}:4000"
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    environment:
+      CROWE_OPEN_PROXY_MASTER_KEY: ${CROWE_OPEN_PROXY_MASTER_KEY:-}
+      CROWE_GLM51_API_BASE: ${CROWE_GLM51_API_BASE:-}
+      CROWE_GLM51_API_KEY: ${CROWE_GLM51_API_KEY:-}
+      CROWE_GLM5_API_BASE: ${CROWE_GLM5_API_BASE:-}
+      CROWE_GLM5_API_KEY: ${CROWE_GLM5_API_KEY:-}
+      CROWE_QWEN35_API_BASE: ${CROWE_QWEN35_API_BASE:-}
+      CROWE_QWEN35_API_KEY: ${CROWE_QWEN35_API_KEY:-}
+      CROWE_DEEPSEEK_R1_API_BASE: ${CROWE_DEEPSEEK_R1_API_BASE:-}
+      CROWE_DEEPSEEK_R1_API_KEY: ${CROWE_DEEPSEEK_R1_API_KEY:-}
+      CROWE_DEEPSEEK_V3_API_BASE: ${CROWE_DEEPSEEK_V3_API_BASE:-}
+      CROWE_DEEPSEEK_V3_API_KEY: ${CROWE_DEEPSEEK_V3_API_KEY:-}
+      CROWE_KIMI_K25_API_BASE: ${CROWE_KIMI_K25_API_BASE:-}
+      CROWE_KIMI_K25_API_KEY: ${CROWE_KIMI_K25_API_KEY:-}
+      CROWE_KIMI_K2_THINKING_API_BASE: ${CROWE_KIMI_K2_THINKING_API_BASE:-}
+      CROWE_KIMI_K2_THINKING_API_KEY: ${CROWE_KIMI_K2_THINKING_API_KEY:-}
+      CROWE_MISTRAL_LARGE_API_BASE: ${CROWE_MISTRAL_LARGE_API_BASE:-}
+      CROWE_MISTRAL_LARGE_API_KEY: ${CROWE_MISTRAL_LARGE_API_KEY:-}
+      CROWE_LLAMA4_MAVERICK_API_BASE: ${CROWE_LLAMA4_MAVERICK_API_BASE:-}
+      CROWE_LLAMA4_MAVERICK_API_KEY: ${CROWE_LLAMA4_MAVERICK_API_KEY:-}
+      CROWE_GEMMA4_API_BASE: ${CROWE_GEMMA4_API_BASE:-}
+      CROWE_GEMMA4_API_KEY: ${CROWE_GEMMA4_API_KEY:-}
+    networks:
+      - crowe-open
+    depends_on:
+      glm51:
+        condition: service_healthy
+        required: false
+      qwen35:
+        condition: service_healthy
+        required: false
+      deepseek-r1:
+        condition: service_healthy
+        required: false
+      deepseek-v3:
+        condition: service_healthy
+        required: false
+      kimi-k25:
+        condition: service_healthy
+        required: false
+      kimi-k2-thinking:
+        condition: service_healthy
+        required: false
+      mistral-large:
+        condition: service_healthy
+        required: false
+      llama4-maverick:
+        condition: service_healthy
+        required: false
+      gemma4:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  glm51:
+    <<: *vllm-common
+    container_name: crowe-open-glm51
+    profiles: ["glm51"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${GLM51_MODEL_ID:-THUDM/GLM-5.1}"
+      - "--served-model-name"
+      - "${GLM51_SERVED_MODEL_NAME:-z-ai/glm5.1}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${GLM51_TENSOR_PARALLEL_SIZE:-4}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  qwen35:
+    <<: *vllm-common
+    container_name: crowe-open-qwen35
+    profiles: ["qwen35"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${QWEN35_MODEL_ID:-Qwen/Qwen3.5-32B-Instruct}"
+      - "--served-model-name"
+      - "${QWEN35_SERVED_MODEL_NAME:-qwen/qwen3.5-397b-a17b}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${QWEN35_TENSOR_PARALLEL_SIZE:-2}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  deepseek-r1:
+    <<: *vllm-common
+    container_name: crowe-open-deepseek-r1
+    profiles: ["deepseek-r1"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${DEEPSEEK_R1_MODEL_ID:-deepseek-ai/DeepSeek-R1}"
+      - "--served-model-name"
+      - "${DEEPSEEK_R1_SERVED_MODEL_NAME:-deepseek-ai/deepseek-r1}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${DEEPSEEK_R1_TENSOR_PARALLEL_SIZE:-4}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  deepseek-v3:
+    <<: *vllm-common
+    container_name: crowe-open-deepseek-v3
+    profiles: ["deepseek-v3"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${DEEPSEEK_V3_MODEL_ID:-deepseek-ai/DeepSeek-V3.2}"
+      - "--served-model-name"
+      - "${DEEPSEEK_V3_SERVED_MODEL_NAME:-deepseek-ai/deepseek-v3.2}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${DEEPSEEK_V3_TENSOR_PARALLEL_SIZE:-4}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  kimi-k25:
+    <<: *vllm-common
+    container_name: crowe-open-kimi-k25
+    profiles: ["kimi-k25"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${KIMI_K25_MODEL_ID:-moonshotai/Kimi-K2.5}"
+      - "--served-model-name"
+      - "${KIMI_K25_SERVED_MODEL_NAME:-moonshotai/kimi-k2.5}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${KIMI_K25_TENSOR_PARALLEL_SIZE:-2}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  kimi-k2-thinking:
+    <<: *vllm-common
+    container_name: crowe-open-kimi-k2-thinking
+    profiles: ["kimi-k2-thinking"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${KIMI_K2_THINKING_MODEL_ID:-moonshotai/Kimi-K2-Thinking}"
+      - "--served-model-name"
+      - "${KIMI_K2_THINKING_SERVED_MODEL_NAME:-moonshotai/kimi-k2-thinking}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${KIMI_K2_THINKING_TENSOR_PARALLEL_SIZE:-2}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  mistral-large:
+    <<: *vllm-common
+    container_name: crowe-open-mistral-large
+    profiles: ["mistral-large"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${MISTRAL_LARGE_MODEL_ID:-mistralai/Mistral-Large-Instruct-2411}"
+      - "--served-model-name"
+      - "${MISTRAL_LARGE_SERVED_MODEL_NAME:-mistralai/mistral-large-3-675b-instruct-2512}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${MISTRAL_LARGE_TENSOR_PARALLEL_SIZE:-2}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  llama4-maverick:
+    <<: *vllm-common
+    container_name: crowe-open-llama4-maverick
+    profiles: ["llama4-maverick"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${LLAMA4_MAVERICK_MODEL_ID:-meta-llama/Llama-4-Maverick-17B-128E-Instruct}"
+      - "--served-model-name"
+      - "${LLAMA4_MAVERICK_SERVED_MODEL_NAME:-meta/llama-4-maverick-17b-128e-instruct}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${LLAMA4_MAVERICK_TENSOR_PARALLEL_SIZE:-2}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  gemma4:
+    <<: *vllm-common
+    container_name: crowe-open-gemma4
+    profiles: ["gemma4"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--model"
+      - "${GEMMA4_MODEL_ID:-google/gemma-4-27b-it}"
+      - "--served-model-name"
+      - "${GEMMA4_SERVED_MODEL_NAME:-google/gemma-4-27b-it}"
+      - "--trust-remote-code"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-32768}"
+      - "--tensor-parallel-size"
+      - "${GEMMA4_TENSOR_PARALLEL_SIZE:-1}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      - "--dtype"
+      - "${VLLM_DTYPE:-bfloat16}"
+
+  ollama-dev:
+    image: ollama/ollama:latest
+    container_name: crowe-open-ollama-dev
+    restart: unless-stopped
+    profiles: ["ollama-dev"]
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: "30m"
+    networks:
+      - crowe-open
+    volumes:
+      - ${CROWE_OPEN_OLLAMA_DIR:-./data/ollama}:/root/.ollama
+
+networks:
+  crowe-open:
+    driver: bridge

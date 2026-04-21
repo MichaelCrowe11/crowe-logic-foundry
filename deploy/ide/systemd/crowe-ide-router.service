@@ -12,10 +12,7 @@ ExecStart=/usr/bin/node /opt/crowe-ide/session-router/index.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
-# Load IDE_JWT_SECRET, PORT, COOKIE_DOMAIN, etc. The router's index.js
-# does `try { require('dotenv').config(); } catch {}` but `dotenv` is not
-# in package.json, so the catch swallows it and env vars never load.
-# Using systemd's EnvironmentFile= avoids the missing-dep dance entirely.
+# Load IDE_JWT_SECRET, PORT, COOKIE_DOMAIN, CONTROL_PLANE_URL, etc.
 EnvironmentFile=/opt/crowe-ide/session-router/.env
 
 # Security hardening

@@ -7,88 +7,31 @@ and project knowledge. Portable across machines via ~/.crowe-logic/memory.db.
 
 import os
 import sqlite3
+import re
 import uuid
 from datetime import datetime, timezone
 
 
-_MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migrations")
-_REQUIRED_TABLES = {
-    "sessions",
-    "pipeline_runs",
-    "tool_executions",
-    "agent_delegations",
-    "project_knowledge",
-    "checkpoints",
-}
-_INITIAL_SCHEMA = """
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    thread_id TEXT NOT NULL,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP,
-    summary TEXT,
-    project_context TEXT
-);
-
-CREATE TABLE IF NOT EXISTS pipeline_runs (
-    id TEXT PRIMARY KEY,
-    session_id TEXT REFERENCES sessions(id),
-    pipeline_name TEXT NOT NULL,
-    steps TEXT NOT NULL,
-    status TEXT DEFAULT 'running',
-    duration_ms INTEGER,
-    result TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS tool_executions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT REFERENCES sessions(id),
-    pipeline_run_id TEXT REFERENCES pipeline_runs(id),
-    tool_name TEXT NOT NULL,
-    arguments TEXT,
-    output TEXT,
-    duration_ms INTEGER,
-    status TEXT DEFAULT 'success',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS agent_delegations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT REFERENCES sessions(id),
-    agent_name TEXT NOT NULL,
-    task TEXT NOT NULL,
-    result TEXT,
-    duration_ms INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS project_knowledge (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    source TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS checkpoints (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pipeline_run_id TEXT REFERENCES pipeline_runs(id),
-    step_index INTEGER NOT NULL,
-    state_snapshot TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
+_MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "migrations")
+_SQLITE_INCOMPATIBLE_PATTERNS = (
+    re.compile(r"\bTIMESTAMPTZ\b", re.IGNORECASE),
+    re.compile(r"\bJSONB\b", re.IGNORECASE),
+    re.compile(r"\bBIGSERIAL\b", re.IGNORECASE),
+    re.compile(r"\bCREATE\s+EXTENSION\b", re.IGNORECASE),
+    re.compile(r"\bCREATE\s+OR\s+REPLACE\s+VIEW\b", re.IGNORECASE),
+    re.compile(r"\bgen_random_uuid\s*\(", re.IGNORECASE),
+    re.compile(r"\bdate_trunc\s*\(", re.IGNORECASE),
+    re.compile(r"\bUSING\s+hnsw\b", re.IGNORECASE),
+    re.compile(r"\bTEXT\[\]", re.IGNORECASE),
+    re.compile(r"::[A-Za-z_][A-Za-z0-9_]*"),
+    re.compile(r"\bvector\s*\(", re.IGNORECASE),
+)
 
 
 class MemoryStore:
     def __init__(self, db_path: str = "~/.crowe-logic/memory.db"):
         self.db_path = os.path.expanduser(db_path)
-        try:
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        except PermissionError:
-            # Fall back to a temp database if home dir is not writable
-            import tempfile
-            self.db_path = os.path.join(tempfile.gettempdir(), "crowe-logic-memory.db")
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
@@ -98,36 +41,18 @@ class MemoryStore:
     def _run_migrations(self):
         self.conn.execute("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP)")
         applied = {row[0] for row in self.conn.execute("SELECT name FROM _migrations").fetchall()}
-        migration_files = []
-        if os.path.isdir(_MIGRATIONS_DIR):
-            migration_files = [
-                filename for filename in sorted(os.listdir(_MIGRATIONS_DIR))
-                if filename.endswith(".sql")
-            ]
-
-        for filename in migration_files:
+        if not os.path.isdir(_MIGRATIONS_DIR):
+            return
+        for filename in sorted(os.listdir(_MIGRATIONS_DIR)):
             if filename.endswith(".sql") and filename not in applied:
                 path = os.path.join(_MIGRATIONS_DIR, filename)
-                with open(path, encoding="utf-8") as f:
-                    self.conn.executescript(f.read())
+                with open(path) as f:
+                    sql = f.read()
+                if not _is_sqlite_compatible(sql):
+                    continue
+                self.conn.executescript(sql)
                 self.conn.execute("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", (filename, _now()))
                 self.conn.commit()
-
-        missing_tables = _REQUIRED_TABLES.difference(self._get_tables())
-        if missing_tables:
-            # Fallback for broken package builds that omitted SQL migration assets.
-            self.conn.executescript(_INITIAL_SCHEMA)
-            self.conn.execute(
-                "INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)",
-                ("embedded_initial_schema", _now()),
-            )
-            self.conn.commit()
-
-        missing_tables = _REQUIRED_TABLES.difference(self._get_tables())
-        if missing_tables:
-            raise RuntimeError(
-                f"Missing required Crowe-Synapse tables after migration: {sorted(missing_tables)}"
-            )
 
     def _get_tables(self) -> list[str]:
         rows = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -257,3 +182,10 @@ class MemoryStore:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_sqlite_compatible(sql: str) -> bool:
+    sql_without_line_comments = "\n".join(
+        line for line in sql.splitlines() if not line.lstrip().startswith("--")
+    )
+    return not any(pattern.search(sql_without_line_comments) for pattern in _SQLITE_INCOMPATIBLE_PATTERNS)

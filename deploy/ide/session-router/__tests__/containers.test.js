@@ -1,5 +1,8 @@
 const { createContainerManager } = require('../containers');
 
+// No-op ready check for tests (no real HTTP server to poll)
+const noopReady = async () => {};
+
 function createMockDocker() {
   const containers = new Map();
   const containerHandles = new Map();
@@ -82,7 +85,7 @@ function createMockDocker() {
 describe('getOrCreateContainer', () => {
   test('creates a new admin container when none exists', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const result = await mgr.getOrCreateContainer('user-admin', 'admin');
     expect(result.containerId).toBe('container-1');
     expect(result.port).toBeDefined();
@@ -95,7 +98,7 @@ describe('getOrCreateContainer', () => {
 
   test('creates subscriber container with resource limits', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const result = await mgr.getOrCreateContainer('user-sub', 'subscriber');
     expect(result.containerId).toBe('container-1');
     const createOpts = docker.createContainer.mock.calls[0][0];
@@ -106,7 +109,7 @@ describe('getOrCreateContainer', () => {
 
   test('returns existing container if already running', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const first = await mgr.getOrCreateContainer('user-1', 'admin');
     // Simulate the container showing up in list
     docker.listContainers.mockResolvedValueOnce([{
@@ -124,7 +127,7 @@ describe('getOrCreateContainer', () => {
 describe('stopContainer', () => {
   test('stops a running container', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const { containerId } = await mgr.getOrCreateContainer('user-1', 'subscriber');
     await mgr.stopContainer(containerId);
     const mock = docker.getContainer(containerId);
@@ -135,7 +138,7 @@ describe('stopContainer', () => {
 describe('removeContainer', () => {
   test('removes a stopped container', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const { containerId } = await mgr.getOrCreateContainer('user-1', 'subscriber');
     await mgr.removeContainer(containerId);
     const mock = docker.getContainer(containerId);
@@ -146,7 +149,7 @@ describe('removeContainer', () => {
 describe('port allocation', () => {
   test('assigns unique ports to different users', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const a = await mgr.getOrCreateContainer('user-a', 'subscriber');
     const b = await mgr.getOrCreateContainer('user-b', 'subscriber');
     expect(a.port).not.toBe(b.port);
@@ -165,7 +168,7 @@ describe('concurrent creation', () => {
       return realCreate(opts);
     });
 
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const [a, b] = await Promise.all([
       mgr.getOrCreateContainer('race-user', 'subscriber'),
       mgr.getOrCreateContainer('race-user', 'subscriber'),
@@ -177,7 +180,7 @@ describe('concurrent creation', () => {
 
   test('different users still create separate containers in parallel', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     const [a, b] = await Promise.all([
       mgr.getOrCreateContainer('user-a', 'subscriber'),
       mgr.getOrCreateContainer('user-b', 'subscriber'),
@@ -191,7 +194,7 @@ describe('concurrent creation', () => {
 describe('input validation', () => {
   test('throws on invalid userId', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
     await expect(mgr.getOrCreateContainer('', 'admin')).rejects.toThrow('Invalid userId');
     await expect(mgr.getOrCreateContainer(null, 'admin')).rejects.toThrow('Invalid userId');
     await expect(mgr.getOrCreateContainer('user with spaces', 'admin')).rejects.toThrow('Invalid userId');
@@ -199,7 +202,7 @@ describe('input validation', () => {
 
   test('throws on unknown role', async () => {
     const docker = createMockDocker();
-    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver' });
-    await expect(mgr.getOrCreateContainer('user-1', 'unknown-role')).rejects.toThrow('Unknown role');
+    const mgr = createContainerManager({ docker, imageName: 'crowe-ide-codeserver', waitForReady: noopReady });
+    await expect(mgr.getOrCreateContainer('user-1', 'unknown-role')).rejects.toThrow('Unknown profile');
   });
 });

@@ -1,0 +1,332 @@
+{
+  "name": "crowe-logic",
+  "displayName": "Crowe Logic",
+  "description": "Crowe Logic Foundry agent — chat, plans, and tool execution inside the IDE.",
+  "version": "0.2.7",
+  "publisher": "crowe-logic",
+  "license": "SEE LICENSE IN README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crowe-logic/crowe-logic-foundry.git",
+    "directory": "deploy/ide/extensions/crowe-logic"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "icon": "media/avatar-light.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "crowe-logic.foundry",
+        "fullName": "Crowe Logic",
+        "name": "crowe",
+        "description": "Ask Crowe Logic — your Foundry agent.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "plan",
+            "description": "Draft a plan before running tools."
+          },
+          {
+            "name": "run",
+            "description": "Execute the current plan end-to-end."
+          },
+          {
+            "name": "explain",
+            "description": "Explain the selected file or symbol."
+          },
+          {
+            "name": "refactor",
+            "description": "Refactor the selection for readability and correctness."
+          },
+          {
+            "name": "tests",
+            "description": "Write unit tests for the selection."
+          },
+          {
+            "name": "find-bugs",
+            "description": "Review the selection for bugs and edge cases."
+          },
+          {
+            "name": "docs",
+            "description": "Write documentation/docstrings for the selection."
+          },
+          {
+            "name": "dataset",
+            "description": "Show or set the active CroweLM dataset context."
+          },
+          {
+            "name": "steer",
+            "description": "Persist operator steering for this chat session."
+          },
+          {
+            "name": "transcript",
+            "description": "Show the last full answer and reasoning transcript."
+          }
+        ]
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "crowe-logic",
+          "title": "Crowe Logic",
+          "icon": "media/mark.svg"
+        }
+      ]
+    },
+    "views": {
+      "crowe-logic": [
+        {
+          "id": "crowe-logic.plan",
+          "name": "Plan",
+          "icon": "media/mark.svg",
+          "contextualTitle": "Crowe Logic"
+        },
+        {
+          "id": "crowe-logic.tools",
+          "name": "Tool Activity",
+          "icon": "media/mark.svg",
+          "contextualTitle": "Crowe Logic"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "crowe-logic.openChat",
+        "title": "Crowe Logic: Open Chat",
+        "icon": "media/mark.svg"
+      },
+      {
+        "command": "crowe-logic.clearTools",
+        "title": "Crowe Logic: Clear Tool Activity",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "crowe-logic.togglePlan",
+        "title": "Crowe Logic: Toggle Plan View"
+      },
+      {
+        "command": "crowe-logic.signIn",
+        "title": "Crowe Logic: Sign In (API Token)"
+      },
+      {
+        "command": "crowe-logic.signOut",
+        "title": "Crowe Logic: Sign Out"
+      },
+      {
+        "command": "crowe-logic.openInRemoteIde",
+        "title": "Crowe Logic: Open in Remote IDE",
+        "icon": "$(remote)"
+      },
+      {
+        "command": "crowe-logic.askWithContext",
+        "title": "Crowe Logic: Ask about selection"
+      },
+      {
+        "command": "crowe-logic.statusBarMenu",
+        "title": "Crowe Logic: Show status menu"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "crowe-logic.openChat",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
+      },
+      {
+        "command": "crowe-logic.togglePlan",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p",
+        "when": "view == crowe-logic.plan"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "crowe-logic.clearTools",
+          "when": "view == crowe-logic.tools",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "crowe-logic.askWithContext",
+          "when": "editorHasSelection",
+          "group": "croweLogic@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "crowe-logic.askWithContext",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "crowe-logic.statusBarMenu",
+          "when": "false"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "label": "Crowe Logic Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/crowe-logic-dark-color-theme.json"
+      },
+      {
+        "label": "Crowe Logic Light",
+        "uiTheme": "vs",
+        "path": "./themes/crowe-logic-light-color-theme.json"
+      }
+    ],
+    "configuration": {
+      "title": "Crowe Logic",
+      "properties": {
+        "croweLogic.pythonPath": {
+          "type": "string",
+          "default": "/opt/venv/bin/python3",
+          "description": "Path to the Python interpreter that runs the Foundry headless agent.",
+          "order": 1
+        },
+        "croweLogic.foundryPath": {
+          "type": "string",
+          "default": "/workspace/crowe-logic-foundry",
+          "description": "Filesystem path to the crowe-logic-foundry checkout.",
+          "order": 2
+        },
+        "croweLogic.model": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "CroweLM Titan",
+            "CroweLM Apex",
+            "CroweLM Oracle",
+            "CroweLM Sovereign",
+            "CroweLM Prime",
+            "CroweLM Nexus",
+            "CroweLM Reason"
+          ],
+          "enumDescriptions": [
+            "Automatically select the first available model in the chain",
+            "Titan — flagship reasoning model (gpt-5.4-pro)",
+            "Apex — high-performance reasoning (gpt-4.1)",
+            "Oracle — balanced reasoning tier",
+            "Sovereign — mid-tier reasoning",
+            "Prime — Anthropic-backed reasoning (Claude)",
+            "Nexus — efficient reasoning tier",
+            "Reason — lightweight local fallback"
+          ],
+          "description": "CroweLM model to use for chat sessions.",
+          "order": 3
+        },
+        "croweLogic.maxToolRounds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum tool-call rounds before the agent stops. Increase for complex multi-step tasks.",
+          "order": 4
+        },
+        "croweLogic.theme": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "dark", "light"],
+          "enumDescriptions": [
+            "Match the current VS Code color theme",
+            "Always use Crowe Logic Dark",
+            "Always use Crowe Logic Light"
+          ],
+          "description": "Color theme for the Crowe Logic interface.",
+          "order": 5
+        },
+        "croweLogic.apiBaseUrl": {
+          "type": "string",
+          "default": "https://ai.southwestmushrooms.com",
+          "description": "Base URL for the Crowe Logic AI platform. Used for `/api/ide/launch` and other HTTP endpoints.",
+          "order": 6
+        },
+        "croweLogic.ideUrl": {
+          "type": "string",
+          "default": "https://ide.southwestmushrooms.com",
+          "description": "Remote IDE origin used as a fallback when handoff fails.",
+          "order": 7
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "crowe-logic.welcome",
+        "title": "Welcome to Crowe Logic",
+        "description": "Get started with the Crowe Logic Foundry agent.",
+        "steps": [
+          {
+            "id": "open-chat",
+            "title": "Open the chat",
+            "description": "Press ⌃⌘I (Ctrl+Cmd+I) to open the chat panel and type @crowe to talk to the Foundry agent.",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.openChat"
+            ]
+          },
+          {
+            "id": "explore-plan",
+            "title": "Watch the plan build",
+            "description": "Plans and tool runs stream into the Crowe Logic activity bar pane on the left.",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            }
+          },
+          {
+            "id": "sign-in",
+            "title": "Sign in with your API token",
+            "description": "Run **Crowe Logic: Sign In** from the command palette and paste your `crowe_pat_…` token. The token is stored in the OS keychain and unlocks programmatic access to the AI platform.\n[Sign In](command:crowe-logic.signIn)",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.signIn"
+            ]
+          },
+          {
+            "id": "open-remote-ide",
+            "title": "Hand off to the remote IDE",
+            "description": "Need a full Foundry workspace? Run **Crowe Logic: Open in Remote IDE** to launch a single-use session in your code-server container.\n[Open Remote IDE](command:crowe-logic.openInRemoteIde)",
+            "media": {
+              "image": "media/avatar-light.png",
+              "altText": "Crowe Logic avatar"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.openInRemoteIde"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --out crowe-logic.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}

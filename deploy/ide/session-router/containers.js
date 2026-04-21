@@ -21,6 +21,27 @@ const PROFILES = {
     memory: 512 * 1024 * 1024,          // 512 MB
     network: 'ide-subscribers',
   },
+  // Runtime class profiles — mapped from plan tier by entitlements module
+  'dev-small': {
+    nanoCpus: 1 * 1e9,                  // 1 vCPU
+    memory: 2 * 1024 * 1024 * 1024,     // 2 GB
+    network: 'ide-dev',
+  },
+  'research-medium': {
+    nanoCpus: 2 * 1e9,                  // 2 vCPU
+    memory: 8 * 1024 * 1024 * 1024,     // 8 GB
+    network: 'ide-research',
+  },
+  'vision-large': {
+    nanoCpus: 4 * 1e9,                  // 4 vCPU
+    memory: 16 * 1024 * 1024 * 1024,    // 16 GB
+    network: 'ide-vision',
+  },
+  'discovery-gpu': {
+    nanoCpus: 4 * 1e9,                  // 4 vCPU
+    memory: 32 * 1024 * 1024 * 1024,    // 32 GB
+    network: 'ide-gpu',
+  },
 };
 
 // Poll http://127.0.0.1:<port>/healthz until code-server answers 200 or we
@@ -53,7 +74,8 @@ function waitForReady(port) {
   });
 }
 
-function createContainerManager({ docker, imageName }) {
+function createContainerManager({ docker, imageName, waitForReady: _waitForReady }) {
+  const readyCheck = _waitForReady || waitForReady;
   const allocatedPorts = new Set();
   // Per-user in-flight promise map. Two simultaneous requests from the same
   // user share a single getOrCreate call, so we never race two findExisting
@@ -96,7 +118,7 @@ function createContainerManager({ docker, imageName }) {
       const bindings = info.NetworkSettings?.Ports?.['8080/tcp'];
       const port = bindings?.[0]?.HostPort ? parseInt(bindings[0].HostPort, 10) : existing.port;
       if (port) allocatedPorts.add(port);
-      if (port) await waitForReady(port);
+      if (port) await readyCheck(port);
       return { containerId: existing.containerId, port };
     }
 
@@ -123,6 +145,8 @@ function createContainerManager({ docker, imageName }) {
       Labels: {
         [`${LABEL_PREFIX}.user-id`]: userId,
         [`${LABEL_PREFIX}.role`]: role,
+        [`${LABEL_PREFIX}.runtime-class`]: role,
+        [`${LABEL_PREFIX}.started-at`]: new Date().toISOString(),
       },
       Cmd: cmd,
       HostConfig: {
@@ -139,22 +163,24 @@ function createContainerManager({ docker, imageName }) {
     });
 
     await container.start();
-    await waitForReady(port);
+    await readyCheck(port);
     return { containerId: container.id, port };
   }
 
-  function getOrCreateContainer(userId, role) {
+  function getOrCreateContainer(userId, role, runtimeClass) {
     if (typeof userId !== 'string' || userId.length === 0 || !/^[\w-]+$/.test(userId)) {
       return Promise.reject(new Error('Invalid userId'));
     }
-    if (role && !PROFILES[role]) {
-      return Promise.reject(new Error(`Unknown role: ${role}`));
+    // Accept either a role or a runtime class for the resource profile
+    const profileKey = runtimeClass || role;
+    if (profileKey && !PROFILES[profileKey]) {
+      return Promise.reject(new Error(`Unknown profile: ${profileKey}`));
     }
 
     const inProgress = inFlight.get(userId);
     if (inProgress) return inProgress;
 
-    const promise = _doGetOrCreate(userId, role).finally(() => {
+    const promise = _doGetOrCreate(userId, profileKey).finally(() => {
       inFlight.delete(userId);
     });
     inFlight.set(userId, promise);

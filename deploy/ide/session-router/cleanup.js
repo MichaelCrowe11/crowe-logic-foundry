@@ -4,6 +4,7 @@
 
 function createCleanupJob({
   containerManager,
+  metering,
   idleStopMinutes = 30,
   idleRemoveHours = 24,
   intervalMinutes = 5,
@@ -23,6 +24,15 @@ function createCleanupJob({
 
         if (c.state === 'running' && idleMs >= idleStopMs) {
           console.log(`[cleanup] Stopping idle container ${c.containerId} (idle ${Math.round(idleMs / 60000)}m)`);
+
+          // Record usage metering before stopping
+          if (metering && c.userId) {
+            await metering.recordSessionStop({
+              userId: c.userId,
+              containerId: c.containerId,
+            });
+          }
+
           await containerManager.stopContainer(c.containerId);
         } else if (c.state === 'exited' && idleMs >= idleRemoveMs) {
           console.log(`[cleanup] Removing stale container ${c.containerId} (idle ${Math.round(idleMs / 3600000)}h)`);
