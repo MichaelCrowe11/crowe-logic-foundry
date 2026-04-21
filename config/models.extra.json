@@ -310,6 +310,31 @@
         "vision"
       ],
       "tunable": false
+    },
+    {
+      "name": "crowelm-talon-nemoclaw",
+      "label": "CroweLM Talon (NemoClaw)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+      "endpoint_env": "NEMOCLAW_ENDPOINT",
+      "api_key_env": "NEMOCLAW_API_KEY",
+      "aliases": [
+        "crowelm-talon-nemoclaw",
+        "talon-nemoclaw",
+        "talon-sandbox",
+        "CroweLM Talon NemoClaw"
+      ],
+      "system_prompt": "You are CroweLM Talon, running on a NemoClaw sandbox VM. Inference lives on NVIDIA NIM and shell calls run inside the OpenShell isolation boundary colocated on the same host.",
+      "tier": "operational",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "sandboxed",
+        "nemoclaw"
+      ],
+      "notes": "backend_name is a best-guess default. Run scripts/nemoclaw_recon.sh on the VM and update if NemoClaw serves a different model id.",
+      "tunable": false
     }
   ]
 }

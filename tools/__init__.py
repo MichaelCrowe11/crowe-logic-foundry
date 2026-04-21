@@ -72,6 +72,12 @@ from tools.public_records import (
 # Crowe Logic platform
 from tools.crowe_logic_ai import crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop
 
+# DeepParallel local reasoning
+from tools.deepparallel import deepparallel_query, deepparallel_status
+
+# NemoClaw sandbox (OpenShell isolation on Brev-hosted VM)
+from tools.nemoclaw import nemoclaw_shell, nemoclaw_health
+
 # MCP ecosystem (5,800+ servers on demand)
 from tools.mcp_registry import mcp_search
 from tools.mcp_client import mcp_list_tools, mcp_call_tool, mcp_stop_server
@@ -133,6 +139,10 @@ user_functions = {
     arizona_apartment_public_records_lookup,
     # Crowe Logic platform
     crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop,
+    # DeepParallel local reasoning
+    deepparallel_query, deepparallel_status,
+    # NemoClaw sandbox
+    nemoclaw_shell, nemoclaw_health,
     # MCP ecosystem
     mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
     # iTerm2 terminal control

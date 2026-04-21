@@ -1,0 +1,64 @@
+# Brev Launchable manifest for Crowe Talon on NemoClaw.
+#
+# Usage: host this repo on GitHub and import as a Brev Launchable, or use the
+# one-click URL:
+#   https://console.brev.dev/launchable/deploy?launchableID=<id>
+#
+# The manifest is read by Brev's ingestion pipeline. Fields below are the
+# minimal contract for a reproducible Launchable. Adjust instance type and
+# region to match your quota.
+
+name: crowe-talon-nemoclaw
+description: >
+  Crowe Logic's precision tool-use agent running on NVIDIA NemoClaw.
+  NIM inference plus OpenShell sandbox colocated on a single Brev VM,
+  driven from the Crowe Logic Foundry CLI on the operator's laptop.
+
+version: 0.1.0
+
+# Hardware. NemoClaw reference builds assume a GPU host; L40S / A100 80GB
+# are the smallest configurations that run the default inference target.
+instance:
+  gpu: "NVIDIA L40S"
+  gpu_count: 1
+  disk_gb: 200
+  region: "us-west-2"
+
+# Base image. Brev ships NVIDIA-branded images that bundle CUDA + the NGC
+# CLI. Swap in your preferred base if your NemoClaw build ships its own.
+container:
+  image: "nvcr.io/nvidia/pytorch:24.10-py3"
+  ports:
+    - 8000    # NIM inference (openai_compat surface)
+    - 8001    # OpenShell sandbox
+  env:
+    # Populated at first boot by bootstrap.sh using Brev-supplied metadata.
+    NEMOCLAW_ENDPOINT: ""
+    NEMOCLAW_API_KEY: ""
+    NEMOCLAW_MODEL_NAME: ""
+    NEMOCLAW_SANDBOX_EXEC_PATH: "/openshell/v1/exec"
+    NEMOCLAW_SANDBOX_HEALTH_PATH: "/openshell/v1/health"
+
+# First-boot script. Runs inside the VM as root on provision.
+setup:
+  - ./launchable/bootstrap.sh
+
+# Files to copy onto the VM before setup runs. Keep the list short; the
+# full foundry repo is pulled by bootstrap.sh.
+files:
+  - launchable/bootstrap.sh
+  - scripts/nemoclaw_recon.sh
+
+# Tags surface in the Brev gallery.
+tags:
+  - crowe-logic
+  - nvidia-nim
+  - openshell
+  - agentic
+  - tool-use
+  - sandboxed
+
+# Contact for support or broken-launch reports.
+maintainer:
+  name: "Crowe Logic, Inc."
+  url: "https://github.com/MichaelCrowe11/crowe-logic-foundry"

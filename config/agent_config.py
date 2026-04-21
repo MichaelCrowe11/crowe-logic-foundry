@@ -428,8 +428,20 @@ def model_selectors(model_cfg: dict) -> list[str]:
 
 
 def provider_model_name(model_cfg: dict) -> str:
-    """Return the upstream provider model identifier for a model config."""
-    return str(model_cfg.get("backend_name") or model_cfg.get("name") or "")
+    """Return the upstream provider model identifier for a model config.
+
+    Supports ``${ENV_VAR}`` interpolation in ``backend_name`` so models served
+    by late-bound endpoints (e.g. NemoClaw, where the model name is discovered
+    via scripts/nemoclaw_recon.sh on the VM) can be configured via environment
+    variables instead of requiring the JSON entry to be edited.
+    """
+    raw = str(model_cfg.get("backend_name") or model_cfg.get("name") or "")
+    if "${" in raw and "}" in raw:
+        import re
+        def _sub(match: "re.Match[str]") -> str:
+            return os.environ.get(match.group(1), match.group(0))
+        raw = re.sub(r"\$\{([A-Z0-9_]+)\}", _sub, raw)
+    return raw
 
 
 def _normalize_extra_model(entry: dict) -> dict:
