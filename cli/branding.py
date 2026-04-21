@@ -421,6 +421,15 @@ def ensure_session_state(state: dict | None = None) -> dict:
     state.setdefault("last_answer_text", "")
     state.setdefault("last_reasoning_text", "")
     state.setdefault("recent_actions", [])
+    # Lazy-attach the cost tracker so every session accumulates upstream USD
+    # cost and credits regardless of whether the operator ever looks at it.
+    # The HUD renders rows from this tracker via _get_tracker_snapshot.
+    if state.get("cost_tracker") is None:
+        try:
+            from cli.cost_model import SessionCostTracker
+            state["cost_tracker"] = SessionCostTracker()
+        except Exception:
+            state["cost_tracker"] = None
     return state
 
 
@@ -557,6 +566,22 @@ def _metric_line(label: str, value: str, *, accent: str = WHITE_HEX):
     return line
 
 
+def _get_tracker_snapshot(session_state: dict) -> dict | None:
+    """Pull the SessionCostTracker snapshot from session_state if present.
+
+    The tracker is attached lazily by cli/crowe_logic.py on first use so
+    existing call sites that don't need cost tracking aren't forced to
+    know about it. Returns None when no tracker is bound.
+    """
+    tracker = session_state.get("cost_tracker")
+    if tracker is None:
+        return None
+    try:
+        return tracker.snapshot()
+    except Exception:
+        return None
+
+
 def build_session_hud(console, *,
                       state: dict | None = None,
                       cwd: str | None = None,
@@ -579,6 +604,9 @@ def build_session_hud(console, *,
     total_tokens = int(current.get("total_tokens", 0))
     latest_action = latest_action_summary(current, limit=32)
 
+    # Cost + credit totals from the session tracker, if one was hooked in.
+    tracker_snap = _get_tracker_snapshot(current)
+
     grid = Table.grid(expand=False, padding=(0, 3))
     grid.add_column(min_width=24)
     grid.add_column(min_width=24)
@@ -599,6 +627,19 @@ def build_session_hud(console, *,
             _metric_line("LAST", f"{tokens} tok @ {tps_str}/s" if tokens > 0 else "—", accent=WHITE_HEX),
             _metric_line("LATEST", latest_action or "no actions yet", accent=WHITE_HEX),
             Text(""),
+        )
+    if tracker_snap and tracker_snap["turn_count"] > 0:
+        usd = tracker_snap["total_usd"]
+        usd_str = f"~${usd:.4f}" if usd < 0.01 else f"~${usd:.3f}"
+        credits_val = tracker_snap["total_credits"]
+        credits_str = f"{credits_val} cr" if credits_val else "—"
+        cache_ratio = ""
+        if tracker_snap["cached_turns"]:
+            cache_ratio = f" · {tracker_snap['cached_turns']}/{tracker_snap['turn_count']} cached"
+        grid.add_row(
+            _metric_line("COST", f"{usd_str}{cache_ratio}", accent=GOLD_HEX),
+            _metric_line("CREDITS", credits_str, accent=GOLD_HEX),
+            _metric_line("TURNS", str(tracker_snap["turn_count"]), accent=GOLD_HEX),
         )
 
     panel = Panel(
