@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────
+# Crowe Logic Foundry — REST Client scratch pad (VS Code)
+#   Install extension: humao.rest-client
+#   Click "Send Request" above any request block below.
+# ─────────────────────────────────────────────────────────────
+
+@host = http://127.0.0.1:8001
+@key  = cl_REPLACE_WITH_ISSUED_KEY
+
+### Health
+GET {{host}}/health
+
+### List CroweLM model catalog (requires key)
+GET {{host}}/api/gateway/models
+Authorization: Bearer {{key}}
+
+### Gateway chat — CroweLM Nano (developer tier)
+POST {{host}}/api/gateway/chat
+Authorization: Bearer {{key}}
+Content-Type: application/json
+
+{
+  "model": "gpt-5.4-nano",
+  "messages": [
+    {"role": "user", "content": "Introduce yourself in one sentence."}
+  ],
+  "max_tokens": 64
+}
+
+### Gateway chat — CroweLM Titan (lab tier)
+POST {{host}}/api/gateway/chat
+Authorization: Bearer {{key}}
+Content-Type: application/json
+
+{
+  "model": "gpt-5.4",
+  "messages": [
+    {"role": "system", "content": "You are CroweLM Titan."},
+    {"role": "user",   "content": "Outline a 3-stage mycelium scale-up plan."}
+  ],
+  "max_tokens": 256
+}
+
+### Gateway chat — CroweLM Prime (lab tier, Anthropic-backed)
+POST {{host}}/api/gateway/chat
+Authorization: Bearer {{key}}
+Content-Type: application/json
+
+{
+  "model": "claude-opus-4-6",
+  "messages": [
+    {"role": "user", "content": "Give me a one-paragraph overview of Crowe Logic."}
+  ],
+  "max_tokens": 200
+}

@@ -1,0 +1,90 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Crowe Logic: Chat (CLI)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli.crowe_logic",
+      "args": ["chat"],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Crowe Logic: Run prompt",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli.crowe_logic",
+      "args": ["run", "${input:prompt}"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Crowe Logic: Deploy health check",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli.crowe_logic",
+      "args": ["deploy"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Control Plane: Preview (SQLite)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/control_plane/preview.py",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "PYTHONPATH": "${workspaceFolder}" },
+      "justMyCode": false
+    },
+    {
+      "name": "Control Plane: Production (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "control_plane.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8001",
+        "--reload"
+      ],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "PYTHONPATH": "${workspaceFolder}" }
+    },
+    {
+      "name": "Pytest: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-xvs", "${file}"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Issue tester key (local SQLite preview)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/issue_tester_key.py",
+      "args": ["--label", "${input:keyLabel}", "--plan", "lab"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "prompt",
+      "type": "promptString",
+      "description": "Prompt for Crowe Logic",
+      "default": "Summarize the CroweLM model chain."
+    },
+    {
+      "id": "keyLabel",
+      "type": "promptString",
+      "description": "Label for the tester API key",
+      "default": "tester-dev"
+    }
+  ]
+}

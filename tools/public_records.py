@@ -1,3 +1,4 @@
+from typing import Optional, List, Tuple
 """
 Arizona public-record research tools for ownership and management lookups.
 """
@@ -39,9 +40,9 @@ def _compact_whitespace(text: str) -> str:
     return _normalize_whitespace(text).upper()
 
 
-def _unique_strings(values: list[str]) -> list[str]:
+def _unique_strings(values: List[str]) -> List[str]:
     seen: set[str] = set()
-    ordered: list[str] = []
+    ordered: List[str] = []
     for value in values:
         normalized = _normalize_whitespace(value)
         if not normalized:
@@ -70,7 +71,7 @@ def _format_assessor_address(street: str, city: str, zip_code: str) -> str:
     return ", ".join(part for part in parts if part)
 
 
-def _assessor_query_candidates(query: str) -> list[str]:
+def _assessor_query_candidates(query: str) -> List[str]:
     cleaned = _compact_whitespace((query or "").replace(",", " "))
     if not cleaned:
         return []
@@ -101,14 +102,14 @@ def _extract_maricopa_token(html: str) -> str:
     return match.group(1)
 
 
-def _extract_lines_from_html(html: str) -> list[str]:
+def _extract_lines_from_html(html: str) -> List[str]:
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
     return [_normalize_whitespace(line) for line in soup.get_text("\n", strip=True).splitlines() if _normalize_whitespace(line)]
 
 
-def _line_after(lines: list[str], label: str) -> str:
+def _line_after(lines: List[str], label: str) -> str:
     for idx, line in enumerate(lines):
         if line == label and idx + 1 < len(lines):
             return lines[idx + 1]
@@ -155,7 +156,7 @@ def _extract_search_result_address(item: dict) -> str:
     )
 
 
-def _score_search_candidate(query: str, results: list[dict], total: int, order: int) -> tuple[int, int, int, int]:
+def _score_search_candidate(query: str, results: List[dict], total: int, order: int) -> Tuple[int, int, int, int]:
     normalized_query = _normalize_address_for_match(query)
     normalized_apn = _normalize_apn(query) if _looks_like_apn(query) else ""
 
@@ -182,8 +183,8 @@ def _maricopa_search(endpoint: str, query: str, limit: int = 10) -> dict:
         search_page.raise_for_status()
         token = _extract_maricopa_token(search_page.text)
 
-        attempts: list[dict] = []
-        candidate_matches: list[dict] = []
+        attempts: List[dict] = []
+        candidate_matches: List[dict] = []
         for order, candidate in enumerate(candidates):
             response = client.get(
                 f"{_MARICOPA_BASE_URL}/search/{endpoint}/",
@@ -292,7 +293,7 @@ def _normalize_address_for_match(value: str) -> str:
     return _normalize_whitespace(normalized)
 
 
-def _select_best_property_match(address: str, results: list[dict]) -> dict | None:
+def _select_best_property_match(address: str, results: List[dict]) -> Optional[dict]:
     if not results:
         return None
 
@@ -469,7 +470,7 @@ def adre_entity_license_search(
 
         soup = BeautifulSoup(results_page.text, "html.parser")
         table = soup.find("table", id="dataTableEntityLicenses")
-        results: list[dict] = []
+        results: List[dict] = []
         if table:
             for row in table.find_all("tr")[1:]:
                 cells = [cell.get_text(" ", strip=True) for cell in row.find_all("td")]

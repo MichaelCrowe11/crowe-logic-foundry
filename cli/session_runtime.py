@@ -170,9 +170,22 @@ def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_
             f"{steering}"
         )
 
-    dataset_context = build_dataset_context(str(runtime.get("dataset_selection", _DEFAULT_DATASET_SELECTION)))
-    if dataset_context:
-        parts.append("## CroweLM Dataset Context\n" + dataset_context)
+    # CroweLM Supreme and dataset-augmented tiers get the full curated knowledge
+    # base injected (domain examples, expertise). Other tiers get the lighter summary.
+    label = (model_cfg or {}).get("label", "")
+    is_augmented = (model_cfg or {}).get("dataset_augmented", False)
+    if "Supreme" in label or is_augmented:
+        try:
+            from config.crowelm.dataset_loader import augment_system_prompt
+            augmented = augment_system_prompt("", model_cfg)
+            if augmented.strip():
+                parts.append("## CroweLM Unified Knowledge Base\n" + augmented)
+        except Exception:
+            pass  # Fall through to standard dataset context
+    else:
+        dataset_context = build_dataset_context(str(runtime.get("dataset_selection", _DEFAULT_DATASET_SELECTION)))
+        if dataset_context:
+            parts.append("## CroweLM Dataset Context\n" + dataset_context)
 
     return "\n\n".join(part for part in parts if part and part.strip())
 

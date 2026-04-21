@@ -6,6 +6,7 @@ and the bridge pipeline connecting QubitFlow circuits to Synapse analysis.
 """
 
 import json
+from typing import Optional
 
 
 def run_quantum_circuit(code: str, backend: str = "qiskit", shots: int = 1024) -> str:
@@ -117,7 +118,7 @@ def qubit_flow_execute(program: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-def trinity_pipeline(program: str, shots: int = 1024, expected: dict | None = None) -> str:
+def trinity_pipeline(program: str, shots: int = 1024, expected: Optional[dict] = None) -> str:
     """
     Run a full Trinity pipeline: parse, execute, sample, and analyze a QubitFlow circuit.
     Optionally test against an expected probability distribution.

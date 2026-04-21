@@ -290,7 +290,7 @@ def _get_avatar_seq(width: int = 8) -> str:
     return _inline_image_seq(avatar_path, width=width)
 
 
-def welcome_screen(version: str = "0.2.5", avatar_seq: str = "") -> str:
+def welcome_screen(version: str = "0.2.7", avatar_seq: str = "") -> str:
     """Render the Crowe Logic signature welcome screen.
 
     Layout (top to bottom):
@@ -368,7 +368,7 @@ def welcome_screen(version: str = "0.2.5", avatar_seq: str = "") -> str:
     )
 
 
-def show_welcome(version: str = "0.2.5"):
+def show_welcome(version: str = "0.2.7"):
     """Print the full welcome: avatar inside the banner."""
     avatar_seq = _get_avatar_seq(width=8)
     print(welcome_screen(version, avatar_seq=avatar_seq))

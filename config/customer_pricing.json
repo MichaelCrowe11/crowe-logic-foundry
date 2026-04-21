@@ -1,0 +1,166 @@
+{
+  "_comment": "Crowe Logic customer pricing. Four tiers plus a BYOK variant. Prices in USD. Credits are the usage unit; the credit_costs map translates each action to credits. Read by cli/cost_model.py and surfaced by control_plane/billing.py.",
+  "_updated": "2026-04-21",
+  "currency": "USD",
+  "tiers": {
+    "personal": {
+      "name": "Personal",
+      "tagline": "Everyday multi-model CLI for solo operators",
+      "price_monthly": 29.00,
+      "price_annual_monthly": 25.00,
+      "credits_monthly": 750,
+      "seat_min": 1,
+      "seat_max": 1,
+      "features": {
+        "dual_mode": true,
+        "synthesis": true,
+        "all_model_tiers": true,
+        "nemoclaw_sandbox": "byo_vm",
+        "session_memory_hours": 1,
+        "daily_burst_cap": 200,
+        "priority_queue": false,
+        "sso": false,
+        "cost_reporting": "personal",
+        "support_sla_hours": null
+      }
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Power-user tier with unmetered dual mode",
+      "price_monthly": 99.00,
+      "price_annual_monthly": 85.00,
+      "credits_monthly": 3000,
+      "seat_min": 1,
+      "seat_max": 1,
+      "features": {
+        "dual_mode": true,
+        "dual_mode_unmetered": true,
+        "synthesis": true,
+        "all_model_tiers": true,
+        "nemoclaw_sandbox": "managed_launchable",
+        "nemoclaw_free_l40s_hours_per_day": 1,
+        "session_memory_hours": 5,
+        "daily_burst_cap": 1000,
+        "priority_queue": true,
+        "sso": false,
+        "cost_reporting": "personal",
+        "support_sla_hours": 72
+      }
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "Shared workspace for small teams",
+      "price_monthly_per_seat": 49.00,
+      "price_annual_monthly_per_seat": 42.00,
+      "credits_monthly_per_seat": 1500,
+      "credits_pool_across_seats": true,
+      "seat_min": 3,
+      "seat_max": 25,
+      "features": {
+        "dual_mode": true,
+        "dual_mode_unmetered": true,
+        "synthesis": true,
+        "all_model_tiers": true,
+        "nemoclaw_sandbox": "managed_launchable",
+        "session_memory_hours": 24,
+        "daily_burst_cap_per_seat": 500,
+        "priority_queue": true,
+        "sso": ["google_workspace", "okta"],
+        "shared_workspaces": true,
+        "admin_cost_reporting": true,
+        "cost_reporting": "team",
+        "support_sla_hours": 48
+      }
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Dedicated deployment with compliance controls",
+      "price_monthly_per_seat": "custom",
+      "price_floor_monthly_per_seat": 250.00,
+      "credits_monthly": "unlimited",
+      "seat_min": 25,
+      "features": {
+        "dual_mode": true,
+        "dual_mode_unmetered": true,
+        "synthesis": true,
+        "all_model_tiers": true,
+        "nemoclaw_sandbox": "dedicated",
+        "dedicated_nim_deployment": true,
+        "session_memory_hours": 720,
+        "daily_burst_cap": null,
+        "priority_queue": true,
+        "sso": ["google_workspace", "okta", "azure_ad", "saml"],
+        "shared_workspaces": true,
+        "admin_cost_reporting": true,
+        "audit_logs": true,
+        "data_retention_controls": true,
+        "soc2_report": true,
+        "on_prem_install": "optional",
+        "white_label": "optional",
+        "dedicated_solutions_architect": true,
+        "cost_reporting": "enterprise",
+        "support_sla_hours": 24
+      }
+    }
+  },
+  "byok_variant": {
+    "name": "BYOK Orchestration",
+    "tagline": "You bring the keys, we run the CLI",
+    "price_monthly": 19.00,
+    "price_annual_monthly": 16.00,
+    "seat_min": 1,
+    "seat_max": 1,
+    "features": {
+      "user_provided_keys": ["anthropic", "openai", "azure_openai", "moonshot", "openrouter", "nvidia"],
+      "crowe_logic_provides": ["dual_mode", "synthesis", "tool_registry", "hud", "agent_framework", "nemoclaw_integration"],
+      "credits_monthly": "unmetered_on_user_keys",
+      "session_memory_hours": 5,
+      "priority_queue": false,
+      "sso": false,
+      "support_sla_hours": 120
+    },
+    "_note": "User pays their own provider bills directly. Crowe Logic collects the flat $19 for orchestration, routing, dual mode, synthesis, tool ecosystem, HUD, and updates. Targets devs who already have provider API accounts and want the CLI without re-subscribing through us."
+  },
+  "credit_costs": {
+    "_comment": "Credits per action. Mapped to models by internal tier classification (see cost_model.tier_for_model). Lower-tier models are cheaper per turn so the pricing tracks the Opus/Sonnet/Haiku cost ratio with a slight flagship subsidy.",
+    "turn_fast": 1,
+    "turn_balanced": 2,
+    "turn_flagship": 5,
+    "dual_mode_multiplier": "sum_of_both_sides",
+    "synthesis_addition": 5,
+    "tool_call_free_budget_per_turn": 10,
+    "tool_call_overage_per_10": 1,
+    "browser_automation_session": 3,
+    "nemoclaw_sandbox_turn_surcharge": 2
+  },
+  "tier_classification": {
+    "_comment": "Maps internal model config 'backend_name' or 'label' to a tier key for credit_costs lookup. Kept separate from upstream_costs so a price change on the vendor side doesn't force a customer-facing credit reshuffle.",
+    "flagship": [
+      "claude-opus-4-7", "claude-opus-4-6", "claude-opus",
+      "moonshotai/kimi-k2.6", "kimi-k2.6:cloud",
+      "gpt-5.4-pro", "gpt-5.4",
+      "CroweLM Supreme", "CroweLM Eclipse", "CroweLM Apex", "CroweLM Sovereign"
+    ],
+    "balanced": [
+      "claude-sonnet-4-6",
+      "moonshotai/kimi-k2.5", "kimi-k2.5:cloud",
+      "ibm/granite-4-h-small",
+      "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+      "meta/llama-3.3-70b-instruct",
+      "glm-4.6:cloud",
+      "CroweLM Crescent", "CroweLM Titan", "CroweLM Prime",
+      "CroweLM Classic", "CroweLM Lunar", "CroweLM Talon (NemoClaw)"
+    ],
+    "fast": [
+      "claude-haiku-4-5-20251001", "claude-haiku",
+      "CroweLM Nano", "CroweLM Dense"
+    ]
+  },
+  "annual_discount_pct": 15,
+  "launch_promo": {
+    "_note": "First-month coupon for organic signups. Keep separate from permanent pricing so it can be turned off without editing tier prices.",
+    "first_month_off_pct": 50,
+    "code": "FOUNDRY50",
+    "expires": "2026-06-30"
+  }
+}

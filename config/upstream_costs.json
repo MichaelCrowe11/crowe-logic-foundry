@@ -1,0 +1,94 @@
+{
+  "_comment": "Per-1M-token USD prices Crowe Logic pays upstream. Keyed by 'provider:backend_name'. Sourced from public rate cards as of 2026-04-21. Hand-edit when vendors update. This file is read by cli/cost_model.py at startup and never shown to customers. Customer-facing pricing lives in customer_pricing.json.",
+  "_updated": "2026-04-21",
+  "_sources": {
+    "anthropic": "https://claude.com/pricing",
+    "azure_openai": "https://azure.microsoft.com/en-us/pricing/details/azure-openai/",
+    "ollama_cloud": "https://ollama.com/pricing (subscription-based, $20/mo Pro)",
+    "nvidia_nim": "https://build.nvidia.com (free for Developer Program members)",
+    "watsonx": "https://www.ibm.com/products/watsonx-ai/pricing",
+    "kimi_direct": "aggregator-sourced, confirm against platform.kimi.ai before production use",
+    "openrouter": "https://openrouter.ai/docs/faq (passthrough + 5.5% credit top-up fee)"
+  },
+  "prices": {
+    "anthropic:claude-opus-4-7": {
+      "input": 5.00, "output": 25.00,
+      "cached_input": 0.50, "cache_write_5m": 6.25, "cache_write_1h": 12.50
+    },
+    "anthropic:claude-opus-4-6": {
+      "input": 5.00, "output": 25.00,
+      "cached_input": 0.50, "cache_write_5m": 6.25, "cache_write_1h": 12.50,
+      "_note": "Same rate card as 4-7. Update if Anthropic breaks them apart."
+    },
+    "anthropic:claude-sonnet-4-6": {
+      "input": 3.00, "output": 15.00,
+      "cached_input": 0.30, "cache_write_5m": 3.75, "cache_write_1h": 7.50
+    },
+    "anthropic:claude-haiku-4-5-20251001": {
+      "input": 1.00, "output": 5.00,
+      "cached_input": 0.10, "cache_write_5m": 1.25, "cache_write_1h": 2.50
+    },
+    "azure_openai:gpt-5.4": {
+      "input": 2.50, "output": 15.00, "cached_input": 0.25,
+      "_note": "Rate card below 272K context window. At >272K context: input=5.00, output=22.50, cached=0.50."
+    },
+    "azure_openai:gpt-5.4-pro": {
+      "input": 30.00, "output": 180.00
+    },
+    "openai_compat:moonshotai/kimi-k2.5": {
+      "input": 0.60, "output": 2.50,
+      "_note": "Aggregator-sourced. Confirm against Moonshot's platform before counting on these."
+    },
+    "openai_compat:moonshotai/kimi-k2.6": {
+      "input": 0.95, "output": 4.00, "cached_input": 0.16,
+      "_note": "Aggregator-sourced. Confirm against Moonshot's platform before counting on these."
+    },
+    "ollama:kimi-k2.5:cloud": {
+      "input": 0.00, "output": 0.00,
+      "subscription_monthly": 20.00,
+      "_note": "Covered by $20/mo Ollama Pro subscription. Effective per-token cost depends on usage volume; we attribute $20/mo across expected cloud-model turns."
+    },
+    "ollama:kimi-k2.6:cloud": {
+      "input": 0.00, "output": 0.00,
+      "subscription_monthly": 20.00,
+      "_note": "Same Ollama Pro subscription covers this."
+    },
+    "ollama:glm-4.6:cloud": {
+      "input": 0.00, "output": 0.00,
+      "subscription_monthly": 20.00
+    },
+    "ollama:kimi-k2-thinking:cloud": {
+      "input": 0.00, "output": 0.00,
+      "subscription_monthly": 20.00
+    },
+    "ollama:gpt-oss:120b-cloud": {
+      "input": 0.00, "output": 0.00,
+      "subscription_monthly": 20.00
+    },
+    "nvidia:moonshotai/kimi-k2.5": {"input": 0.00, "output": 0.00, "_note": "Free on NVIDIA Developer Program, rate-limited ~40 RPM."},
+    "nvidia:moonshotai/kimi-k2-thinking": {"input": 0.00, "output": 0.00},
+    "nvidia:deepseek-ai/deepseek-r1": {"input": 0.00, "output": 0.00},
+    "nvidia:deepseek-ai/deepseek-v3": {"input": 0.00, "output": 0.00},
+    "nvidia:meta/llama-3.3-70b-instruct": {"input": 0.00, "output": 0.00},
+    "nvidia:nvidia/llama-3.1-nemotron-ultra-253b-v1": {"input": 0.00, "output": 0.00},
+    "nvidia:ibm/granite-4-h-small": {"input": 0.00, "output": 0.00},
+    "openai_compat:nvidia/llama-3.1-nemotron-ultra-253b-v1": {
+      "input": 0.00, "output": 0.00,
+      "_note": "NemoClaw uses free NIM endpoint at the provider level. Actual VM cost is infrastructure (L40S ~$1-2/hr on Brev) allocated separately."
+    },
+    "watsonx:ibm/granite-4-h-small": {
+      "input": 0.06, "output": 0.25,
+      "_note": "Billed in Resource Units on watsonx.ai; 1 RU = 1000 tokens. Public tier rate."
+    },
+    "openrouter:*": {
+      "input": 0.00, "output": 0.00,
+      "markup_on_credit_topup_pct": 5.5,
+      "_note": "Per-model cost passthrough. We pay a 5.5% top-up fee on credit purchases; that fee amortizes across all OpenRouter routes."
+    }
+  },
+  "defaults": {
+    "_comment": "Fallback when (provider, backend_name) is unknown. Conservative so unknown models don't under-report cost.",
+    "input": 1.00,
+    "output": 5.00
+  }
+}

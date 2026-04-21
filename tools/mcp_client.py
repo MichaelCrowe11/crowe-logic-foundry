@@ -1,3 +1,4 @@
+from typing import Optional, List
 """
 Universal MCP Client — Spawn and communicate with any MCP server.
 
@@ -33,7 +34,7 @@ SERVER_TIMEOUT = 300
 class MCPServerConnection:
     """Manages a single MCP server subprocess and JSON-RPC communication."""
 
-    def __init__(self, command: list[str], env: dict | None = None):
+    def __init__(self, command: List[str], env: Optional[dict] = None):
         self.command = command
         self._process = None
         self._request_id = 0
@@ -163,7 +164,7 @@ class MCPServerConnection:
 
 # ── Server pool management ──────────────────────────────────
 
-def _build_command(package: str, pkg_type: str = "npm") -> list[str]:
+def _build_command(package: str, pkg_type: str = "npm") -> List[str]:
     """Build the shell command to spawn an MCP server."""
     if pkg_type == "npm":
         return ["npx", "-y", package]
@@ -176,7 +177,7 @@ def _build_command(package: str, pkg_type: str = "npm") -> list[str]:
         return package.split()
 
 
-def _get_or_start_server(server_key: str, command: list[str], env: dict | None = None) -> MCPServerConnection:
+def _get_or_start_server(server_key: str, command: List[str], env: Optional[dict] = None) -> MCPServerConnection:
     """Get a running server from the pool or start a new one."""
     with _pool_lock:
         # Check if already running

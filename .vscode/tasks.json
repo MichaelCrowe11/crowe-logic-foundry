@@ -1,0 +1,78 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "venv: install (editable + dev)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m pip install -e . && ${workspaceFolder}/.venv/bin/python -m pip install -r requirements.txt ruff pytest pytest-asyncio httpx uvicorn fastapi",
+      "problemMatcher": []
+    },
+    {
+      "label": "lint: ruff",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m ruff check .",
+      "problemMatcher": ["$ruff"]
+    },
+    {
+      "label": "format: ruff",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m ruff format .",
+      "problemMatcher": []
+    },
+    {
+      "label": "test: pytest",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m pytest -q",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "run: control-plane preview",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python control_plane/preview.py",
+      "options": {
+        "env": { "PYTHONPATH": "${workspaceFolder}" }
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: crowe-logic chat",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m cli.crowe_logic chat",
+      "problemMatcher": []
+    },
+    {
+      "label": "key: issue tester (local SQLite)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python scripts/issue_tester_key.py --label ${input:keyLabel} --plan lab",
+      "problemMatcher": []
+    },
+    {
+      "label": "key: issue tester (remote control-plane)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python scripts/issue_tester_key.py --remote --label ${input:keyLabel} --plan lab",
+      "problemMatcher": []
+    },
+    {
+      "label": "admin: bootstrap JWT (save to .env.local)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python scripts/bootstrap_admin.py --save",
+      "problemMatcher": []
+    },
+    {
+      "label": "e2e: issue key + call gateway (local preview)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/bash scripts/tester_e2e.sh",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "keyLabel",
+      "type": "promptString",
+      "description": "Label for the tester API key",
+      "default": "tester-dev"
+    }
+  ]
+}

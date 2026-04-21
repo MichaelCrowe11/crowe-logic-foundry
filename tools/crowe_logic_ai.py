@@ -24,6 +24,43 @@ def crowe_chat(message: str, context: str = "") -> str:
     :return: JSON with the platform response.
     :rtype: str
     """
+    # Hard guard: refuse non-cultivation messages without making an HTTP call.
+    # The router model sometimes ignores the docstring and tries crowe_chat
+    # for greetings ("hi", "who are you?"). Returning a clear refusal here
+    # both prevents 400s on the upstream API and stops the model from looping
+    # because the tool result is now actionable rather than a vague error.
+    msg_lower = (message or "").strip().lower()
+    cultivation_signals = (
+        "mushroom", "shroom", "myco", "fungal", "fungi", "mycelium",
+        "mycelia", "spore", "agar", "grain", "substrate", "fruiting",
+        "flush", "pin", "pinning", "colonize", "colonization", "inoculat",
+        "contamin", "tek", "monotub", "shotgun", "shiitake", "oyster",
+        "lion's mane", "lions mane", "reishi", "cordyceps", "psilocybe",
+        "cubensis", "cultivation", "grow log", "grow tent", "humidity",
+        "fae", "sterile", "autoclave", "pressure cook", "petri",
+    )
+    looks_meta = (
+        not msg_lower
+        or len(msg_lower) < 4
+        or msg_lower in {
+            "hi", "hello", "hey", "yo", "sup", "thanks", "thank you",
+            "ok", "okay", "cool", "nice", "great",
+        }
+        or any(msg_lower.startswith(p) for p in (
+            "who are you", "whob are you", "what are you", "what is your",
+            "what's your", "whats your", "how are you", "how's it going",
+            "hows it going", "introduce yourself", "tell me about yourself",
+            "what can you do", "what do you do", "help",
+        ))
+    )
+    has_cultivation_term = any(sig in msg_lower for sig in cultivation_signals)
+    if looks_meta or not has_cultivation_term:
+        return json.dumps({
+            "error": "crowe_chat is for mycology/cultivation domain questions only. "
+                     "Answer this message directly without calling a tool.",
+            "guidance": "Do not retry crowe_chat for this message.",
+        })
+
     try:
         payload = {"messages": [{"role": "user", "content": message}]}
         if context:

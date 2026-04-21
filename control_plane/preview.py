@@ -6,14 +6,21 @@ Start with:  .venv/bin/python control_plane/preview.py
 Then open:   http://localhost:8001/docs
 """
 
-import asyncio
-import hashlib
-import json
-import secrets
+import os
 import sqlite3
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
+
+# Path used by scripts/issue_tester_key.py in local mode. Set
+# CROWE_PREVIEW_DB=:memory: to go back to the ephemeral behaviour.
+_DEFAULT_PREVIEW_DB = (
+    Path(__file__).resolve().parent.parent / "data" / "control_plane_preview.sqlite"
+)
+PREVIEW_DB_PATH = os.environ.get("CROWE_PREVIEW_DB", str(_DEFAULT_PREVIEW_DB))
+if PREVIEW_DB_PATH not in (":memory:", ""):
+    Path(PREVIEW_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 
 # ─── SQLite mock that quacks like asyncpg ─────────────────────────────
@@ -185,14 +192,16 @@ class SqliteDatabase:
 
     @staticmethod
     def _pg_to_sqlite(query: str) -> str:
-        """Convert $1, $2 positional params to ? for SQLite."""
+        """Convert Postgres-isms to SQLite equivalents."""
         import re
-        return re.sub(r'\$\d+', '?', query)
+        q = re.sub(r'\$\d+', '?', query)
+        q = re.sub(r'\bnow\(\)', "datetime('now')", q, flags=re.IGNORECASE)
+        return q
 
 
 # ─── Wire it up ──────────────────────────────────────────────────────
 
-_db = SqliteDatabase()
+_db = SqliteDatabase(PREVIEW_DB_PATH)
 
 
 async def _override_get_db():

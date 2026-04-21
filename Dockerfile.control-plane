@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+LABEL maintainer="michael@crowelogic.com"
+LABEL org.opencontainers.image.title="Crowe Logic Foundry — Control Plane"
+LABEL org.opencontainers.image.description="FastAPI gateway + auth + billing for the CroweLM model stack"
+LABEL org.opencontainers.image.vendor="Crowe Logic, Inc."
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps — base + control plane
+COPY requirements.txt requirements-control-plane.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir -r requirements-control-plane.txt
+
+# Application
+COPY . .
+RUN pip install --no-cache-dir -e .
+
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PORT=8001
+
+EXPOSE 8001
+
+# Honour Railway's $PORT; default 8001 locally.
+RUN chmod +x scripts/control_plane_entrypoint.sh
+CMD ["./scripts/control_plane_entrypoint.sh"]
