@@ -8,6 +8,7 @@ and project knowledge. Portable across machines via ~/.crowe-logic/memory.db.
 import os
 import sqlite3
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -28,15 +29,119 @@ _SQLITE_INCOMPATIBLE_PATTERNS = (
 )
 
 
+class _LockedCursor:
+    """Cursor proxy that acquires the connection's lock for every fetch.
+
+    Returned by ``_LockedConnection.execute`` family members so that code
+    like ``store.conn.execute(q).fetchall()`` remains atomic across the
+    execute and fetch pair.
+    """
+
+    __slots__ = ("_cursor", "_lock")
+
+    def __init__(self, cursor: sqlite3.Cursor, lock: threading.RLock):
+        self._cursor = cursor
+        self._lock = lock
+
+    def fetchone(self):
+        with self._lock:
+            return self._cursor.fetchone()
+
+    def fetchall(self):
+        with self._lock:
+            return self._cursor.fetchall()
+
+    def fetchmany(self, size: int = -1):
+        with self._lock:
+            if size < 0:
+                return self._cursor.fetchmany()
+            return self._cursor.fetchmany(size)
+
+    def __iter__(self):
+        with self._lock:
+            rows = list(self._cursor)
+        return iter(rows)
+
+    def close(self):
+        with self._lock:
+            self._cursor.close()
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+
+class _LockedConnection:
+    """Thread-safe wrapper around ``sqlite3.Connection``.
+
+    Serializes every call through a single :class:`threading.RLock` so the
+    ``MemoryStore`` can be reused across dual-mode worker threads without
+    tripping SQLite's ``check_same_thread`` guard or interleaving cursor
+    fetches. The wrapper exposes the subset of the Connection API that
+    ``MemoryStore`` actually uses.
+    """
+
+    __slots__ = ("_conn", "_lock")
+
+    def __init__(self, conn: sqlite3.Connection, lock: threading.RLock):
+        self._conn = conn
+        self._lock = lock
+
+    @property
+    def row_factory(self):
+        return self._conn.row_factory
+
+    @row_factory.setter
+    def row_factory(self, value):
+        self._conn.row_factory = value
+
+    def execute(self, *args, **kwargs) -> _LockedCursor:
+        with self._lock:
+            return _LockedCursor(self._conn.execute(*args, **kwargs), self._lock)
+
+    def executemany(self, *args, **kwargs) -> _LockedCursor:
+        with self._lock:
+            return _LockedCursor(self._conn.executemany(*args, **kwargs), self._lock)
+
+    def executescript(self, *args, **kwargs) -> _LockedCursor:
+        with self._lock:
+            return _LockedCursor(self._conn.executescript(*args, **kwargs), self._lock)
+
+    def commit(self):
+        with self._lock:
+            self._conn.commit()
+
+    def rollback(self):
+        with self._lock:
+            self._conn.rollback()
+
+    def close(self):
+        with self._lock:
+            self._conn.close()
+
+
 class MemoryStore:
     def __init__(self, db_path: str = "~/.crowe-logic/memory.db"):
         self.db_path = os.path.expanduser(db_path)
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA foreign_keys=ON")
-        self._run_migrations()
+        # check_same_thread=False lets dual-mode worker threads reuse the
+        # shared connection. Correctness is enforced by routing every
+        # call through a _LockedConnection proxy that serializes execute
+        # and cursor-fetch pairs under one RLock. WAL mode (set below)
+        # keeps concurrent readers from blocking each other on the SQLite
+        # side.
+        raw_conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        raw_conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        self.conn = _LockedConnection(raw_conn, self._lock)
+        with self._lock:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA foreign_keys=ON")
+            self._run_migrations()
 
     def _run_migrations(self):
         self.conn.execute("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP)")

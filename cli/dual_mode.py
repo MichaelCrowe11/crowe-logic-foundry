@@ -35,6 +35,11 @@ from cli.queue_renderer import QueueRenderer, PaneEvent
 DEFAULT_LEFT_ALIAS = "supreme"
 DEFAULT_RIGHT_ALIAS = "eclipse"
 
+# Automatic fallback chain for the right pane when the preferred alias is
+# paywalled or unreachable. Ordered from most-desired to most-available.
+# Each entry must resolve to a distinct model from DEFAULT_LEFT_ALIAS.
+RIGHT_FALLBACK_CHAIN = ["eclipse", "crescent", "prime"]
+
 
 class DualModeState:
     """Persistent toggle + resolved model configs for the active session."""
@@ -72,15 +77,16 @@ def handle_dual_command(
 
     if text.lower() == "/dual on":
         try:
-            left, right = _resolve_pair(DEFAULT_LEFT_ALIAS, DEFAULT_RIGHT_ALIAS)
+            left_cfg = _resolve_single(DEFAULT_LEFT_ALIAS)
+            right_cfg = _resolve_right_with_fallback(left_cfg, console)
         except ValueError as exc:
             console.print(f"  [red]{exc}[/red]")
             return True
         state.active = True
-        state.left_cfg = left
-        state.right_cfg = right
+        state.left_cfg = left_cfg
+        state.right_cfg = right_cfg
         session_state["dual_active"] = True
-        session_state["active_model"] = f"{left['label']}  ‖  {right['label']}"
+        session_state["active_model"] = f"{left_cfg['label']}  ‖  {right_cfg['label']}"
         console.print(f"  [#6fbf73]{state.summary()}[/#6fbf73]")
         return True
 
@@ -99,6 +105,18 @@ def handle_dual_command(
             except ValueError as exc:
                 console.print(f"  [red]{exc}[/red]")
                 return True
+
+            # Preflight both explicitly-chosen models. For a user-chosen
+            # pair we don't walk the fallback chain; we report and abort
+            # so the user sees why their pick didn't take.
+            for side_label, cfg in (("left", left), ("right", right)):
+                ok, reason = _preflight_model(cfg)
+                if not ok:
+                    console.print(
+                        f"  [red]{cfg['label']} ({side_label}) unavailable: {reason}[/red]"
+                    )
+                    return True
+
             state.active = True
             state.left_cfg = left
             state.right_cfg = right
@@ -112,21 +130,82 @@ def handle_dual_command(
     return False
 
 
-def _resolve_pair(left_alias: str, right_alias: str) -> tuple[dict, dict]:
-    """Resolve two model aliases to config dicts, raising a friendly error on miss."""
+def _resolve_single(alias: str) -> dict:
+    """Resolve one alias to a config dict, raising a friendly error on miss."""
     from config.agent_config import resolve_model_config
 
-    left = resolve_model_config(left_alias)
-    right = resolve_model_config(right_alias)
-    if left is None:
-        raise ValueError(f"Unknown model alias: {left_alias}")
-    if right is None:
-        raise ValueError(f"Unknown model alias: {right_alias}")
+    cfg = resolve_model_config(alias)
+    if cfg is None:
+        raise ValueError(f"Unknown model alias: {alias}")
+    return cfg
+
+
+def _resolve_pair(left_alias: str, right_alias: str) -> tuple[dict, dict]:
+    """Resolve two model aliases to config dicts, raising on miss or collision."""
+    left = _resolve_single(left_alias)
+    right = _resolve_single(right_alias)
     if left is right:
         raise ValueError(
             f"Both aliases resolved to {left['label']}. Pick two different models."
         )
     return left, right
+
+
+def _resolve_right_with_fallback(left_cfg: dict, console) -> dict:
+    """Walk RIGHT_FALLBACK_CHAIN, returning the first available model.
+
+    For each candidate alias, resolve it, probe availability (only for
+    Ollama :cloud tags), and return the first one that either doesn't
+    need probing or passes the probe. If a candidate is paywalled or
+    unreachable, print a one-line notice and try the next.
+    """
+    from config.agent_config import resolve_model_config
+
+    last_reason: str | None = None
+    for alias in RIGHT_FALLBACK_CHAIN:
+        cfg = resolve_model_config(alias)
+        if cfg is None:
+            continue
+        if cfg is left_cfg:
+            continue
+
+        ok, reason = _preflight_model(cfg)
+        if ok:
+            return cfg
+        last_reason = reason
+        console.print(
+            f"  [dim #bfa669]{cfg['label']} unavailable: {reason}. Trying fallback.[/dim #bfa669]"
+        )
+
+    raise ValueError(
+        f"No right-pane model available in fallback chain {RIGHT_FALLBACK_CHAIN!r}"
+        + (f" (last reason: {last_reason})" if last_reason else "")
+    )
+
+
+def _preflight_model(cfg: dict) -> tuple[bool, str | None]:
+    """Lightweight availability probe. Only probes Ollama :cloud tags today.
+
+    Other providers return (True, None) without hitting the network: their
+    auth failures are caught at provider construction time by the existing
+    ``_get_*_provider`` helpers, and their free-tier endpoints don't have
+    the specific "looks OK but is actually paywalled" trap that Ollama
+    Cloud has.
+    """
+    if cfg.get("provider") != "ollama":
+        return True, None
+    backend = cfg.get("backend_name") or cfg.get("name", "")
+    if ":cloud" not in backend:
+        return True, None
+
+    from providers.ollama import check_cloud_model_availability
+
+    result = check_cloud_model_availability(backend)
+    if result.ok:
+        return True, None
+    if result.paywalled:
+        return False, "requires an Ollama Cloud subscription"
+    return False, result.reason or "unknown error"
 
 
 # ─── Turn execution ────────────────────────────────────────────────

@@ -1050,13 +1050,19 @@ def chat():
         if handle_dual_command(user_input, dual_state, console, session_state):
             continue
         if user_input.lower().startswith("/model"):
-            parts = user_input.strip().split(maxsplit=1)
+            parts = user_input.strip().split(maxsplit=2)
             if len(parts) == 1:
                 # Show current model and available chain
                 _show_models()
+            elif len(parts) >= 2 and parts[1].lower() == "resolve":
+                # /model resolve <alias>: print what an alias currently maps to.
+                # Useful for debugging the hidden layering between _BASE_MODEL_CHAIN
+                # and models.extra.json overrides.
+                target = parts[2].strip().strip("<>").strip("'\"").strip() if len(parts) == 3 else ""
+                _resolve_model_alias(target)
             else:
                 # Switch to specified model. Strip surrounding angle brackets,
-                # quotes, and whitespace — users often type the literal `<2>`
+                # quotes, and whitespace, users often type the literal `<2>`
                 # placeholder syntax from the help hint.
                 target = parts[1].strip().strip("<>").strip("'\"").strip()
                 _switch_model(azure_state, target)
@@ -1424,6 +1430,48 @@ def _show_status_inline():
     console.print()
 
 
+def _resolve_model_alias(alias: str):
+    """Print what a model alias currently maps to.
+
+    Read-only diagnostic. Reports the resolved label, provider, backend
+    name, all aliases for that config, and the chain index. Useful when
+    ``models.extra.json`` has rebound an alias and the source-level name
+    no longer matches the runtime resolution (e.g. ``prime`` points at
+    IBM Granite instead of the default Kimi K2.5 entry).
+    """
+    from config.agent_config import resolve_model_config, model_selectors
+
+    if not alias:
+        console.print("  [red]usage: /model resolve <alias-or-name>[/red]")
+        return
+    cfg = resolve_model_config(alias)
+    if cfg is None:
+        console.print(f"  [red]Unknown alias: {alias}[/red]")
+        return
+
+    chain_index = None
+    for i, m in enumerate(MODEL_CHAIN):
+        if m is cfg:
+            chain_index = i
+            break
+
+    console.print()
+    console.print(f"  [#bfa669 bold]{cfg['label']}[/#bfa669 bold]")
+    console.print(f"  [dim]alias queried:[/dim]  {alias}")
+    console.print(f"  [dim]provider:[/dim]       {cfg.get('provider', '?')}")
+    console.print(f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}")
+    console.print(f"  [dim]type:[/dim]           {cfg.get('type', 'general')}")
+    if chain_index is not None:
+        console.print(f"  [dim]chain index:[/dim]    {chain_index + 1}")
+    aliases = cfg.get("aliases") or []
+    if aliases:
+        console.print(f"  [dim]aliases:[/dim]        {', '.join(aliases)}")
+    selectors = [s for s in model_selectors(cfg) if s]
+    if selectors:
+        console.print(f"  [dim]selectors:[/dim]      {', '.join(selectors)}")
+    console.print()
+
+
 def _show_models():
     """Display the model chain with current selection highlighted."""
     table = Table(
@@ -1719,6 +1767,7 @@ def _show_help():
     table.add_row("/tools", "List available tools")
     table.add_row("/model", "Show model chain and active model")
     table.add_row("/model <n>", "Switch to model by number or name")
+    table.add_row("/model resolve <a>", "Show what an alias currently maps to")
     table.add_row("/dual", "Show dual-mode status and pairing")
     table.add_row("/dual on", "Enable side-by-side Supreme + Eclipse")
     table.add_row("/dual off", "Disable dual mode")
