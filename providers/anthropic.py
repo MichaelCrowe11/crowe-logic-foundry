@@ -62,12 +62,18 @@ class AnthropicProvider:
 
     @staticmethod
     def _decode_tool_input(raw_input: str) -> tuple[dict[str, Any], str | None]:
-        """Decode a streamed tool JSON payload without crashing the session."""
+        """Decode a streamed tool JSON payload without crashing the session.
+
+        Routes through ``cli.tool_args.parse_tool_arguments`` so tool calls
+        whose ``content`` field contains raw newlines / tabs / Rich markup
+        can still be executed. Also unwraps ``content_b64`` into ``content``.
+        """
         if not raw_input:
             return {}, None
+        from cli.tool_args import parse_tool_arguments
         try:
-            parsed = json.loads(raw_input)
-        except json.JSONDecodeError as exc:
+            parsed, _recovered = parse_tool_arguments(raw_input)
+        except Exception as exc:
             return {}, f"{type(exc).__name__}: {exc}"
         if not isinstance(parsed, dict):
             return {}, f"TypeError: tool arguments must decode to an object, got {type(parsed).__name__}"

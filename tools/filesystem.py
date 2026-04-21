@@ -34,16 +34,28 @@ def read_file(file_path: str, offset: int = 0, limit: int = 0) -> str:
         return json.dumps({"error": str(e)})
 
 
-def write_file(file_path: str, content: str) -> str:
+def write_file(file_path: str, content: str = "", content_b64: str = "") -> str:
     """
     Write content to a file, creating it if it doesn't exist.
     Overwrites existing content.
 
+    For code-heavy payloads whose characters (triple quotes, backslashes,
+    Rich markup) often corrupt JSON tool-argument escaping, pass the text
+    as ``content_b64`` (a standard base64-encoded UTF-8 string). When
+    both fields are supplied, ``content`` wins.
+
     :param file_path: Absolute path to the file to write.
-    :param content: The full content to write to the file.
+    :param content: The full content to write (plain string).
+    :param content_b64: Base64-encoded UTF-8 alternative to content.
     :return: Confirmation message with bytes written.
     :rtype: str
     """
+    if not content and content_b64:
+        import base64
+        try:
+            content = base64.b64decode(content_b64).decode("utf-8")
+        except Exception as exc:
+            return json.dumps({"error": f"Invalid content_b64: {exc}"})
     path = Path(file_path).expanduser().resolve()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

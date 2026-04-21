@@ -52,6 +52,7 @@ from iterm import iterm_set_var, install_iterm, uninstall_iterm, iterm_status
 
 console = Console()
 AGENT_ID_FILE = os.path.join(PROJECT_ROOT, ".agent_id")
+_PROVIDER_HEALTH_TTL_SECONDS = 600
 
 # Smart routing state — tracks current model position in the chain
 _model_state = {
@@ -71,13 +72,94 @@ def _current_model() -> dict:
     return MODEL_CHAIN[0]  # wrap around to primary
 
 
-def _advance_model() -> dict | None:
-    """Move to the next model in the fallback chain. Returns new model or None if exhausted."""
-    _model_state["chain_index"] += 1
-    if _model_state["chain_index"] >= len(MODEL_CHAIN):
-        _model_state["chain_index"] = 0  # reset to primary for next attempt
+def _provider_health_path() -> Path:
+    return Path.home() / ".crowe-logic" / "runtime" / "provider_health.json"
+
+
+def _load_provider_health() -> dict:
+    path = _provider_health_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_provider_health(data: dict) -> None:
+    path = _provider_health_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _set_provider_health(provider: str, *, status: str, reason: str = "", model_label: str = "") -> None:
+    if not provider:
+        return
+    data = _load_provider_health()
+    data[provider] = {
+        "status": status,
+        "reason": reason,
+        "model_label": model_label,
+        "updated_at": time.time(),
+    }
+    _save_provider_health(data)
+
+
+def _clear_provider_health(provider: str) -> None:
+    if not provider:
+        return
+    data = _load_provider_health()
+    if provider in data:
+        data.pop(provider, None)
+        _save_provider_health(data)
+
+
+def _provider_health_block(provider: str) -> str | None:
+    if not provider or os.environ.get("CROWE_LOGIC_IGNORE_PROVIDER_HEALTH", "").strip() in ("1", "true", "yes"):
         return None
-    return _current_model()
+    data = _load_provider_health()
+    entry = data.get(provider)
+    if not isinstance(entry, dict):
+        return None
+    updated_at = float(entry.get("updated_at", 0) or 0)
+    if updated_at <= 0 or (time.time() - updated_at) > _PROVIDER_HEALTH_TTL_SECONDS:
+        return None
+    status = str(entry.get("status", "") or "").strip().lower()
+    if status not in {"blocked", "down", "auth failed", "quota", "offline"}:
+        return None
+    reason = str(entry.get("reason", "") or "").strip()
+    return reason or f"Recent health check marked provider '{provider}' unavailable."
+
+
+def _advance_model(*, skip_provider: str | None = None) -> dict | None:
+    """Move to the next fallback model, optionally skipping one provider family."""
+    _model_state["chain_index"] += 1
+    while _model_state["chain_index"] < len(MODEL_CHAIN):
+        candidate = _current_model()
+        if skip_provider and candidate.get("provider") == skip_provider:
+            _model_state["chain_index"] += 1
+            continue
+        return candidate
+    _model_state["chain_index"] = 0  # reset to primary for next attempt
+    return None
+
+
+def _advance_auto_candidate(
+    candidates: list[dict],
+    current_index: int,
+    *,
+    skip_provider: str | None = None,
+) -> tuple[int, dict] | tuple[None, None]:
+    """Advance through auto-route candidates, optionally skipping one provider."""
+    next_index = current_index + 1
+    while next_index < len(candidates):
+        candidate = candidates[next_index]
+        if skip_provider and candidate.get("provider") == skip_provider:
+            next_index += 1
+            continue
+        return next_index, candidate
+    return None, None
 
 
 def _reset_model_chain():
@@ -90,6 +172,7 @@ def _reset_model_chain():
     _model_state["azure_openai_provider"] = None
     _model_state["hosted_openai_provider"] = None
     _model_state["anthropic_provider"] = None
+    _model_state["watsonx_provider"] = None
 
 
 def _sync_session_runtime(state: dict) -> None:
@@ -173,10 +256,10 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
 
 def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a NvidiaProvider for the given model."""
-    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY
+    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, provider_model_name
     from providers.nvidia import NvidiaProvider
 
-    model_name = model_cfg["name"]
+    model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("nvidia_provider")
@@ -196,6 +279,35 @@ def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = N
         label=label,
     )
     _model_state["nvidia_provider"] = provider
+    return provider
+
+
+def _get_watsonx_provider(model_cfg: dict, *, system_instructions: str | None = None):
+    """Get or create a WatsonxProvider for the given model."""
+    from providers.watsonx import WatsonxProvider
+
+    # The brand_id (model name) is the canonical identifier for the watsonx
+    # adapter; backend_name (upstream model id) is also accepted by resolve().
+    model_name = model_cfg.get("name") or model_cfg.get("backend_name") or ""
+    label = model_cfg["label"]
+    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    current = _model_state.get("watsonx_provider")
+    if current and current.model == model_name:
+        return _apply_provider_instructions(current, system_instructions)
+
+    from pathlib import Path as _P
+    if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
+        raise RuntimeError(
+            f"watsonx model '{label}' is missing credentials — "
+            "create ~/.crowe-logic/ibm.env via the IBM Cloud setup wizard."
+        )
+
+    provider = WatsonxProvider(
+        model=model_name,
+        system_instructions=system_instructions,
+        label=label,
+    )
+    _model_state["watsonx_provider"] = provider
     return provider
 
 
@@ -322,6 +434,38 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
     return provider
 
 
+def _get_provider_for_dual(model_cfg: dict, system_instructions: str):
+    """Dispatch to the correct ``_get_*_provider`` helper for dual-mode use.
+
+    The normal chat loop has an if/elif ladder that picks a helper based
+    on ``model_cfg["provider"]``; this is the same dispatch, collapsed
+    into a callable so the dual orchestrator can stay provider-agnostic.
+    Raises on unknown or legacy providers (``azure`` legacy Agents path
+    is not supported in dual mode because its agent/thread model is single-
+    turn).
+    """
+    provider_kind = model_cfg.get("provider")
+    if provider_kind == "anthropic":
+        return _get_anthropic_provider(model_cfg, system_instructions=system_instructions)
+    if provider_kind == "azure_openai":
+        return _get_azure_openai_provider(model_cfg, system_instructions=system_instructions)
+    if provider_kind == "nvidia":
+        return _get_nvidia_provider(model_cfg, system_instructions=system_instructions)
+    if provider_kind == "watsonx":
+        return _get_watsonx_provider(model_cfg, system_instructions=system_instructions)
+    if provider_kind == "openai_compat":
+        return _get_hosted_openai_provider(model_cfg, system_instructions=system_instructions)
+    if provider_kind == "openrouter":
+        return _get_openrouter_provider(model_cfg, system_instructions=system_instructions)
+    if provider_kind == "ollama":
+        return _get_ollama_provider(model_cfg, system_instructions=system_instructions)
+    raise RuntimeError(
+        f"Dual mode does not support provider '{provider_kind}' "
+        f"(model {model_cfg.get('label')!r}). Pick a model served by "
+        "anthropic, openai_compat, nvidia, azure_openai, watsonx, openrouter, or ollama."
+    )
+
+
 def _is_model_error(error_str: str) -> bool:
     """Detect errors that indicate the model itself is failing (not user error)."""
     indicators = [
@@ -333,6 +477,58 @@ def _is_model_error(error_str: str) -> bool:
     ]
     lower = error_str.lower()
     return any(ind.lower() in lower for ind in indicators)
+
+
+def _is_provider_wide_error(error_str: str) -> bool:
+    """Detect provider-level failures that should skip the same backend family."""
+    lower = error_str.lower()
+    indicators = (
+        "token_quota_reached",
+        "quota_reached",
+        "quota exceeded",
+        "quota was rejected",
+        "insufficient credits",
+        "credit balance",
+        "subscription not registered",
+        "entitlement_enforcement",
+        "401",
+        "403",
+        "unauthorized",
+        "authentication",
+        "invalid api key",
+        "missing credentials",
+        "connection refused",
+        "temporary failure in name resolution",
+        "name or service not known",
+        "nodename nor servname",
+    )
+    return any(ind in lower for ind in indicators)
+
+
+def _is_failover_eligible_error(error_str: str) -> bool:
+    """Detect provider failures that should trigger model fallback instead of aborting."""
+    return (
+        is_rate_limit_error(error_str)
+        or _is_model_error(error_str)
+        or _is_provider_wide_error(error_str)
+    )
+
+
+def _next_auto_model_after_failure(
+    candidates: list[dict],
+    current_index: int,
+    failed_model: dict,
+    error_str: str | None,
+) -> tuple[int, dict] | tuple[None, None]:
+    """Return the next same-turn auto fallback model after a failure."""
+    skip_provider = None
+    if error_str and _is_provider_wide_error(error_str):
+        skip_provider = failed_model.get("provider")
+    return _advance_auto_candidate(
+        candidates,
+        current_index,
+        skip_provider=skip_provider,
+    )
 
 
 def _deploy_with_model(client, model_name: str) -> str:
@@ -516,12 +712,26 @@ def _get_orchestrator():
 
 
 def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
-    """Execute a single tool function by name and return the result as a string."""
+    """Execute a single tool function by name and return the result as a string.
+
+    Uses the resilient parser in ``cli.tool_args`` so that tool calls whose
+    ``content`` field contains raw newlines / tabs / Rich markup don't hard-fail
+    with ``JSONDecodeError``. Recovery is best-effort; truly malformed calls
+    still surface the exception as a structured error.
+    """
+    from cli.tool_args import parse_tool_arguments
+
     func = tool_map.get(name)
     if not func:
         return json.dumps({"error": f"Unknown tool: {name}"})
     try:
-        args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+        # First: resilient parse so unescaped newlines / Rich markup / raw
+        # tabs in string values don't hard-fail with JSONDecodeError, and
+        # so ``content_b64`` gets unwrapped back into ``content``.
+        args, _recovered = parse_tool_arguments(arguments_json)
+        # Then: coerce string-typed values to their declared int/float/bool
+        # so smaller local models that serialize everything as strings
+        # (e.g. limit="10" instead of limit=10) don't raise TypeError.
         from providers._shared import _coerce_tool_args
         args = _coerce_tool_args(func, args)
         result = func(**args)
@@ -757,6 +967,11 @@ def chat():
     azure_state = {"agent_id": None, "client": None, "thread": None}
     synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
 
+    # Dual-mode state, toggled by /dual on|off. When active, each turn fans
+    # out to two models in parallel with a side-by-side pane renderer.
+    from cli.dual_mode import DualModeState, handle_dual_command, run_dual_turn
+    dual_state = DualModeState()
+
     def _active_thread_id() -> str:
         t = azure_state["thread"]
         return t.id if t is not None else synthetic_thread_id
@@ -832,6 +1047,8 @@ def chat():
             continue
         if _handle_local_runtime_command(user_input, session_state):
             continue
+        if handle_dual_command(user_input, dual_state, console, session_state):
+            continue
         if user_input.lower().startswith("/model"):
             parts = user_input.strip().split(maxsplit=1)
             if len(parts) == 1:
@@ -847,7 +1064,51 @@ def chat():
 
         try:
             _sync_session_runtime(session_state)
+
+            # Dual-mode short-circuit: fan out the turn to two providers and
+            # render them side-by-side. Bypasses the Auto router and the
+            # single-model dispatch entirely; each provider keeps its own
+            # message history so follow-ups retain context per-model.
+            if dual_state.active:
+                ctx = orch.prepare(user_input, thread_id=_active_thread_id())
+                render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="dual")
+                console.print()
+                try:
+                    run_dual_turn(
+                        user_input,
+                        dual_state,
+                        console=console,
+                        session_state=session_state,
+                        get_provider=_get_provider_for_dual,
+                        runtime_instructions=_runtime_system_instructions,
+                        get_orchestrator=_get_orchestrator,
+                    )
+                    session_state["api_status"] = "ok"
+                    iterm_set_var("crowe_logic_api", "ok")
+                except Exception as exc:
+                    _render_error(str(exc), "Dual Mode Error")
+                    session_state["api_status"] = "error"
+                    iterm_set_var("crowe_logic_api", "error")
+                continue
+
             model_cfg = _current_model()
+            router_cfg = None
+            auto_candidates = None
+            auto_route_index = None
+            task_class = None
+            # CroweLM Auto: pick the best concrete tier for this user turn.
+            if model_cfg.get("provider") == "auto":
+                from config.agent_config import route_candidates_for_auto
+                router_cfg = model_cfg
+                auto_candidates, task_class = route_candidates_for_auto(
+                    user_input,
+                    availability_check=lambda c: _model_switch_error(c) is None,
+                )
+                auto_route_index = 0
+                model_cfg = auto_candidates[auto_route_index]
+                console.print(
+                    f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
+                )
             ctx = orch.prepare(user_input, thread_id=_active_thread_id())
             render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
             console.print()
@@ -855,7 +1116,10 @@ def chat():
             # Smart routing: try current model, fallback on failure
             succeeded = False
             while not succeeded:
-                model_cfg = _current_model()
+                # Preserve the Auto-routed model_cfg across retries; only re-read
+                # from _model_state when the user isn't on the router.
+                if router_cfg is None:
+                    model_cfg = _current_model()
                 runtime_instructions = _runtime_system_instructions(model_cfg, session_state)
                 last_error = None
 
@@ -884,6 +1148,16 @@ def chat():
                         elif model_cfg.get("provider") == "nvidia":
                             # ── NVIDIA NIM path (production CroweLM) ──
                             provider = _get_nvidia_provider(
+                                model_cfg,
+                                system_instructions=runtime_instructions,
+                            )
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
+                        elif model_cfg.get("provider") == "watsonx":
+                            # ── IBM watsonx.ai path (Granite + hosted Llama/Mistral) ──
+                            provider = _get_watsonx_provider(
                                 model_cfg,
                                 system_instructions=runtime_instructions,
                             )
@@ -938,8 +1212,15 @@ def chat():
 
                         session_state["api_status"] = "ok"
                         iterm_set_var("crowe_logic_api", "ok")
-                        session_state["active_model"] = model_cfg["label"]
-                        iterm_set_var("crowe_logic_model", model_cfg["label"])
+                        # When routed via Auto, the HUD shows "Auto → Tier"
+                        # so the user knows the router picked for this turn.
+                        if router_cfg is not None:
+                            display = f"{router_cfg['label']} → {model_cfg['label']}"
+                        else:
+                            display = model_cfg["label"]
+                        session_state["active_model"] = display
+                        iterm_set_var("crowe_logic_model", display)
+                        _clear_provider_health(model_cfg.get("provider"))
                         succeeded = True
                         break
                     except KeyboardInterrupt:
@@ -968,7 +1249,7 @@ def chat():
                                         azure_state["client"], azure_state["thread"].id
                                     )
                                 continue
-                        elif _is_model_error(error_msg):
+                        elif _is_failover_eligible_error(error_msg):
                             last_error = error_msg
                             break
                         else:
@@ -981,7 +1262,41 @@ def chat():
                 _model_state["failures"][model_cfg["name"]] = (
                     _model_state["failures"].get(model_cfg["name"], 0) + 1
                 )
-                next_model = _advance_model()
+                skip_provider = None
+                if last_error and _is_provider_wide_error(last_error):
+                    _set_provider_health(
+                        model_cfg.get("provider", ""),
+                        status="blocked",
+                        reason=last_error,
+                        model_label=model_cfg.get("label", ""),
+                    )
+                    skip_provider = model_cfg.get("provider")
+
+                if router_cfg is not None:
+                    next_index, next_model = _next_auto_model_after_failure(
+                        auto_candidates or [],
+                        auto_route_index or 0,
+                        model_cfg,
+                        last_error,
+                    )
+                    if next_model is not None and next_index is not None:
+                        auto_route_index = next_index
+                        model_cfg = next_model
+                        console.print(
+                            f"  [dim #bfa669]Auto route failed — switching to "
+                            f"{next_model['label']}...[/dim #bfa669]"
+                        )
+                        continue
+
+                    session_state["api_status"] = "down"
+                    iterm_set_var("crowe_logic_api", "down")
+                    _render_error(
+                        f"{last_error}\n\nAuto exhausted all fallback tiers after "
+                        f"{model_cfg['label']} failed.",
+                        f"Auto route failed: {model_cfg['label']}",
+                    )
+                    break
+                next_model = _advance_model(skip_provider=skip_provider)
                 if next_model is None:
                     session_state["api_status"] = "down"
                     iterm_set_var("crowe_logic_api", "down")
@@ -1156,6 +1471,17 @@ def _model_switch_error(model_cfg: dict) -> str | None:
     provider = model_cfg.get("provider")
     label = model_cfg.get("label", model_cfg.get("name", "model"))
 
+    # CroweLM Auto has no backend of its own — always available.
+    if provider == "auto":
+        return None
+
+    provider_block = _provider_health_block(str(provider or ""))
+    if provider_block:
+        return (
+            f"Cannot switch to {label} — recent health check marked {provider} unavailable: "
+            f"{provider_block}"
+        )
+
     if provider == "azure_openai":
         endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
         api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
@@ -1198,11 +1524,48 @@ def _model_switch_error(model_cfg: dict) -> str | None:
 
     if provider == "openai_compat":
         endpoint_var = model_cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
-        if not os.environ.get(endpoint_var, "").strip():
+        endpoint_val = os.environ.get(endpoint_var, "").strip()
+        if not endpoint_val:
             return f"Cannot switch to {label} — missing {endpoint_var} in .env"
+        # OpenRouter has been retired in favor of NVIDIA NIM + IBM watsonx.
+        # Block any openai_compat model still pointed at openrouter.ai so the
+        # auto-router skips it instead of producing 402 credit errors.
+        if "openrouter.ai" in endpoint_val.lower():
+            return (
+                f"Cannot switch to {label} — OpenRouter is disabled. "
+                "Repoint this model to NVIDIA NIM or IBM watsonx."
+            )
 
-    if provider == "openrouter" and not os.environ.get("OPENROUTER_API_KEY", "").strip():
-        return f"Cannot switch to {label} — missing OPENROUTER_API_KEY in .env"
+    if provider == "watsonx":
+        # watsonx.ai brands read credentials from ~/.crowe-logic/ibm.env via
+        # config.crowelm.watsonx_adapter; we only verify the env file exists.
+        from pathlib import Path as _P
+        if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
+            return (f"Cannot switch to {label} — ~/.crowe-logic/ibm.env missing. "
+                    "Run the IBM Cloud setup wizard.")
+        # IBM Granite Guardian / Llama Guard moderation models require a paid
+        # watsonx plan ("subscription not registered" on Lite). Block them
+        # unless the user explicitly opts in via WATSONX_GUARDIAN_ENABLED=1.
+        backend = (model_cfg.get("backend_name") or "").lower()
+        is_guardian = (
+            "granite-guardian" in backend
+            or "llama-guard" in backend
+            or label in ("CroweLM Warden", "CroweLM Aegis")
+        )
+        if is_guardian and os.environ.get("WATSONX_GUARDIAN_ENABLED", "").strip() not in ("1", "true", "yes"):
+            return (
+                f"Cannot switch to {label} — watsonx Guardian models require a "
+                "paid IBM Cloud plan. Set WATSONX_GUARDIAN_ENABLED=1 once your "
+                "subscription is upgraded."
+            )
+
+    if provider == "openrouter":
+        # OpenRouter has been retired. Force-block so the auto-router never
+        # picks it; users must switch to a NVIDIA or watsonx model instead.
+        return (
+            f"Cannot switch to {label} — OpenRouter has been retired. "
+            "Use a NVIDIA NIM or IBM watsonx model instead."
+        )
 
     return None
 
@@ -1219,7 +1582,7 @@ def _switch_model(azure_state: dict, target: str):
 
         _model_state["chain_index"] = idx
         provider = model.get("provider")
-        if provider in ("anthropic", "azure_openai", "nvidia", "openai_compat", "openrouter", "ollama"):
+        if provider in ("anthropic", "azure_openai", "nvidia", "openai_compat", "openrouter", "ollama", "watsonx"):
             # Reset cached provider so the next turn rebuilds with the new model
             cache_key = "hosted_openai_provider" if provider == "openai_compat" else f"{provider}_provider"
             _model_state[cache_key] = None
@@ -1356,6 +1719,10 @@ def _show_help():
     table.add_row("/tools", "List available tools")
     table.add_row("/model", "Show model chain and active model")
     table.add_row("/model <n>", "Switch to model by number or name")
+    table.add_row("/dual", "Show dual-mode status and pairing")
+    table.add_row("/dual on", "Enable side-by-side Supreme + Eclipse")
+    table.add_row("/dual off", "Disable dual mode")
+    table.add_row("/dual <a> <b>", "Pair two models by alias or number")
     table.add_row("/data", "CroweLM training data telemetry")
     table.add_row("/dataset", "Show or change dataset prompt context")
     table.add_row("/dataset <name>", "Focus the session on a named dataset")
@@ -1425,6 +1792,11 @@ def run(prompt: str):
                 model_cfg,
                 system_instructions=runtime_instructions,
             )
+        elif provider_kind == "watsonx":
+            provider = _get_watsonx_provider(
+                model_cfg,
+                system_instructions=runtime_instructions,
+            )
         elif provider_kind == "openrouter":
             provider = _get_openrouter_provider(
                 model_cfg,
@@ -1450,7 +1822,15 @@ def run(prompt: str):
         provider.stream_response(
             console, render_tool_card, session_state, _get_orchestrator,
         )
+        _clear_provider_health(provider_kind)
     except Exception as e:
+        if _is_provider_wide_error(str(e)):
+            _set_provider_health(
+                provider_kind,
+                status="blocked",
+                reason=str(e),
+                model_label=model_cfg.get("label", ""),
+            )
         _render_error(str(e))
 
 
@@ -1657,6 +2037,21 @@ def deploy():
                     )
                     content = (resp.choices[0].message.content or "").strip()
                     status = "live" if resp.choices else "empty"
+
+            elif provider == "watsonx":
+                from pathlib import Path as _P
+                if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
+                    status = "no credentials"
+                else:
+                    from providers.watsonx import WatsonxProvider
+                    wx = WatsonxProvider(
+                        model=name, system_instructions="ping",
+                        label=label, max_tokens=8, temperature=0.0,
+                    )
+                    wx.add_user_message("Reply with exactly: OK")
+                    data = wx._call_watsonx(tools=None)
+                    msg = (data.get("choices") or [{}])[0].get("message", {}) or {}
+                    status = "live" if msg.get("content") else "empty"
 
             else:
                 status = "unknown provider"

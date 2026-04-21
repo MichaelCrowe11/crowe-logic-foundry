@@ -579,7 +579,12 @@ class BaseOpenAIProvider:
                     failed = True
                 elif func:
                     try:
-                        args = json.loads(args_json) if args_json else {}
+                        # Resilient parse, then type coercion. Order matters:
+                        # parse_tool_arguments may unwrap content_b64 into
+                        # content, and _coerce_tool_args then normalizes
+                        # numeric/bool types smaller models emit as strings.
+                        from cli.tool_args import parse_tool_arguments
+                        args, _recovered = parse_tool_arguments(args_json) if args_json else ({}, False)
                         args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
