@@ -3,7 +3,8 @@
 import os
 import tempfile
 import pytest
-from crowe_synapse_engine.memory import MemoryStore, _is_sqlite_compatible
+import crowe_synapse_engine.memory as memory_module
+from crowe_synapse_engine.memory import MemoryStore
 
 
 @pytest.fixture
@@ -110,21 +111,15 @@ class TestMigration:
         expected = {"sessions", "pipeline_runs", "tool_executions", "agent_delegations", "project_knowledge", "checkpoints"}
         assert expected.issubset(set(tables))
 
-    def test_sqlite_compatibility_guard_skips_postgres_migrations(self):
-        repo_root = os.path.dirname(os.path.dirname(__file__))
-        migration_001 = os.path.join(repo_root, "migrations", "001_initial.sql")
-        migration_002 = os.path.join(repo_root, "migrations", "002_control_plane.sql")
-        migration_003 = os.path.join(repo_root, "migrations", "003_knowledge_plane.sql")
+    def test_bootstraps_when_migration_assets_are_missing(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "missing-assets.db"
+        missing_dir = tmp_path / "does-not-exist"
+        monkeypatch.setattr(memory_module, "_MIGRATIONS_DIR", str(missing_dir))
 
-        with open(migration_001) as f:
-            assert _is_sqlite_compatible(f.read()) is True
-        with open(migration_002) as f:
-            assert _is_sqlite_compatible(f.read()) is False
-        with open(migration_003) as f:
-            assert _is_sqlite_compatible(f.read()) is False
-
-    def test_postgres_only_migrations_are_not_marked_applied(self, store):
-        applied = {row[0] for row in store.conn.execute("SELECT name FROM _migrations").fetchall()}
-        assert "001_initial.sql" in applied
-        assert "002_control_plane.sql" not in applied
-        assert "003_knowledge_plane.sql" not in applied
+        store = MemoryStore(db_path=str(db_path))
+        try:
+            tables = store._get_tables()
+            expected = {"sessions", "pipeline_runs", "tool_executions", "agent_delegations", "project_knowledge", "checkpoints"}
+            assert expected.issubset(set(tables))
+        finally:
+            store.close()

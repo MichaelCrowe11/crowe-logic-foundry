@@ -7,7 +7,7 @@ name = "crowe-logic"
 version = "0.2.5"
 description = "Crowe Logic. Universal AI Agent powered by CroweLM on Azure AI Foundry."
 readme = "README.md"
-license = "LicenseRef-Proprietary"
+license = "MIT"
 requires-python = ">=3.10"
 authors = [
     {name = "Michael Crowe", email = "michael@crowelogic.com"},
@@ -76,5 +76,5 @@ include = ["cli*", "tools*", "config*", "scripts*", "providers*", "crowe_synapse
 
 [tool.setuptools.package-data]
 cli = ["icon.png", "icons/*.icns"]
-crowe_synapse_engine = ["templates/*.yaml"]
+crowe_synapse_engine = ["templates/*.yaml", "migrations/*.sql"]
 iterm = ["daemon.py"]
