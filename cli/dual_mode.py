@@ -40,6 +40,38 @@ DEFAULT_RIGHT_ALIAS = "eclipse"
 # Each entry must resolve to a distinct model from DEFAULT_LEFT_ALIAS.
 RIGHT_FALLBACK_CHAIN = ["eclipse", "crescent", "prime"]
 
+# Default synthesizer config. Supreme is the most capable tier so it produces
+# the best merged output, and the user has already paid for the two-model turn,
+# so adding a single Supreme turn for synthesis is the smallest incremental
+# cost for the largest quality jump.
+DEFAULT_SYNTH_ALIAS = "supreme"
+SYNTH_MODES = ("merge", "judge", "diff")
+DEFAULT_SYNTH_MODE = "merge"
+
+
+SYNTH_PROMPTS = {
+    "merge": (
+        "You are CroweLM's synthesis layer. Two peer models just answered the "
+        "same user question independently. Produce a single merged response "
+        "that keeps the strongest claims from both, resolves contradictions by "
+        "reasoning from evidence, and drops filler. Do not mention the two "
+        "source models. Do not narrate the merging process. Write as if this "
+        "were the original answer."
+    ),
+    "judge": (
+        "You are CroweLM's synthesis layer. Two peer models answered the same "
+        "user question. Pick the stronger answer and explain in two sentences "
+        "why. Then restate that answer in clean final form. Do not hedge. Do "
+        "not say 'both are good'. Commit."
+    ),
+    "diff": (
+        "You are CroweLM's synthesis layer. Two peer models answered the same "
+        "user question. Identify: (1) where they agree (2 bullets max), "
+        "(2) where they disagree and which is more defensible with one "
+        "sentence of reasoning, (3) what both missed. Be terse. No filler."
+    ),
+}
+
 
 class DualModeState:
     """Persistent toggle + resolved model configs for the active session."""
@@ -48,13 +80,21 @@ class DualModeState:
         self.active: bool = False
         self.left_cfg: dict | None = None
         self.right_cfg: dict | None = None
+        # Synthesis knobs. Default off so users opt in and accept the extra
+        # per-turn API cost knowingly.
+        self.synth_active: bool = False
+        self.synth_cfg: dict | None = None
+        self.synth_mode: str = DEFAULT_SYNTH_MODE
 
     def summary(self) -> str:
         if not self.active:
             return "dual mode: off"
         left = self.left_cfg["label"] if self.left_cfg else "?"
         right = self.right_cfg["label"] if self.right_cfg else "?"
-        return f"dual mode: on  ·  {left}  ‖  {right}"
+        base = f"dual mode: on  ·  {left}  ‖  {right}"
+        if self.synth_active and self.synth_cfg:
+            base += f"  ‖  synth: {self.synth_cfg['label']} ({self.synth_mode})"
+        return base
 
 
 def handle_dual_command(
@@ -92,11 +132,18 @@ def handle_dual_command(
 
     if text.lower() == "/dual off":
         state.active = False
+        state.synth_active = False
         session_state["dual_active"] = False
         console.print("  [#bfa669]dual mode: off[/#bfa669]")
         return True
 
+    # Synthesis subcommands: /dual synth on|off, /dual synth mode <name>,
+    # /dual synth model <alias>. Handled before the generic /dual <a> <b>
+    # path so "synth" isn't misread as a model alias.
     lower = text.lower()
+    if lower.startswith("/dual synth"):
+        return _handle_synth_command(text, state, console)
+
     if lower.startswith("/dual "):
         parts = text.split()
         if len(parts) == 3:
@@ -128,6 +175,85 @@ def handle_dual_command(
         return True
 
     return False
+
+
+def _handle_synth_command(text: str, state: DualModeState, console) -> bool:
+    """Handle ``/dual synth ...`` subcommands.
+
+    Grammar:
+        /dual synth              Show current synth status.
+        /dual synth on           Enable with the last-configured synthesizer.
+        /dual synth off          Disable.
+        /dual synth mode <name>  Set synthesis style (merge, judge, diff).
+        /dual synth model <a>    Set synthesizer model alias.
+    """
+    parts = text.split()
+    # parts[0] = "/dual", parts[1] = "synth"
+    tail = parts[2:] if len(parts) > 2 else []
+
+    if not tail:
+        if state.synth_active and state.synth_cfg:
+            console.print(
+                f"  [#bfa669]synth on · {state.synth_cfg['label']} · mode={state.synth_mode}[/#bfa669]"
+            )
+        else:
+            console.print("  [#bfa669]synth off[/#bfa669]")
+        console.print(
+            "  [dim]/dual synth on           enable post-stream synthesis\n"
+            "  /dual synth off          disable\n"
+            "  /dual synth mode <m>     merge | judge | diff\n"
+            "  /dual synth model <a>    set synthesizer model alias[/dim]"
+        )
+        return True
+
+    head = tail[0].lower()
+
+    if head == "on":
+        if state.synth_cfg is None:
+            try:
+                state.synth_cfg = _resolve_single(DEFAULT_SYNTH_ALIAS)
+            except ValueError as exc:
+                console.print(f"  [red]{exc}[/red]")
+                return True
+        state.synth_active = True
+        console.print(
+            f"  [#6fbf73]synth on · {state.synth_cfg['label']} · mode={state.synth_mode}[/#6fbf73]"
+        )
+        return True
+
+    if head == "off":
+        state.synth_active = False
+        console.print("  [#bfa669]synth off[/#bfa669]")
+        return True
+
+    if head == "mode":
+        if len(tail) < 2:
+            console.print(f"  [red]usage: /dual synth mode {'|'.join(SYNTH_MODES)}[/red]")
+            return True
+        mode = tail[1].lower()
+        if mode not in SYNTH_MODES:
+            console.print(
+                f"  [red]unknown mode '{mode}'. Pick from: {', '.join(SYNTH_MODES)}[/red]"
+            )
+            return True
+        state.synth_mode = mode
+        console.print(f"  [#6fbf73]synth mode = {mode}[/#6fbf73]")
+        return True
+
+    if head == "model":
+        if len(tail) < 2:
+            console.print("  [red]usage: /dual synth model <alias>[/red]")
+            return True
+        try:
+            state.synth_cfg = _resolve_single(tail[1])
+        except ValueError as exc:
+            console.print(f"  [red]{exc}[/red]")
+            return True
+        console.print(f"  [#6fbf73]synth model = {state.synth_cfg['label']}[/#6fbf73]")
+        return True
+
+    console.print(f"  [red]unknown synth subcommand: {head}[/red]")
+    return True
 
 
 def _resolve_single(alias: str) -> dict:
@@ -299,6 +425,98 @@ def run_dual_turn(
         for t in transcripts.values()
         if t["content"].strip()
     )
+
+    # Post-stream synthesis, if enabled. Runs as a single fresh turn on the
+    # synthesizer model using a stateless provider (no history) so the turn
+    # is cheap and reproducible. Tool calls are disabled for the synth turn
+    # because the synthesizer is fusing text, not acting on the world.
+    if state.synth_active and state.synth_cfg is not None:
+        _run_synthesis_turn(
+            user_input=user_input,
+            state=state,
+            transcripts=transcripts,
+            console=console,
+            session_state=session_state,
+            get_provider=get_provider,
+        )
+
+
+def _run_synthesis_turn(
+    *,
+    user_input: str,
+    state: DualModeState,
+    transcripts: dict,
+    console,
+    session_state: dict,
+    get_provider: Callable[[dict, str], Any],
+) -> None:
+    """Run a single synthesizer turn and stream it to scrollback."""
+    # Skip synth if neither pane produced usable content (both errored).
+    content_by_pane = {
+        pid: t for pid, t in transcripts.items() if t.get("content", "").strip()
+    }
+    if len(content_by_pane) < 2:
+        console.print(
+            "  [dim #bfa669]synth skipped: need both panes to finish with content[/dim #bfa669]"
+        )
+        return
+
+    left_pane = transcripts.get("left", {})
+    right_pane = transcripts.get("right", {})
+    left_label = left_pane.get("model_label", "A")
+    right_label = right_pane.get("model_label", "B")
+
+    synth_prompt = SYNTH_PROMPTS.get(state.synth_mode, SYNTH_PROMPTS[DEFAULT_SYNTH_MODE])
+
+    # Frame the two answers as structured input. The synthesizer model
+    # sees this as a single user message so we don't have to add the
+    # peer answers to its history (stateless turn).
+    synth_input = (
+        f"User's original question:\n{user_input}\n\n"
+        f"--- Answer from {left_label} ---\n{left_pane.get('content', '').strip()}\n\n"
+        f"--- Answer from {right_label} ---\n{right_pane.get('content', '').strip()}\n\n"
+        f"Produce the final synthesis now."
+    )
+
+    from cli.renderer import StreamRenderer
+    from cli.branding import GOLD_HEX, GOLD_DIM_HEX
+
+    console.print()
+    console.print(
+        f"  [bold {GOLD_HEX}]CroweLM Synthesis[/bold {GOLD_HEX}]"
+        f"  [dim]· {state.synth_cfg['label']} · {state.synth_mode}[/dim]"
+    )
+
+    renderer = StreamRenderer(console=console, model_label=state.synth_cfg["label"])
+
+    try:
+        provider = get_provider(state.synth_cfg, synth_prompt)
+        # Do not bind peer-message history. Stateless single turn.
+        provider.add_user_message(synth_input)
+        renderer.start()
+        provider.stream_response(
+            console=console,
+            render_tool_card=_noop_tool_card,
+            session_state=session_state,
+            _get_orchestrator=None,
+            renderer=renderer,
+        )
+        renderer.finish(session_state=session_state)
+    except Exception as exc:
+        console.print(f"  [red]synth failed: {type(exc).__name__}: {exc}[/red]")
+        return
+
+    # StreamRenderer accumulates every streamed token in _full_text_chunks.
+    # That internal is the only way to recover the synth text for history.
+    synth_text = "".join(getattr(renderer, "_full_text_chunks", []))
+    if synth_text.strip():
+        session_state["last_synth_text"] = synth_text
+        # Append the synth to the dual-mode "last answer" so /transcript and
+        # any downstream consumers see all three outputs.
+        session_state["last_answer_text"] = (
+            session_state.get("last_answer_text", "")
+            + f"\n\n---\n\n**CroweLM Synthesis ({state.synth_mode})**\n\n{synth_text}"
+        )
 
 
 def _noop_tool_card(*args, **kwargs) -> None:
