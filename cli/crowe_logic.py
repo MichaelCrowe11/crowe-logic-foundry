@@ -466,6 +466,64 @@ def _get_provider_for_dual(model_cfg: dict, system_instructions: str):
     )
 
 
+def _handle_replay_or_fork(
+    user_input: str,
+    turn_history,
+    dual_state,
+    console,
+) -> str | None:
+    """Parse ``/replay`` or ``/fork`` and return the user_input to reissue.
+
+    Grammar:
+        /replay N              Reissue turn N on the current model.
+        /replay N <alias>      Reissue turn N, switching to <alias> first.
+        /fork N                Reissue turn N, truncate turns N+1..end.
+        /fork N <alias>        Fork and switch model.
+
+    Returns None on parse error or bad index (caller continues loop).
+    Returns the past user input string on success, caller proceeds
+    with dispatch as if the user typed it fresh.
+    """
+    parts = user_input.strip().split()
+    if len(parts) < 2:
+        console.print("  [red]usage: /replay <N> [alias]  or  /fork <N> [alias][/red]")
+        return None
+
+    cmd = parts[0].lower()
+    is_fork = cmd == "/fork"
+    try:
+        index = int(parts[1])
+    except ValueError:
+        console.print(f"  [red]turn index must be a number, got: {parts[1]!r}[/red]")
+        return None
+
+    record = turn_history.get(index)
+    if record is None:
+        console.print(
+            f"  [red]no turn #{index} in history (have {len(turn_history)} turns)[/red]"
+        )
+        return None
+
+    # Optional model switch. /replay 3 eclipse means "rerun turn 3 on Eclipse".
+    if len(parts) >= 3:
+        alias = parts[2]
+        _switch_model({"agent_id": None, "client": None, "thread": None}, alias)
+
+    # Fork semantics: drop subsequent turns so the replay overwrites the
+    # tail. Useful for "try that differently" without the stale branch
+    # cluttering the history.
+    if is_fork:
+        dropped = turn_history.truncate_after(index - 1)
+        console.print(
+            f"  [dim #bfa669]fork: truncated {len(dropped)} subsequent turn(s)[/dim #bfa669]"
+        )
+
+    verb = "forking" if is_fork else "replaying"
+    preview = record.user_input[:80] + ("..." if len(record.user_input) > 80 else "")
+    console.print(f"  [#6fbf73]{verb} turn #{index}: {preview}[/#6fbf73]")
+    return record.user_input
+
+
 def _record_turn_telemetry(model_cfg: dict, session_state: dict) -> None:
     """Record one completed turn's tokens, USD cost, and credit use.
 
@@ -1068,7 +1126,9 @@ def chat():
     # Dual-mode state, toggled by /dual on|off. When active, each turn fans
     # out to two models in parallel with a side-by-side pane renderer.
     from cli.dual_mode import DualModeState, handle_dual_command, run_dual_turn
+    from cli.history import ensure_history
     dual_state = DualModeState()
+    turn_history = ensure_history(session_state)
 
     def _active_thread_id() -> str:
         t = azure_state["thread"]
@@ -1147,6 +1207,20 @@ def chat():
             continue
         if handle_dual_command(user_input, dual_state, console, session_state):
             continue
+
+        # /replay N and /fork N commands: reissue a past user turn. These
+        # rewrite user_input to the past turn's input and fall through to
+        # the normal dispatch code below. /fork also truncates subsequent
+        # turns so the replay becomes the new tail.
+        _lower = user_input.lower().strip()
+        if _lower.startswith("/replay") or _lower.startswith("/fork"):
+            replay_input = _handle_replay_or_fork(
+                user_input, turn_history, dual_state, console,
+            )
+            if replay_input is None:
+                continue   # error already reported
+            user_input = replay_input
+            # Fall through to normal dispatch with the replayed prompt.
         if user_input.lower().startswith("/model"):
             parts = user_input.strip().split(maxsplit=2)
             if len(parts) == 1:
@@ -1190,6 +1264,13 @@ def chat():
                     session_state["api_status"] = "ok"
                     iterm_set_var("crowe_logic_api", "ok")
                     _record_dual_turn_telemetry(dual_state, session_state)
+                    turn_history.append(
+                        user_input,
+                        model_label=session_state.get("active_model", ""),
+                        dual_active=True,
+                        synth_active=getattr(dual_state, "synth_active", False),
+                        synth_mode=getattr(dual_state, "synth_mode", ""),
+                    )
                 except Exception as exc:
                     _render_error(str(exc), "Dual Mode Error")
                     session_state["api_status"] = "error"
@@ -1327,6 +1408,11 @@ def chat():
                         iterm_set_var("crowe_logic_model", display)
                         _clear_provider_health(model_cfg.get("provider"))
                         _record_turn_telemetry(model_cfg, session_state)
+                        turn_history.append(
+                            user_input,
+                            model_label=model_cfg.get("label", ""),
+                            dual_active=False,
+                        )
                         succeeded = True
                         break
                     except KeyboardInterrupt:
@@ -1875,6 +1961,9 @@ def _show_help():
     table.add_row("/dual synth on", "Post-stream synthesis of both panes")
     table.add_row("/dual synth mode <m>", "merge | judge | diff")
     table.add_row("/dual synth model <a>", "Pick synthesizer model (default Supreme)")
+    table.add_row("/replay <N>", "Re-run past turn #N on the current model")
+    table.add_row("/replay <N> <a>", "Re-run past turn #N on model alias <a>")
+    table.add_row("/fork <N>", "Re-run past turn #N, truncate subsequent turns")
     table.add_row("/data", "CroweLM training data telemetry")
     table.add_row("/dataset", "Show or change dataset prompt context")
     table.add_row("/dataset <name>", "Focus the session on a named dataset")
