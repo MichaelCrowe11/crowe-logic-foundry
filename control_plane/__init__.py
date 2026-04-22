@@ -1,5 +1,5 @@
 """
-Crowe Logic Foundry — Control Plane API
+Crowe Logic Foundry. Control Plane API
 
 Auth, workspace management, plan enforcement, usage metering,
 and model gateway. Extends the existing CroweLM API.
@@ -29,7 +29,7 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 
 app = FastAPI(
     title="Crowe Logic Foundry",
-    description="Control Plane — Auth, Workspaces, Plans, Model Gateway",
+    description="Control Plane. Auth, Workspaces, Plans, Model Gateway",
     version="0.2.5",
 )
 
@@ -37,9 +37,17 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://crowelogic.com",
+        "https://www.crowelogic.com",
+        "https://api.crowelogic.com",
+        "https://ide.crowelogic.com",
+        "https://app.crowelogic.com",
+        "https://code.crowelogic.com",
+        "https://crowecode.com",
+        "https://www.crowecode.com",
         "https://ai.southwestmushrooms.com",
         "https://ide.southwestmushrooms.com",
         "http://localhost:3000",
+        "http://localhost:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -213,7 +221,198 @@ async def _resolve_workspace(workspace_id: str, user: dict, db: Database) -> dic
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "version": "0.2.5", "service": "control-plane"}
+    return {"status": "healthy", "version": "0.2.8", "service": "control-plane"}
+
+
+# ─── Public pricing ──────────────────────────────────────────────────
+
+@app.get("/api/public/plans")
+async def public_plans(db: Database = Depends(get_db)):
+    """Public plan listing for the pricing page. No auth required."""
+    rows = await db.fetch(
+        """
+        SELECT id, display_name, tagline, highlights, cta_label,
+               monthly_price_cents, annual_price_cents, overage_per_1k_cents,
+               max_seats, max_concurrent_sessions, max_ide_hours_month,
+               vision_quota_month, storage_limit_gb, agent_jobs_month,
+               token_budget_month, features, sort_order
+        FROM plans
+        WHERE is_public = TRUE
+        ORDER BY sort_order, id
+        """
+    )
+    plans = []
+    for r in rows:
+        raw = dict(r)
+        # asyncpg returns JSONB as dict already; highlights may be str under mock driver.
+        hi = raw.get("highlights")
+        if isinstance(hi, str):
+            try:
+                hi = json.loads(hi)
+            except json.JSONDecodeError:
+                hi = []
+        feat = raw.get("features")
+        if isinstance(feat, str):
+            try:
+                feat = json.loads(feat)
+            except json.JSONDecodeError:
+                feat = {}
+        plans.append({
+            **raw,
+            "highlights": hi or [],
+            "features": feat or {},
+        })
+    return {"plans": plans, "currency": "USD"}
+
+
+# ─── Pricing page (human-readable preview) ───────────────────────────
+
+from fastapi.responses import HTMLResponse as _HTMLResponse
+
+
+_PRICING_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crowe Logic Code — Pricing</title>
+<style>
+  :root {
+    --gold: #bfa669; --gold-high: #d8c089; --gold-deep: #9c8451;
+    --graphite: #0b0b0c; --panel: #121214; --line: #262527;
+    --parchment: #e8e2cf; --muted: #948b72;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--graphite); color: var(--parchment);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    max-width: 1100px; margin: 0 auto; padding: 64px 24px 24px;
+  }
+  .eyebrow {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gold); margin: 0 0 12px;
+  }
+  h1 {
+    font: 600 40px/1.1 "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0 0 12px; color: var(--parchment); letter-spacing: -0.02em;
+  }
+  h1 em { color: var(--gold); font-style: normal; }
+  header p { color: var(--muted); max-width: 640px; margin: 0; font-size: 16px; }
+  .grid {
+    max-width: 1100px; margin: 32px auto 64px; padding: 0 24px;
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 28px 24px 24px; display: flex; flex-direction: column;
+    transition: border-color 200ms, transform 200ms;
+  }
+  .card.featured { border-color: var(--gold-deep); box-shadow: 0 0 0 1px rgba(191,166,105,0.35); }
+  .card:hover { border-color: var(--gold-deep); transform: translateY(-2px); }
+  .card h2 {
+    margin: 0 0 4px; font: 600 20px/1.2 inherit; color: var(--parchment);
+    letter-spacing: -0.01em;
+  }
+  .card .tag { color: var(--gold); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .card .price {
+    font: 600 38px/1 "SF Pro Display", sans-serif; color: var(--parchment);
+    margin: 20px 0 4px; letter-spacing: -0.02em;
+  }
+  .card .price small { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .card .annual { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .card p.tagline { color: var(--parchment); opacity: 0.78; font-size: 14px; margin: 0 0 16px; min-height: 42px; }
+  .card ul {
+    list-style: none; padding: 0; margin: 0 0 24px; flex: 1;
+    font-size: 14px; color: var(--parchment);
+  }
+  .card li {
+    padding: 8px 0 8px 22px; position: relative; border-top: 1px solid var(--line);
+    line-height: 1.4;
+  }
+  .card li:first-child { border-top: 0; }
+  .card li::before {
+    content: "+"; position: absolute; left: 0; top: 8px;
+    color: var(--gold); font-weight: 600;
+  }
+  .card a.cta {
+    display: block; text-align: center; padding: 12px 16px;
+    background: var(--gold); color: var(--graphite);
+    text-decoration: none; border-radius: 8px; font-weight: 600;
+    letter-spacing: 0.01em; transition: background 160ms;
+  }
+  .card a.cta:hover { background: var(--gold-high); }
+  .card.sales a.cta {
+    background: transparent; color: var(--gold); border: 1px solid var(--gold-deep);
+  }
+  .card.sales a.cta:hover { background: var(--gold); color: var(--graphite); }
+  footer {
+    max-width: 1100px; margin: 0 auto 64px; padding: 24px;
+    color: var(--muted); font-size: 13px; text-align: center; border-top: 1px solid var(--line);
+  }
+  footer a { color: var(--gold); text-decoration: none; }
+  .loading { color: var(--muted); grid-column: 1 / -1; text-align: center; padding: 40px; }
+</style>
+</head>
+<body>
+  <header>
+    <p class="eyebrow">Crowe Logic Code</p>
+    <h1>A premium IDE for developers who <em>build with intent</em>.</h1>
+    <p>Crowe Logic Code is a branded VS Code plus a hosted remote IDE, powered end-to-end by the Crowe Logic Foundry agent stack. 27 routed CroweLM models, domain-tuned for mycology, vision, research, and compound design.</p>
+  </header>
+  <section class="grid" id="plans"><div class="loading">Loading plans...</div></section>
+  <footer>
+    Billed in USD. Annual plans include roughly 20% off. Taxes calculated at checkout.
+    Need a custom deployment? <a href="mailto:sales@crowelogic.com">sales@crowelogic.com</a>
+  </footer>
+<script>
+(async () => {
+  const grid = document.getElementById('plans');
+  try {
+    const res = await fetch('/api/public/plans', { headers: { 'Accept': 'application/json' } });
+    const { plans } = await res.json();
+    grid.innerHTML = '';
+    for (const p of plans) {
+      const featured = p.id === 'studio';
+      const monthly = p.monthly_price_cents == null ? null : (p.monthly_price_cents / 100);
+      const annual = p.annual_price_cents == null ? null : (p.annual_price_cents / 100);
+      const priceHtml = monthly == null
+        ? `<div class="price">Let's talk</div><div class="annual">Custom terms</div>`
+        : `<div class="price">$${monthly.toLocaleString('en-US')}<small> / month</small></div>
+           <div class="annual">or $${annual.toLocaleString('en-US')} / year</div>`;
+      const items = (p.highlights || []).map(h => `<li>${h}</li>`).join('');
+      const sales = p.id === 'enterprise' ? 'sales' : '';
+      const href = p.id === 'enterprise'
+        ? 'mailto:sales@crowelogic.com?subject=Crowe%20Logic%20Code%20Enterprise'
+        : `/checkout?plan=${p.id}`;
+      grid.insertAdjacentHTML('beforeend', `
+        <article class="card ${featured ? 'featured' : ''} ${sales}">
+          <span class="tag">${p.display_name}</span>
+          <h2>${p.display_name}</h2>
+          ${priceHtml}
+          <p class="tagline">${p.tagline || ''}</p>
+          <ul>${items}</ul>
+          <a class="cta" href="${href}">${p.cta_label || 'Get started'}</a>
+        </article>`);
+    }
+  } catch (e) {
+    grid.innerHTML = '<div class="loading">Could not load pricing. Refresh in a moment.</div>';
+  }
+})();
+</script>
+</body>
+</html>
+"""
+
+
+@app.get("/pricing", response_class=_HTMLResponse)
+async def pricing_page():
+    """Public pricing page. Reads from /api/public/plans; no auth."""
+    return _HTMLResponse(_PRICING_HTML)
 
 
 # ─── Auth endpoints ──────────────────────────────────────────────────
@@ -513,6 +712,197 @@ async def record_usage(
     return {"recorded": True}
 
 
+# ─── Credit accounting (Gate 1 billing) ─────────────────────────────
+
+class CreditBalance(BaseModel):
+    workspace_id: str
+    tier_key: str
+    balance: int
+    allocation: int
+    reset_at: Optional[str] = None
+    active: bool = True
+
+
+class CreditConsumeRequest(BaseModel):
+    amount: int
+    reason: str = "turn"
+    model_label: Optional[str] = None
+    metadata: dict = {}
+
+
+class CreditRefillRequest(BaseModel):
+    tier_key: str
+    allocation: int
+    reset_at: Optional[str] = None
+
+
+async def _ensure_credit_row(workspace_id: str, db: Database) -> dict:
+    """Return the workspace_credits row, creating a zero-balance row if missing.
+
+    A workspace without an explicit credit row defaults to the 'personal'
+    tier with zero balance. That means a brand-new unpaid workspace
+    cannot consume credits until a refill lands (which happens on
+    successful Stripe checkout webhook). BYOK users bypass this
+    check entirely at the CLI layer and never hit these endpoints.
+    """
+    row = await db.fetchrow(
+        "SELECT * FROM workspace_credits WHERE workspace_id = $1",
+        workspace_id,
+    )
+    if row:
+        return dict(row)
+
+    await db.execute(
+        """INSERT INTO workspace_credits (workspace_id, tier_key, balance, allocation)
+           VALUES ($1, 'personal', 0, 0)
+           ON CONFLICT (workspace_id) DO NOTHING""",
+        workspace_id,
+    )
+    row = await db.fetchrow(
+        "SELECT * FROM workspace_credits WHERE workspace_id = $1",
+        workspace_id,
+    )
+    return dict(row) if row else {
+        "workspace_id": workspace_id, "tier_key": "personal",
+        "balance": 0, "allocation": 0, "reset_at": None, "active": True,
+    }
+
+
+@app.get(
+    "/api/workspaces/{workspace_id}/credits",
+    response_model=CreditBalance,
+)
+async def get_credits(
+    workspace_id: str,
+    user: dict = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Return the workspace's current credit balance and tier."""
+    await _resolve_workspace(workspace_id, user, db)
+    row = await _ensure_credit_row(workspace_id, db)
+    return CreditBalance(
+        workspace_id=workspace_id,
+        tier_key=row["tier_key"],
+        balance=row["balance"],
+        allocation=row["allocation"],
+        reset_at=row["reset_at"].isoformat() if row.get("reset_at") else None,
+        active=row.get("active", True),
+    )
+
+
+@app.post(
+    "/api/workspaces/{workspace_id}/credits/consume",
+    status_code=200,
+)
+async def consume_credits(
+    workspace_id: str,
+    req: CreditConsumeRequest,
+    user: dict = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Atomically decrement credits. Returns 402 if insufficient balance.
+
+    Callers should send the full estimated credit cost for a turn
+    before the turn starts. If the estimate later turns out to have
+    been wrong (tool overage, synth was skipped, etc.) the CLI sends
+    a corrective transaction with a negative or positive delta and
+    reason='correction'.
+    """
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be positive")
+
+    await _resolve_workspace(workspace_id, user, db)
+    row = await _ensure_credit_row(workspace_id, db)
+    if not row.get("active", True):
+        raise HTTPException(
+            status_code=402,
+            detail="Workspace credit consumption paused. Check billing status.",
+        )
+    if row["balance"] < req.amount:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                f"Insufficient credits: balance={row['balance']}, "
+                f"requested={req.amount}, tier={row['tier_key']}"
+            ),
+        )
+
+    # Conditional update so two simultaneous consumes can't oversell.
+    updated = await db.fetchrow(
+        """UPDATE workspace_credits
+              SET balance = balance - $2, updated_at = now()
+            WHERE workspace_id = $1 AND balance >= $2 AND active = TRUE
+        RETURNING balance""",
+        workspace_id, req.amount,
+    )
+    if updated is None:
+        raise HTTPException(status_code=402, detail="Insufficient credits (race)")
+
+    await db.execute(
+        """INSERT INTO credit_transactions
+               (workspace_id, amount, reason, model_label, metadata)
+           VALUES ($1, $2, $3, $4, $5)""",
+        workspace_id, -req.amount, req.reason,
+        req.model_label, json.dumps(req.metadata) if req.metadata else "{}",
+    )
+
+    return {
+        "workspace_id": workspace_id,
+        "amount_consumed": req.amount,
+        "balance": updated["balance"],
+    }
+
+
+@app.post(
+    "/api/workspaces/{workspace_id}/credits/refill",
+    status_code=200,
+)
+async def refill_credits(
+    workspace_id: str,
+    req: CreditRefillRequest,
+    user: dict = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    """Refill the workspace's credits to the tier allocation.
+
+    Called by the Stripe webhook on invoice.paid and
+    customer.subscription.updated so a successful payment immediately
+    restores usage. Also callable by workspace owners for manual
+    adjustments (audit logged as reason='manual_refill').
+    """
+    await _resolve_workspace(workspace_id, user, db)
+
+    await db.execute(
+        """INSERT INTO workspace_credits
+               (workspace_id, tier_key, balance, allocation, reset_at, active)
+           VALUES ($1, $2, $3, $3, $4, TRUE)
+           ON CONFLICT (workspace_id) DO UPDATE SET
+               tier_key = EXCLUDED.tier_key,
+               balance = EXCLUDED.balance,
+               allocation = EXCLUDED.allocation,
+               reset_at = EXCLUDED.reset_at,
+               active = TRUE,
+               updated_at = now()""",
+        workspace_id, req.tier_key, req.allocation, req.reset_at,
+    )
+
+    await db.execute(
+        """INSERT INTO credit_transactions
+               (workspace_id, amount, reason, metadata)
+           VALUES ($1, $2, 'refill', $3)""",
+        workspace_id, req.allocation,
+        json.dumps({"tier": req.tier_key, "reset_at": req.reset_at}),
+    )
+
+    return {
+        "workspace_id": workspace_id,
+        "tier_key": req.tier_key,
+        "balance": req.allocation,
+        "allocation": req.allocation,
+        "reset_at": req.reset_at,
+    }
+
+
 # ─── Stripe webhooks ─────────────────────────────────────────────────
 
 @app.post("/api/billing/webhook")
@@ -546,6 +936,8 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
                    WHERE stripe_subscription_id = $1""",
                 sub_id,
             )
+            # Refill credits for the workspace bound to this subscription.
+            await _refill_credits_for_subscription(db, sub_id)
 
     elif event["type"] == "customer.subscription.updated":
         sub = event["data"]["object"]
@@ -559,6 +951,27 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
             sub["status"], sub["current_period_start"],
             sub["current_period_end"], sub["id"],
         )
+        # Plan changes (upgrade/downgrade) come through this event. Refill
+        # to the new tier's allocation so the upgrade takes effect
+        # immediately rather than waiting for the next invoice.paid.
+        if sub["status"] == "active":
+            await _refill_credits_for_subscription(db, sub["id"])
+
+    elif event["type"] == "invoice.payment_failed":
+        sub_id = event["data"]["object"].get("subscription")
+        if sub_id:
+            # Pause credit consumption until payment is resolved. Don't
+            # zero the balance - the user keeps whatever was unspent in
+            # case payment recovers within the grace window.
+            await db.execute(
+                """UPDATE workspace_credits
+                      SET active = FALSE, updated_at = now()
+                    WHERE workspace_id IN (
+                        SELECT id FROM workspaces
+                         WHERE stripe_subscription_id = $1
+                    )""",
+                sub_id,
+            )
 
     elif event["type"] == "customer.subscription.deleted":
         sub_id = event["data"]["object"]["id"]
@@ -572,5 +985,71 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
                WHERE stripe_subscription_id = $1""",
             sub_id,
         )
+        # Cancellation zeroes the allocation and deactivates consumption.
+        await db.execute(
+            """UPDATE workspace_credits
+                  SET active = FALSE, allocation = 0, updated_at = now()
+                WHERE workspace_id IN (
+                    SELECT id FROM workspaces
+                     WHERE stripe_subscription_id = $1
+                )""",
+            sub_id,
+        )
 
     return {"received": True}
+
+
+# ─── Webhook helpers ────────────────────────────────────────────────
+
+# Customer-tier credit allocations, kept in sync with
+# config/customer_pricing.json. Encoded here so the webhook doesn't
+# need to parse the JSON on every event.
+_TIER_ALLOCATIONS = {
+    "personal": 750,
+    "pro": 3000,
+    "team": 1500,       # per-seat; team workspaces multiply by seat count
+    "enterprise": 100_000,   # effectively unlimited; billed separately
+    "byok": 0,          # BYOK bypasses credit meter entirely
+}
+
+
+async def _refill_credits_for_subscription(db, stripe_subscription_id: str) -> None:
+    """Refill credits on every workspace bound to the given Stripe subscription.
+
+    Reads the plan_key from the subscription row (set during checkout
+    completion) and looks up the tier's allocation in _TIER_ALLOCATIONS.
+    Quietly noops if no workspace or plan is associated, so webhook
+    retries stay idempotent.
+    """
+    rows = await db.fetch(
+        """SELECT w.id AS workspace_id, s.plan_id, s.current_period_end
+             FROM workspaces w
+        LEFT JOIN subscriptions s ON s.stripe_subscription_id = w.stripe_subscription_id
+            WHERE w.stripe_subscription_id = $1""",
+        stripe_subscription_id,
+    )
+    for row in rows:
+        tier_key = (row["plan_id"] or "personal").lower()
+        allocation = _TIER_ALLOCATIONS.get(tier_key, _TIER_ALLOCATIONS["personal"])
+        reset_at = row.get("current_period_end")
+
+        await db.execute(
+            """INSERT INTO workspace_credits
+                   (workspace_id, tier_key, balance, allocation, reset_at, active)
+               VALUES ($1, $2, $3, $3, $4, TRUE)
+               ON CONFLICT (workspace_id) DO UPDATE SET
+                   tier_key = EXCLUDED.tier_key,
+                   balance = EXCLUDED.balance,
+                   allocation = EXCLUDED.allocation,
+                   reset_at = EXCLUDED.reset_at,
+                   active = TRUE,
+                   updated_at = now()""",
+            row["workspace_id"], tier_key, allocation, reset_at,
+        )
+        await db.execute(
+            """INSERT INTO credit_transactions
+                   (workspace_id, amount, reason, metadata)
+               VALUES ($1, $2, 'webhook_refill', $3)""",
+            row["workspace_id"], allocation,
+            json.dumps({"tier": tier_key, "stripe_sub": stripe_subscription_id}),
+        )

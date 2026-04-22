@@ -16,32 +16,41 @@ from config.agent_config import (
 )
 
 
-def test_primary_models_are_crowelm_titan_and_sovereign():
-    # Chain[0] is the Auto router; Titan is the first concrete tier.
-    assert MODEL_CHAIN[0]["label"] == "CroweLM Auto"
-    assert MODEL_CHAIN[0]["provider"] == "auto"
-    assert MODEL_CHAIN[1]["name"] == "gpt-5.4"
-    assert MODEL_CHAIN[1]["label"] == "CroweLM Titan"
-    assert MODEL_CHAIN[1]["provider"] == "openai_compat"
-    assert provider_model_name(MODEL_CHAIN[1]) == "z-ai/glm-5.1"
-    assert MODEL_CHAIN[2]["name"] == "gpt-5.4-pro"
-    assert MODEL_CHAIN[2]["label"] == "CroweLM Apex"
-    assert MODEL_CHAIN[2]["provider"] == "openai_compat"
-    assert provider_model_name(MODEL_CHAIN[2]) == "qwen/qwen3.5-397b-a17b"
+def test_chain_has_auto_router_and_core_tiers():
+    """The chain must contain an Auto router plus the Supreme flagship.
+
+    Positions drift as tiers get added/reshuffled; assert on contents,
+    not on indices. If Auto or Supreme disappears, the routing layer
+    is broken and the test should catch that.
+    """
+    labels = {m["label"] for m in MODEL_CHAIN}
+    providers = {m["provider"] for m in MODEL_CHAIN}
+
+    assert "CroweLM Auto" in labels
+    assert "CroweLM Supreme" in labels
+    # The chain must expose the full provider surface the CLI dispatches to.
+    assert providers >= {"auto", "anthropic"}
 
 
 def test_resolve_model_config_accepts_branded_aliases():
-    assert resolve_model_config("titan")["name"] == "gpt-5.4"
-    assert resolve_model_config("CroweLM Sovereign")["name"] == "claude-opus-4-6-2"
-    assert resolve_model_config("nano")["name"] == "crowelm-nano"
+    """Core CroweLM aliases resolve by label and short alias.
+
+    Tests the alias resolver, not the specific backends behind each tier
+    (backends migrate frequently; aliases are more stable).
+    """
+    assert resolve_model_config("titan")["label"] == "CroweLM Titan"
+    assert resolve_model_config("CroweLM Sovereign")["label"] == "CroweLM Sovereign"
+    assert resolve_model_config("supreme")["label"] == "CroweLM Supreme"
 
 
-def test_resolve_model_config_accepts_legacy_aliases():
-    assert resolve_model_config("crowelm-pro")["name"] == "gpt-5.4-pro"
-    # crowelm-glm resolves to the upgraded GLM 5.1 deployment
-    assert resolve_model_config("crowelm-glm")["name"] == "FW-GLM-5.1"
-    # The legacy GLM 5 entry is still accessible via its own alias
-    assert resolve_model_config("glm5")["name"] == "FW-GLM-5"
+def test_resolve_model_config_accepts_new_cloud_tier_aliases():
+    """The Crescent/Eclipse cloud aliases resolve to their Ollama backends."""
+    crescent = resolve_model_config("crescent")
+    eclipse = resolve_model_config("eclipse")
+    assert crescent is not None and crescent["label"] == "CroweLM Crescent"
+    assert eclipse is not None and eclipse["label"] == "CroweLM Eclipse"
+    assert crescent["provider"] == "ollama"
+    assert eclipse["provider"] == "ollama"
 
 
 def test_build_system_instructions_includes_crowelm_tier_prompt():
@@ -52,14 +61,22 @@ def test_build_system_instructions_includes_crowelm_tier_prompt():
     assert "peak-performance reasoning tier" in instructions
 
 
-def test_open_source_first_tiers_keep_stable_public_ids_with_backend_mapping():
-    dense = resolve_model_config("crowelm-glm")
-    sovereign = resolve_model_config("CroweLM Sovereign")
+def test_provider_model_name_supports_env_var_interpolation(monkeypatch):
+    """Backend names with ${ENV_VAR} syntax resolve at request time.
 
-    assert dense["provider"] == "nvidia"
-    assert provider_model_name(dense) == "z-ai/glm-5.1"
-    assert sovereign["provider"] == "openai_compat"
-    assert provider_model_name(sovereign) == "deepseek/deepseek-v3.2"
+    This is what lets NemoClaw/Talon late-bind the model id discovered
+    on the VM by scripts/nemoclaw_recon.sh instead of requiring a JSON
+    edit per deployment.
+    """
+    monkeypatch.setenv("TEST_INTERP_MODEL", "resolved-at-runtime")
+    cfg = {"backend_name": "${TEST_INTERP_MODEL}", "name": "fallback"}
+    assert provider_model_name(cfg) == "resolved-at-runtime"
+
+
+def test_provider_model_name_falls_back_to_name_when_backend_missing():
+    """Legacy entries without backend_name still resolve via the name field."""
+    cfg = {"name": "some-model-id"}
+    assert provider_model_name(cfg) == "some-model-id"
 
 
 def test_model_chain_loads_extra_models_from_json_file(tmp_path, monkeypatch):

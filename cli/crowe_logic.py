@@ -524,6 +524,102 @@ def _handle_replay_or_fork(
     return record.user_input
 
 
+def _show_account_status() -> None:
+    """Print the workspace's credit balance, tier, and reset date."""
+    try:
+        from cli.foundry_api import get_client
+    except Exception:
+        console.print("  [red]Account lookup unavailable: foundry_api import failed[/red]")
+        return
+
+    status = get_client().account_status()
+    console.print()
+
+    if status.byok:
+        console.print(f"  [bold #bfa669]BYOK mode[/bold #bfa669]")
+        console.print(f"  [dim]{status.message}[/dim]")
+        console.print()
+        return
+
+    if not status.authenticated:
+        console.print("  [bold #bf6f6f]Not authenticated[/bold #bf6f6f]")
+        console.print(f"  [dim]{status.message}[/dim]")
+        console.print("  [dim]Set CROWE_LOGIC_API_KEY to enable credit tracking.[/dim]")
+        console.print()
+        return
+
+    balance_str = f"{status.balance:,}" if status.balance >= 0 else "unknown"
+    allocation_str = f"{status.allocation:,}" if status.allocation else "0"
+    tier_str = status.tier or "unknown"
+    active_str = "active" if status.active else "paused"
+
+    console.print(f"  [bold #bfa669]Account[/bold #bfa669]  ·  tier: {tier_str}  ·  {active_str}")
+    console.print(f"  [dim]balance:[/dim]    {balance_str} / {allocation_str} credits")
+    if status.reset_at:
+        console.print(f"  [dim]resets:[/dim]     {status.reset_at}")
+    if status.workspace_id:
+        console.print(f"  [dim]workspace:[/dim]  {status.workspace_id}")
+    if status.message and status.message != "ok":
+        console.print(f"  [dim]note:[/dim]       {status.message}")
+    console.print()
+
+
+def _estimate_credits_for_turn(model_cfg: dict, dual_state=None) -> tuple[int, str]:
+    """Compute the credit cost of an upcoming turn for pre-flight reservation.
+
+    Returns (credits, model_label_for_audit). Uses the real estimator
+    in cli.cost_model so the number matches what the HUD reports.
+    """
+    try:
+        from cli.cost_model import estimate_turn_credits
+    except Exception:
+        return (1, model_cfg.get("label", "?"))
+
+    peer = dual_state.right_cfg if (dual_state and getattr(dual_state, "active", False)) else None
+    synth = bool(dual_state and getattr(dual_state, "synth_active", False))
+    primary = (
+        dual_state.left_cfg if (dual_state and getattr(dual_state, "active", False))
+        else model_cfg
+    )
+    cc = estimate_turn_credits(primary, dual_mode_peer_cfg=peer, synthesis=synth)
+    label = primary.get("label", "?")
+    if peer:
+        label = f"{primary.get('label','?')} + {peer.get('label','?')}"
+        if synth:
+            label += " + synth"
+    return (cc.credits, label)
+
+
+def _preflight_credits(model_cfg: dict, dual_state=None) -> bool:
+    """Reserve credits for the upcoming turn. Returns True when the
+    turn may proceed, False when the control plane denied it.
+
+    On denial, prints a clean user-facing message and returns False.
+    On network failure or disabled client, returns True (fail-open).
+    """
+    try:
+        from cli.foundry_api import get_client
+    except Exception:
+        return True
+
+    client = get_client()
+    if not client.enabled and not client.byok_mode:
+        # No API key set. Do not gate the user.
+        return True
+
+    credits, label = _estimate_credits_for_turn(model_cfg, dual_state=dual_state)
+    decision = client.check_and_reserve(credits, model_label=label)
+    if decision.allowed:
+        return True
+
+    console.print()
+    console.print(f"  [bold #bf6f6f]Credits unavailable[/bold #bf6f6f]")
+    console.print(f"  [dim]{decision.reason}[/dim]")
+    console.print("  [dim]Check balance with /account or upgrade your plan.[/dim]")
+    console.print()
+    return False
+
+
 def _record_turn_telemetry(model_cfg: dict, session_state: dict) -> None:
     """Record one completed turn's tokens, USD cost, and credit use.
 
@@ -1203,6 +1299,9 @@ def chat():
         if user_input.lower() == "/data":
             _show_data_telemetry()
             continue
+        if user_input.lower() == "/account":
+            _show_account_status()
+            continue
         if _handle_local_runtime_command(user_input, session_state):
             continue
         if handle_dual_command(user_input, dual_state, console, session_state):
@@ -1248,6 +1347,13 @@ def chat():
             # single-model dispatch entirely; each provider keeps its own
             # message history so follow-ups retain context per-model.
             if dual_state.active:
+                # Pre-flight credit reservation. Denies return early so
+                # the user sees the deny reason without the HUD flashing
+                # a partial turn. Fail-open when the control plane is
+                # unreachable; paying users should never be blocked by
+                # infra outages.
+                if not _preflight_credits(_current_model(), dual_state=dual_state):
+                    continue
                 ctx = orch.prepare(user_input, thread_id=_active_thread_id())
                 render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="dual")
                 console.print()
@@ -1295,6 +1401,11 @@ def chat():
                 console.print(
                     f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
                 )
+            # Pre-flight credit reservation runs after Auto has resolved
+            # to a concrete tier so the reservation matches the model
+            # that actually answers.
+            if not _preflight_credits(model_cfg):
+                continue
             ctx = orch.prepare(user_input, thread_id=_active_thread_id())
             render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
             console.print()
@@ -1964,6 +2075,7 @@ def _show_help():
     table.add_row("/replay <N>", "Re-run past turn #N on the current model")
     table.add_row("/replay <N> <a>", "Re-run past turn #N on model alias <a>")
     table.add_row("/fork <N>", "Re-run past turn #N, truncate subsequent turns")
+    table.add_row("/account", "Show workspace tier, credit balance, reset date")
     table.add_row("/data", "CroweLM training data telemetry")
     table.add_row("/dataset", "Show or change dataset prompt context")
     table.add_row("/dataset <name>", "Focus the session on a named dataset")

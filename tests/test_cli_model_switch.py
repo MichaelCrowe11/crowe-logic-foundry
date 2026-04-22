@@ -6,10 +6,24 @@ from cli import crowe_logic as cli_mod
 from config.agent_config import resolve_model_config
 
 
-def test_model_switch_error_reports_missing_azure_credentials(monkeypatch):
+def _synthetic_openai_compat_cfg() -> dict:
+    """Build a synthetic openai_compat config so tests don't depend on
+    whichever model currently happens to use CROWE_OPEN_ENDPOINT."""
+    return {
+        "name": "synthetic-hosted",
+        "label": "CroweLM Synthetic",
+        "provider": "openai_compat",
+        "endpoint_env": "CROWE_OPEN_ENDPOINT",
+        "api_key_env": "CROWE_OPEN_API_KEY",
+        "backend_name": "synthetic/some-model",
+    }
+
+
+def test_model_switch_error_reports_missing_endpoint(monkeypatch):
+    """A hosted model without its endpoint env set must report a clear error."""
     monkeypatch.delenv("CROWE_OPEN_ENDPOINT", raising=False)
 
-    cfg = resolve_model_config("titan")
+    cfg = _synthetic_openai_compat_cfg()
     error = cli_mod._model_switch_error(cfg)
 
     assert error is not None
@@ -17,9 +31,10 @@ def test_model_switch_error_reports_missing_azure_credentials(monkeypatch):
 
 
 def test_model_status_note_marks_blocked_models(monkeypatch):
+    """When required env is missing the status note must read 'blocked'."""
     monkeypatch.delenv("CROWE_OPEN_ENDPOINT", raising=False)
 
-    cfg = resolve_model_config("titan")
+    cfg = _synthetic_openai_compat_cfg()
     assert cli_mod._model_status_note(cfg) == "blocked"
 
 

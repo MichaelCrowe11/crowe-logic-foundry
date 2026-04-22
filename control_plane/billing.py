@@ -24,12 +24,23 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
 
-# Plan ID → Stripe Price ID mapping (set via env or defaults)
+# Plan ID to Stripe Price ID mapping. Keys match the tier_key values in
+# config/customer_pricing.json so webhooks and checkout flows use one
+# consistent vocabulary. Set the STRIPE_PRICE_* env vars in the Railway
+# environment to the actual price IDs after running the Stripe bootstrap.
+#
+# Legacy keys (developer/studio/lab) kept as aliases so in-flight
+# subscriptions created under the old scheme continue to resolve.
 PLAN_PRICE_MAP = {
-    "developer": os.environ.get("STRIPE_PRICE_DEVELOPER", ""),
-    "studio": os.environ.get("STRIPE_PRICE_STUDIO", ""),
-    "lab": os.environ.get("STRIPE_PRICE_LAB", ""),
+    "personal":   os.environ.get("STRIPE_PRICE_PERSONAL", ""),
+    "pro":        os.environ.get("STRIPE_PRICE_PRO", ""),
+    "team":       os.environ.get("STRIPE_PRICE_TEAM", ""),
     "enterprise": os.environ.get("STRIPE_PRICE_ENTERPRISE", ""),
+    "byok":       os.environ.get("STRIPE_PRICE_BYOK", ""),
+    # Legacy aliases (do not remove until all 2025-era subscriptions migrate)
+    "developer":  os.environ.get("STRIPE_PRICE_DEVELOPER", ""),
+    "studio":     os.environ.get("STRIPE_PRICE_STUDIO", ""),
+    "lab":        os.environ.get("STRIPE_PRICE_LAB", ""),
 }
 
 # Usage metering price (per 1K tokens overage)
