@@ -1,20 +1,25 @@
 """
 NemoClaw sandbox tools.
 
-NemoClaw is NVIDIA's reference stack pairing a NIM inference endpoint with the
-OpenShell sandbox runtime (NVIDIA Agent Toolkit) on a single Brev-provisioned
-VM. Foundry handles the inference side through the standard openai_compat
-provider (see config/models.extra.json entry `crowelm-talon-nemoclaw`). This
-module owns the sandbox side: shell execution and health checks that run
-inside the OpenShell isolation boundary instead of on the operator's host.
+Talon's hybrid deployment: NIM inference on NVIDIA's hosted endpoint
+(``integrate.api.nvidia.com``, shared with other CroweLM NIM tiers via
+NVIDIA_NIM_ENDPOINT + NVIDIA_API_KEY) and OpenShell execution on a
+self-hosted Brev VM (wired here via NEMOCLAW_SANDBOX_URL). The two halves
+are independent: inference is always on, sandbox is optional, and neither
+falls back to the other.
+
+This module owns only the sandbox side: shell execution and health
+checks that run inside the OpenShell isolation boundary instead of on the
+operator's host.
 
 Env contract:
-    NEMOCLAW_ENDPOINT             Base URL of the VM (e.g. https://<vm>.brevlab.com).
-                                  Used by the inference provider; also the
-                                  default sandbox base.
-    NEMOCLAW_API_KEY              Bearer token (or Brev access token).
-    NEMOCLAW_SANDBOX_URL          Override for the sandbox base if OpenShell
-                                  runs on a different host/port.
+    NEMOCLAW_SANDBOX_URL          Base URL of the OpenShell sandbox
+                                  (e.g. https://<vm>.brevlab.com). No
+                                  default; unset disables nemoclaw_shell.
+    NEMOCLAW_API_KEY              Bearer token for the sandbox (often the
+                                  Brev access token). Unset sends no auth
+                                  header, which works for VMs that expose
+                                  OpenShell behind Brev port auth only.
     NEMOCLAW_SANDBOX_EXEC_PATH    Path for exec (default /openshell/v1/exec).
                                   If your NemoClaw build serves OpenShell at a
                                   different path, set this after running
@@ -41,8 +46,13 @@ DEFAULT_HEALTH_PATH = "/openshell/v1/health"
 
 
 def _sandbox_base_url() -> str:
-    base = os.environ.get("NEMOCLAW_SANDBOX_URL") or os.environ.get("NEMOCLAW_ENDPOINT", "")
-    return base.rstrip("/")
+    # NEMOCLAW_SANDBOX_URL is the sole source of truth for the OpenShell
+    # sandbox. The legacy fallback to NEMOCLAW_ENDPOINT was removed when
+    # Talon moved to a hybrid deployment: inference URL and sandbox URL
+    # now live on different hosts (NVIDIA hosted NIM vs. self-hosted
+    # OpenShell VM), so falling back would POST shell commands at the
+    # inference endpoint and silently 404.
+    return os.environ.get("NEMOCLAW_SANDBOX_URL", "").rstrip("/")
 
 
 def _auth_headers() -> dict:
@@ -71,7 +81,7 @@ def nemoclaw_health() -> str:
     if not base:
         return json.dumps({
             "reachable": False,
-            "error": "NEMOCLAW_SANDBOX_URL / NEMOCLAW_ENDPOINT not set",
+            "error": "NEMOCLAW_SANDBOX_URL not set",
         })
     if httpx is None:
         return json.dumps({"reachable": False, "error": "httpx not installed"})
@@ -112,7 +122,7 @@ def nemoclaw_shell(command: str, working_directory: str = "", timeout_seconds: i
     base = _sandbox_base_url()
     if not base:
         return json.dumps({
-            "error": "NEMOCLAW_SANDBOX_URL / NEMOCLAW_ENDPOINT not set in environment.",
+            "error": "NEMOCLAW_SANDBOX_URL not set in environment.",
             "return_code": -1,
         })
     if httpx is None:

@@ -317,15 +317,15 @@
       "type": "reasoning",
       "provider": "openai_compat",
       "backend_name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-      "endpoint_env": "NEMOCLAW_ENDPOINT",
-      "api_key_env": "NEMOCLAW_API_KEY",
+      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
+      "api_key_env": "NVIDIA_API_KEY",
       "aliases": [
         "crowelm-talon-nemoclaw",
         "talon-nemoclaw",
         "talon-sandbox",
         "CroweLM Talon NemoClaw"
       ],
-      "system_prompt": "You are CroweLM Talon, running on a NemoClaw sandbox VM. Inference lives on NVIDIA NIM and shell calls run inside the OpenShell isolation boundary colocated on the same host.",
+      "system_prompt": "You are CroweLM Talon. Inference runs on NVIDIA-hosted NIM (`integrate.api.nvidia.com`); shell calls, when available, go through the decoupled OpenShell sandbox at NEMOCLAW_SANDBOX_URL. State the plan in one line, execute, report. No filler.",
       "tier": "operational",
       "tags": [
         "agentic",
@@ -333,7 +333,7 @@
         "sandboxed",
         "nemoclaw"
       ],
-      "notes": "backend_name is a best-guess default. Run scripts/nemoclaw_recon.sh on the VM and update if NemoClaw serves a different model id.",
+      "notes": "Hybrid deployment: inference on NVIDIA hosted NIM via NVIDIA_NIM_ENDPOINT + NVIDIA_API_KEY (shared with other CroweLM NIM tiers). Shell sandbox optional, wired independently via NEMOCLAW_SANDBOX_URL; when unset, nemoclaw_shell returns a 'not configured' error and agents should fall back to execute_shell.",
       "tunable": false
     }
   ]
