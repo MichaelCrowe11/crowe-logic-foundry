@@ -466,6 +466,104 @@ def _get_provider_for_dual(model_cfg: dict, system_instructions: str):
     )
 
 
+def _record_turn_telemetry(model_cfg: dict, session_state: dict) -> None:
+    """Record one completed turn's tokens, USD cost, and credit use.
+
+    Reads any token counts the provider populated on ``session_state``
+    during streaming (output tokens are always present; Anthropic also
+    reports real input_tokens, cache_read, and cache_write counters),
+    computes upstream cost via :mod:`cli.cost_model`, and pushes a
+    TurnCost onto the session tracker so the HUD can render running
+    totals on the next frame. Silently skips if cost-model import
+    fails so telemetry accounting never crashes a turn.
+    """
+    try:
+        from cli.cost_model import (
+            SessionCostTracker, estimate_turn_cost, estimate_turn_credits,
+        )
+    except Exception:
+        return
+
+    tracker = session_state.get("cost_tracker")
+    if tracker is None:
+        tracker = SessionCostTracker()
+        session_state["cost_tracker"] = tracker
+
+    output_tokens = int(session_state.get("last_tokens", 0) or 0)
+    # Providers that populate real usage counters set these in session_state;
+    # others leave them at 0 and we fall back to an input-free estimate
+    # that still surfaces the output-side cost honestly.
+    input_tokens = int(session_state.get("last_input_tokens", 0) or 0)
+    cached_input = int(session_state.get("last_cached_input_tokens", 0) or 0)
+    cache_write = int(session_state.get("last_cache_write_tokens", 0) or 0)
+
+    cost = estimate_turn_cost(
+        model_cfg.get("provider", "unknown"),
+        model_cfg.get("backend_name") or model_cfg.get("name", ""),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=cached_input,
+        cache_write_tokens=cache_write,
+    )
+    credits = estimate_turn_credits(model_cfg)
+    tracker.record_turn(model_cfg=model_cfg, cost=cost, credits=credits)
+
+    # Clear the per-turn reservoirs so the next turn starts clean.
+    session_state["last_input_tokens"] = 0
+    session_state["last_cached_input_tokens"] = 0
+    session_state["last_cache_write_tokens"] = 0
+
+
+def _record_dual_turn_telemetry(dual_state, session_state: dict) -> None:
+    """Record both dual-mode panes plus the optional synthesis turn.
+
+    Reads per-pane transcripts from ``session_state["last_dual_transcripts"]``
+    (populated by ``run_dual_turn``) and attributes tokens and cost to the
+    correct model config. Synthesis adds one more flagship-cost entry.
+    """
+    try:
+        from cli.cost_model import (
+            SessionCostTracker, estimate_turn_cost, estimate_turn_credits,
+        )
+    except Exception:
+        return
+
+    tracker = session_state.get("cost_tracker")
+    if tracker is None:
+        tracker = SessionCostTracker()
+        session_state["cost_tracker"] = tracker
+
+    transcripts = session_state.get("last_dual_transcripts") or {}
+    for pane_id, pane_cfg in (("left", dual_state.left_cfg), ("right", dual_state.right_cfg)):
+        if pane_cfg is None:
+            continue
+        pane_data = transcripts.get(pane_id, {})
+        tokens_out = int(pane_data.get("tokens", 0) or 0)
+        cost = estimate_turn_cost(
+            pane_cfg.get("provider", "unknown"),
+            pane_cfg.get("backend_name") or pane_cfg.get("name", ""),
+            input_tokens=0,
+            output_tokens=tokens_out,
+        )
+        credits = estimate_turn_credits(pane_cfg)
+        tracker.record_turn(
+            model_cfg=pane_cfg, cost=cost, credits=credits, dual_pair=True,
+        )
+
+    if dual_state.synth_active and dual_state.synth_cfg is not None:
+        synth_tokens = len(session_state.get("last_synth_text", ""))
+        # Rough token estimate: 4 chars per token on English text.
+        synth_out = max(synth_tokens // 4, 0)
+        cost = estimate_turn_cost(
+            dual_state.synth_cfg.get("provider", "unknown"),
+            dual_state.synth_cfg.get("backend_name") or dual_state.synth_cfg.get("name", ""),
+            input_tokens=0,
+            output_tokens=synth_out,
+        )
+        credits = estimate_turn_credits(dual_state.synth_cfg)
+        tracker.record_turn(model_cfg=dual_state.synth_cfg, cost=cost, credits=credits)
+
+
 def _is_model_error(error_str: str) -> bool:
     """Detect errors that indicate the model itself is failing (not user error)."""
     indicators = [
@@ -1091,6 +1189,7 @@ def chat():
                     )
                     session_state["api_status"] = "ok"
                     iterm_set_var("crowe_logic_api", "ok")
+                    _record_dual_turn_telemetry(dual_state, session_state)
                 except Exception as exc:
                     _render_error(str(exc), "Dual Mode Error")
                     session_state["api_status"] = "error"
@@ -1227,6 +1326,7 @@ def chat():
                         session_state["active_model"] = display
                         iterm_set_var("crowe_logic_model", display)
                         _clear_provider_health(model_cfg.get("provider"))
+                        _record_turn_telemetry(model_cfg, session_state)
                         succeeded = True
                         break
                     except KeyboardInterrupt:
