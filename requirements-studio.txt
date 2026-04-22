@@ -1,0 +1,12 @@
+# Crowe Studio optional dependencies.
+#
+# Only needed if you run multi-camera sync (tools/sync.py) or other
+# scientific-computing pipelines inside Foundry. Main CLI loads without
+# these because tools/sync.py imports them lazily.
+#
+# Install:   pip install -r requirements-studio.txt
+# Skip:      main CLI works without them; sync_shoot() will raise a
+#            clean ImportError if you call it and they're missing.
+
+numpy>=2.0,<3
+scipy>=1.14,<2
