@@ -43,7 +43,17 @@ class AnthropicProvider:
         self.system_instructions = system_instructions
         self.endpoint = endpoint
         self.messages: list[dict[str, Any]] = []
-        self._system_block = {"type": "text", "text": system_instructions}
+        # Ephemeral cache_control on the system block tells Anthropic to cache
+        # the system prompt at a 5-minute TTL. On every follow-up turn within
+        # that window, the system tokens bill at 0.1x instead of 1x, cutting
+        # Opus 4.7 system-prompt cost from $5/MTok to $0.50/MTok and TTFT by
+        # roughly half. Cold first turn writes the cache at 1.25x, so the
+        # break-even is the second turn.
+        self._system_block = {
+            "type": "text",
+            "text": system_instructions,
+            "cache_control": {"type": "ephemeral"},
+        }
 
         # Normalize endpoint: Azure expects /anthropic base path
         base_url = endpoint.rstrip("/")
@@ -58,7 +68,42 @@ class AnthropicProvider:
     def set_system_instructions(self, system_instructions: str) -> None:
         """Update the active system prompt for cached provider instances."""
         self.system_instructions = system_instructions
-        self._system_block = {"type": "text", "text": system_instructions}
+        self._system_block = {
+            "type": "text",
+            "text": system_instructions,
+            "cache_control": {"type": "ephemeral"},
+        }
+
+    @staticmethod
+    def _publish_usage(session_state: dict, start: dict, delta: dict) -> None:
+        """Push Anthropic usage counters onto session_state for the telemetry hook.
+
+        Accumulates across tool-calling rounds within the same logical turn
+        so a multi-round turn still reports total input and output. The
+        telemetry hook clears these after recording.
+        """
+        if not start and not delta:
+            return
+        fresh_in = start.get("input_tokens", 0)
+        cache_read = start.get("cache_read_input_tokens", 0)
+        cache_write = start.get("cache_creation_input_tokens", 0)
+        # Output: prefer message_delta's final count, fall back to start's.
+        output = delta.get("output_tokens", start.get("output_tokens", 0))
+
+        session_state["last_input_tokens"] = (
+            session_state.get("last_input_tokens", 0) + fresh_in + cache_read + cache_write
+        )
+        session_state["last_cached_input_tokens"] = (
+            session_state.get("last_cached_input_tokens", 0) + cache_read
+        )
+        session_state["last_cache_write_tokens"] = (
+            session_state.get("last_cache_write_tokens", 0) + cache_write
+        )
+        # The renderer's finish() sets last_tokens from its own count, which
+        # is a character-based estimate. When we have real counts from
+        # Anthropic, prefer those by overwriting.
+        if output:
+            session_state["last_tokens"] = output
 
     @staticmethod
     def _decode_tool_input(raw_input: str) -> tuple[dict[str, Any], str | None]:
@@ -80,11 +125,23 @@ class AnthropicProvider:
         return parsed, None
 
     def _build_tool_schemas(self) -> list[dict]:
-        """Convert Foundry tools to Anthropic tool format."""
+        """Convert Foundry tools to Anthropic tool format.
+
+        Tools are sorted by name so the schema list is deterministic across
+        process restarts. This matters for prompt caching: Anthropic keys
+        its cache on the exact serialized payload, so non-deterministic
+        tool ordering (``_tools`` is a set, iteration order differs per
+        process) would break cache hits on every new CLI session.
+
+        The last tool in the array gets ``cache_control: ephemeral`` so
+        the whole tools block caches alongside the system prompt. Tool
+        schemas for 30+ tools average 8-12K tokens on Opus, which is
+        meaningful cost to cache.
+        """
         import inspect
 
         tools = []
-        for func in _tools:
+        for func in sorted(_tools, key=lambda f: f.__name__):
             sig = inspect.signature(func)
             doc = (func.__doc__ or "").strip()
             description = doc.split("\n")[0] if doc else func.__name__
@@ -124,6 +181,13 @@ class AnthropicProvider:
                     "required": required,
                 },
             })
+
+        # Mark the last tool with cache_control so the whole tools array
+        # is treated as a cacheable prefix. Anthropic applies caching
+        # up to and including the marked block.
+        if tools:
+            tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+
         return tools
 
     def _force_final_response(self, renderer, session_state, full_response: str) -> str:
@@ -213,10 +277,27 @@ class AnthropicProvider:
 
                 tool_use_blocks = []
                 tool_use_blocks_by_index = {}
+                # Usage counters. Anthropic reports input/cache on
+                # message_start, output on message_delta. Accumulate both.
+                usage_start: dict[str, int] = {}
+                usage_delta: dict[str, int] = {}
 
                 for event in stream:
+                    # Message start carries the input-side usage (cached and
+                    # fresh input tokens distinguish cache-hits from cold).
+                    if event.type == "message_start":
+                        msg = getattr(event, "message", None)
+                        usage_obj = getattr(msg, "usage", None) if msg is not None else None
+                        if usage_obj is not None:
+                            usage_start = {
+                                "input_tokens": getattr(usage_obj, "input_tokens", 0) or 0,
+                                "cache_creation_input_tokens": getattr(usage_obj, "cache_creation_input_tokens", 0) or 0,
+                                "cache_read_input_tokens": getattr(usage_obj, "cache_read_input_tokens", 0) or 0,
+                                "output_tokens": getattr(usage_obj, "output_tokens", 0) or 0,
+                            }
+
                     # Content block start
-                    if event.type == "content_block_start":
+                    elif event.type == "content_block_start":
                         if event.content_block.type == "thinking":
                             # Claude's reasoning/thinking blocks
                             pass
@@ -249,8 +330,18 @@ class AnthropicProvider:
                                 ) or tool_use_blocks[-1]
                                 target_block["input"] += event.delta.partial_json
 
+                    # Message delta carries the final output token count.
+                    elif event.type == "message_delta":
+                        usage_obj = getattr(event, "usage", None)
+                        if usage_obj is not None:
+                            usage_delta = {
+                                "output_tokens": getattr(usage_obj, "output_tokens", 0) or 0,
+                            }
+
                     # Message stop
                     elif event.type == "message_stop":
+                        # Publish usage counters for the telemetry hook.
+                        self._publish_usage(session_state, usage_start, usage_delta)
                         break
 
             except KeyboardInterrupt:
