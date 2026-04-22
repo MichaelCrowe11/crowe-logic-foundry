@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crowe Logic Foundry · Multi-Model AI CLI for Operators</title>
+  <meta name="description" content="The multi-model agent CLI for operators. Run two flagship models concurrently, synthesize their output, execute tools in a sandboxed shell. Built by Crowe Logic, Inc." />
+  <meta property="og:title" content="Crowe Logic Foundry" />
+  <meta property="og:description" content="Multi-model AI CLI. Dual-model concurrent reasoning with synthesis. Sandboxed shell. Seven provider chain." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#bfa669" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23bfa669'/><text x='50' y='68' font-size='56' text-anchor='middle' fill='%23141414' font-family='Georgia' font-weight='700'>C</text></svg>" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gold: '#bfa669',
+            'gold-dim': '#8a7850',
+            ink: '#0c0c0c',
+            paper: '#f5f3ee',
+            ash: '#1a1a1a',
+          },
+          fontFamily: {
+            serif: ['Georgia', 'Cambria', 'serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'monospace'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    body { background: #0c0c0c; color: #f5f3ee; }
+    .brand-serif { font-family: Georgia, Cambria, serif; letter-spacing: -0.01em; }
+    .grain {
+      background-image: radial-gradient(#bfa66910 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    .dot::before { content: "·"; margin: 0 .6em; color: #bfa669; opacity: .7; }
+    .card { background: #141414; border: 1px solid #2a2a2a; }
+    .card:hover { border-color: #bfa669; transition: border-color .2s; }
+    .cta-primary {
+      background: #bfa669; color: #0c0c0c;
+      padding: .85rem 1.5rem; font-weight: 600; letter-spacing: .02em;
+      border-radius: 2px; display: inline-block;
+    }
+    .cta-primary:hover { background: #d4be84; }
+    .cta-ghost {
+      border: 1px solid #bfa669; color: #bfa669;
+      padding: .85rem 1.5rem; font-weight: 500; letter-spacing: .02em;
+      border-radius: 2px; display: inline-block;
+    }
+    .cta-ghost:hover { background: #bfa66915; }
+    .code {
+      background: #0a0a0a; border: 1px solid #1f1f1f;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .85rem; color: #bfa669;
+      padding: .5rem .75rem; border-radius: 2px;
+    }
+    .tier { border: 1px solid #2a2a2a; background: #141414; }
+    .tier-featured { border-color: #bfa669; background: #151310; position: relative; }
+    .tier-featured::before {
+      content: "Recommended"; position: absolute; top: -10px; right: 20px;
+      background: #bfa669; color: #0c0c0c; font-size: .7rem; font-weight: 700;
+      padding: 3px 10px; letter-spacing: .08em; text-transform: uppercase;
+    }
+    .hero-demo {
+      background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .82rem; line-height: 1.6;
+    }
+    .prompt { color: #bfa669; }
+    .muted { color: #8a7850; }
+    .ok { color: #6fbf73; }
+    details summary { cursor: pointer; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+    details[open] summary .chev { transform: rotate(90deg); }
+    .chev { transition: transform .2s; }
+  </style>
+</head>
+<body class="min-h-screen grain">
+
+<!-- ── NAV ── -->
+<nav class="border-b border-gold/10">
+  <div class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
+    <a href="#" class="flex items-center gap-3">
+      <span class="w-8 h-8 rounded-full bg-gold text-ink flex items-center justify-center brand-serif font-bold">C</span>
+      <span class="brand-serif text-xl">Crowe Logic Foundry</span>
+    </a>
+    <div class="hidden md:flex items-center gap-8 text-sm">
+      <a href="#features" class="hover:text-gold">Features</a>
+      <a href="#pricing" class="hover:text-gold">Pricing</a>
+      <a href="#install" class="hover:text-gold">Install</a>
+      <a href="https://github.com/MichaelCrowe11/crowe-logic-foundry" class="hover:text-gold">GitHub</a>
+      <a href="#cta" class="cta-primary">Start Free</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<header class="max-w-6xl mx-auto px-6 pt-20 pb-24">
+  <div class="grid md:grid-cols-2 gap-16 items-center">
+    <div>
+      <div class="text-gold text-xs uppercase tracking-[0.25em] mb-6">
+        Crowe Logic, Inc. <span class="dot"></span> v0.2.8
+      </div>
+      <h1 class="brand-serif text-5xl md:text-6xl leading-[1.05] mb-6">
+        Two flagship models,<br/>
+        <span class="text-gold">one prompt,</span><br/>
+        one synthesized answer.
+      </h1>
+      <p class="text-lg text-paper/75 mb-10 max-w-xl">
+        Crowe Logic Foundry is a multi-model agent CLI. Run Claude Opus and
+        Kimi K2.6 side-by-side on the same question, let a third model
+        synthesize the best answer from both, and execute tools in a
+        sandboxed shell that can't touch your filesystem.
+      </p>
+      <div class="flex flex-wrap gap-4 mb-6">
+        <a href="#cta" class="cta-primary">Start Personal · $29/mo</a>
+        <a href="#features" class="cta-ghost">See the features</a>
+      </div>
+      <p class="text-sm text-paper/50">
+        First month 50% off with <span class="text-gold font-mono">FOUNDRY50</span>.
+        Or bring your own API keys for <span class="text-paper font-semibold">$19/mo</span>.
+      </p>
+    </div>
+
+    <!-- Terminal demo -->
+    <div class="hero-demo p-5 shadow-2xl">
+      <div class="flex gap-2 pb-3 border-b border-ash">
+        <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+        <span class="w-3 h-3 rounded-full bg-yellow-500/70"></span>
+        <span class="w-3 h-3 rounded-full bg-green-500/70"></span>
+        <span class="ml-2 muted text-xs">crowe-logic</span>
+      </div>
+      <div class="pt-4">
+        <div class="prompt">/dual on</div>
+        <div class="muted text-xs mb-3 pl-2">dual mode: on · CroweLM Supreme ‖ CroweLM Eclipse</div>
+
+        <div class="prompt">What's the best approach for RICO claims on landlord fraud?</div>
+
+        <div class="grid grid-cols-2 gap-3 mt-4 text-xs">
+          <div class="border border-gold/30 p-3 rounded">
+            <div class="text-gold font-semibold mb-1">CroweLM Supreme</div>
+            <div class="muted">RICO requires predicate acts. For your case, you'd need to prove at least two acts of mail fraud, wire fraud, or extortion within...</div>
+            <div class="ok mt-2 text-[10px]">▊ 312 tok @ 47/s · cached</div>
+          </div>
+          <div class="border border-gold/30 p-3 rounded">
+            <div class="text-gold font-semibold mb-1">CroweLM Eclipse</div>
+            <div class="muted">Civil RICO (18 USC 1964) is the path. Predicate offenses must form a pattern. The Anti-SLAPP provisions in Arizona don't apply to...</div>
+            <div class="ok mt-2 text-[10px]">▊ 287 tok @ 52/s</div>
+          </div>
+        </div>
+
+        <div class="mt-4 border-t border-ash pt-3">
+          <div class="text-gold font-semibold text-xs mb-1">CroweLM Synthesis · merge</div>
+          <div class="muted text-xs">Civil RICO under 18 USC 1964 requires a pattern of at least two predicate acts (mail/wire fraud most applicable to landlord cases). Arizona Anti-SLAPP doesn't bar these claims. File in federal court for treble damages...</div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-ash text-[11px] muted">
+          COST ~$0.087 · CREDITS 15 · TURNS 1 · 2/3 cached
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ── WEDGE ── -->
+<section class="border-y border-gold/10 bg-ash/50">
+  <div class="max-w-4xl mx-auto px-6 py-16 text-center">
+    <div class="text-gold text-xs uppercase tracking-[0.25em] mb-4">Why Foundry exists</div>
+    <p class="brand-serif text-3xl md:text-4xl leading-tight text-paper/90">
+      Every other AI tool is a wrapper around one model.
+      <span class="text-gold">Crowe Logic runs two concurrently, reconciles them, and delivers one answer you can trust more than either alone.</span>
+    </p>
+  </div>
+</section>
+
+<!-- ── FEATURES ── -->
+<section id="features" class="max-w-6xl mx-auto px-6 py-24">
+  <div class="text-center mb-16">
+    <div class="text-gold text-xs uppercase tracking-[0.25em] mb-3">Features</div>
+    <h2 class="brand-serif text-4xl">Built for operators who need more than chat.</h2>
+  </div>
+
+  <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div class="card p-6 rounded">
+      <div class="text-gold text-2xl brand-serif mb-2">◆</div>
+      <h3 class="font-semibold text-lg mb-2">Dual-model concurrent</h3>
+      <p class="text-paper/70 text-sm">Run Claude Opus and Kimi K2.6 side-by-side on the same prompt. Watch both stream in real time. Compare reasoning paths before committing to an answer.</p>
+    </div>
+    <div class="card p-6 rounded">
+      <div class="text-gold text-2xl brand-serif mb-2">◆</div>
+      <h3 class="font-semibold text-lg mb-2">Synthesis layer</h3>
+      <p class="text-paper/70 text-sm">A third model reads both responses and produces the final synthesis. Three modes: merge (blend strongest claims), judge (pick winner), diff (show gaps).</p>
+    </div>
+    <div class="card p-6 rounded">
+      <div class="text-gold text-2xl brand-serif mb-2">◆</div>
+      <h3 class="font-semibold text-lg mb-2">Sandboxed shell</h3>
+      <p class="text-paper/70 text-sm">Crowe Talon runs tools inside an NVIDIA NemoClaw sandbox on a Brev VM. Shell commands can't touch your filesystem. One-click Brev Launchable included.</p>
+    </div>
+    <div class="card p-6 rounded">
+      <div class="text-gold text-2xl brand-serif mb-2">◆</div>
+      <h3 class="font-semibold text-lg mb-2">Live cost visibility</h3>
+      <p class="text-paper/70 text-sm">Every turn shows tokens, cache hits, USD cost, credits consumed. You always know what a conversation is actually burning.</p>
+    </div>
+    <div class="card p-6 rounded">
+      <div class="text-gold text-2xl brand-serif mb-2">◆</div>
+      <h3 class="font-semibold text-lg mb-2">/replay and /fork</h3>
+      <p class="text-paper/70 text-sm">Re-run any past turn on a different model. Fork a conversation to try a different approach without losing context. A/B models like flipping a switch.</p>
+    </div>
+    <div class="card p-6 rounded">
+      <div class="text-gold text-2xl brand-serif mb-2">◆</div>
+      <h3 class="font-semibold text-lg mb-2">Seven-provider chain</h3>
+      <p class="text-paper/70 text-sm">Anthropic, Azure OpenAI, NVIDIA NIM, Ollama Cloud, IBM Watsonx, OpenRouter, Moonshot direct. Automatic fallback when one provider hits a ceiling.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── MODEL FAMILY ── -->
+<section class="border-t border-gold/10 bg-ash/30">
+  <div class="max-w-6xl mx-auto px-6 py-20">
+    <div class="text-center mb-12">
+      <div class="text-gold text-xs uppercase tracking-[0.25em] mb-3">The CroweLM family</div>
+      <h2 class="brand-serif text-3xl">Named tiers. No vendor exposure.</h2>
+    </div>
+    <div class="grid md:grid-cols-3 lg:grid-cols-5 gap-4 text-sm">
+      <div class="card p-5 rounded">
+        <div class="text-gold font-semibold mb-1">Supreme</div>
+        <div class="muted text-xs mb-2">Flagship reasoning</div>
+        <div class="text-paper/70 text-xs">Deepest analysis. The default choice for complex work.</div>
+      </div>
+      <div class="card p-5 rounded">
+        <div class="text-gold font-semibold mb-1">Eclipse</div>
+        <div class="muted text-xs mb-2">Flagship cloud reasoning</div>
+        <div class="text-paper/70 text-xs">Newest K2-series. Strong pairing for Supreme in dual mode.</div>
+      </div>
+      <div class="card p-5 rounded">
+        <div class="text-gold font-semibold mb-1">Crescent</div>
+        <div class="muted text-xs mb-2">Balanced cloud</div>
+        <div class="text-paper/70 text-xs">Fast, capable, costs less. Great for high-throughput tasks.</div>
+      </div>
+      <div class="card p-5 rounded">
+        <div class="text-gold font-semibold mb-1">Talon</div>
+        <div class="muted text-xs mb-2">Sandboxed tool-use</div>
+        <div class="text-paper/70 text-xs">Runs in an isolated Brev VM. Shell commands can't escape.</div>
+      </div>
+      <div class="card p-5 rounded">
+        <div class="text-gold font-semibold mb-1">Nano</div>
+        <div class="muted text-xs mb-2">Fast</div>
+        <div class="text-paper/70 text-xs">For quick iterations. Lowest credit cost per turn.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PRICING ── -->
+<section id="pricing" class="max-w-6xl mx-auto px-6 py-24">
+  <div class="text-center mb-16">
+    <div class="text-gold text-xs uppercase tracking-[0.25em] mb-3">Pricing</div>
+    <h2 class="brand-serif text-4xl mb-3">Credits, not hidden tokens.</h2>
+    <p class="text-paper/70 max-w-2xl mx-auto">
+      Credits decouple you from vendor rate-card shifts. Flagship turns cost 5 credits,
+      balanced 2, fast 1. Dual mode sums both sides. First month 50% off with code
+      <span class="text-gold font-mono">FOUNDRY50</span>.
+    </p>
+  </div>
+
+  <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+
+    <!-- Personal -->
+    <div class="tier tier-featured p-6 rounded">
+      <div class="brand-serif text-xl mb-1">Personal</div>
+      <div class="muted text-xs mb-5 uppercase tracking-widest">Solo operators</div>
+      <div class="mb-5">
+        <span class="text-4xl brand-serif">$29</span>
+        <span class="muted text-sm">/mo</span>
+        <div class="muted text-xs">$25/mo billed annually</div>
+      </div>
+      <ul class="text-sm text-paper/80 space-y-2 mb-6">
+        <li class="text-gold">750 credits/mo</li>
+        <li>All CroweLM tiers</li>
+        <li>Dual mode + synthesis</li>
+        <li>Sandboxed shell (BYO VM)</li>
+        <li>1-hour session memory</li>
+        <li>200 turns/day burst</li>
+      </ul>
+      <a href="#cta" class="cta-primary block text-center">Start Free Trial</a>
+    </div>
+
+    <!-- Pro -->
+    <div class="tier p-6 rounded">
+      <div class="brand-serif text-xl mb-1">Pro</div>
+      <div class="muted text-xs mb-5 uppercase tracking-widest">Power users</div>
+      <div class="mb-5">
+        <span class="text-4xl brand-serif">$99</span>
+        <span class="muted text-sm">/mo</span>
+        <div class="muted text-xs">$85/mo billed annually</div>
+      </div>
+      <ul class="text-sm text-paper/80 space-y-2 mb-6">
+        <li class="text-gold">3,000 credits/mo</li>
+        <li>Unmetered dual mode</li>
+        <li>Priority queue</li>
+        <li>5-hour session memory</li>
+        <li>Managed NemoClaw VM</li>
+        <li>1 free L40S-hour/day</li>
+      </ul>
+      <a href="#cta" class="cta-ghost block text-center">Choose Pro</a>
+    </div>
+
+    <!-- Team -->
+    <div class="tier p-6 rounded">
+      <div class="brand-serif text-xl mb-1">Team</div>
+      <div class="muted text-xs mb-5 uppercase tracking-widest">3+ seats</div>
+      <div class="mb-5">
+        <span class="text-4xl brand-serif">$49</span>
+        <span class="muted text-sm">/seat/mo</span>
+        <div class="muted text-xs">$42/seat billed annually</div>
+      </div>
+      <ul class="text-sm text-paper/80 space-y-2 mb-6">
+        <li class="text-gold">1,500 credits/seat, pooled</li>
+        <li>Shared workspaces</li>
+        <li>SSO (Google, Okta)</li>
+        <li>Admin cost reports</li>
+        <li>24-hour session memory</li>
+        <li>48h support SLA</li>
+      </ul>
+      <a href="mailto:michael@crowelogic.com?subject=Foundry Team" class="cta-ghost block text-center">Contact Sales</a>
+    </div>
+
+    <!-- Enterprise -->
+    <div class="tier p-6 rounded">
+      <div class="brand-serif text-xl mb-1">Enterprise</div>
+      <div class="muted text-xs mb-5 uppercase tracking-widest">25+ seats</div>
+      <div class="mb-5">
+        <span class="text-4xl brand-serif">Custom</span>
+        <div class="muted text-xs">from $250/seat/mo</div>
+      </div>
+      <ul class="text-sm text-paper/80 space-y-2 mb-6">
+        <li class="text-gold">Unlimited credits</li>
+        <li>Dedicated NIM deployment</li>
+        <li>SAML, audit logs, SOC2</li>
+        <li>Data retention controls</li>
+        <li>On-prem install option</li>
+        <li>24h support SLA</li>
+      </ul>
+      <a href="mailto:michael@crowelogic.com?subject=Foundry Enterprise" class="cta-ghost block text-center">Talk to Crowe Logic</a>
+    </div>
+
+  </div>
+
+  <!-- BYOK banner -->
+  <div class="mt-10 tier p-6 rounded flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+    <div>
+      <div class="brand-serif text-xl mb-1">BYOK Orchestration · $19/mo</div>
+      <div class="text-paper/70 text-sm max-w-2xl">
+        Already have Anthropic, OpenAI, or Moonshot API keys? Keep your billing with them,
+        pay Crowe Logic $19/mo for the CLI, dual mode, synthesis, tool ecosystem, HUD,
+        and updates. No credit meter.
+      </div>
+    </div>
+    <a href="#cta" class="cta-ghost whitespace-nowrap">Start BYOK</a>
+  </div>
+
+</section>
+
+<!-- ── INSTALL ── -->
+<section id="install" class="border-t border-gold/10 bg-ash/50">
+  <div class="max-w-4xl mx-auto px-6 py-20">
+    <div class="text-center mb-10">
+      <div class="text-gold text-xs uppercase tracking-[0.25em] mb-3">Install</div>
+      <h2 class="brand-serif text-4xl">Two commands and you're running.</h2>
+    </div>
+    <div class="space-y-3">
+      <div class="code">git clone https://github.com/MichaelCrowe11/crowe-logic-foundry.git</div>
+      <div class="code">cd crowe-logic-foundry && pip install -e .</div>
+      <div class="code">crowe-logic</div>
+    </div>
+    <p class="text-center mt-8 text-paper/60 text-sm">
+      Requires Python 3.11. Set your API keys in <span class="font-mono text-gold">~/.config/crowe-logic/.env</span>
+      on first launch. <a href="https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/docs/TESTER_ONBOARDING.md" class="text-gold hover:underline">Full onboarding guide →</a>
+    </p>
+  </div>
+</section>
+
+<!-- ── FAQ ── -->
+<section class="max-w-4xl mx-auto px-6 py-24">
+  <div class="text-center mb-12">
+    <div class="text-gold text-xs uppercase tracking-[0.25em] mb-3">FAQ</div>
+    <h2 class="brand-serif text-4xl">Honest answers to the obvious questions.</h2>
+  </div>
+
+  <div class="space-y-3">
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">Why would I pay $29 when Claude Pro is $20?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        Claude Pro gives you one model in one interface. Crowe Logic Foundry runs
+        two flagship models concurrently and synthesizes their outputs, plus a
+        sandboxed shell, plus a 98-tool registry spanning web search, browser
+        automation, MCP, Arizona public records, and platform APIs. If you only
+        need chat, Claude Pro is fine. If you're actually doing research,
+        writing code, or running investigations, Foundry earns its premium.
+      </p>
+    </details>
+
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">What are credits and how do they work?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        Credits decouple what you pay us from what we pay upstream providers.
+        A fast-model turn costs 1 credit, balanced 2, flagship 5. Dual mode
+        sums both sides. Synthesis adds 5. Personal's 750 credits support
+        roughly 150 flagship turns or 300 dual-mode turns per month. You
+        can see exact cost and credit consumption live in the HUD as you work.
+      </p>
+    </details>
+
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">Can I use my own API keys?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        Yes. The BYOK tier is $19/mo and you bring keys for Anthropic, OpenAI,
+        Azure OpenAI, Moonshot, OpenRouter, or NVIDIA NIM. Crowe Logic provides
+        the CLI, dual mode, synthesis, tool ecosystem, HUD, and updates. You
+        pay your providers directly. No credit meter.
+      </p>
+    </details>
+
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">What's the sandboxed shell actually for?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        When an agent needs to run shell commands (install dependencies, test
+        code, probe a remote server) there's an implicit trust decision.
+        Default tools run on your laptop. Crowe Talon runs inside an NVIDIA
+        NemoClaw sandbox on a Brev VM you provision. Commands execute there,
+        not on your host. You get agent code execution without exposing your
+        filesystem. One-click Brev Launchable included for setup.
+      </p>
+    </details>
+
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">Is my data trained on or sold?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        No. Crowe Logic Foundry doesn't send your conversations to any training
+        pipeline by default. Turns go from your CLI to the provider you picked
+        (Anthropic, Azure, Moonshot, etc.) and back. Providers have their own
+        data policies, which you can read on their sites. On Enterprise plans
+        you get additional data retention controls and optional on-premises
+        install.
+      </p>
+    </details>
+
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">Can I cancel anytime?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        Yes. Monthly plans cancel at the end of your billing period. Annual
+        plans are prepaid. No lock-in, no cancellation friction. Your
+        conversation history remains in your local install regardless.
+      </p>
+    </details>
+
+    <details class="card p-5 rounded">
+      <summary class="flex justify-between items-center">
+        <span class="font-semibold">Who builds this?</span>
+        <span class="chev text-gold">›</span>
+      </summary>
+      <p class="mt-4 text-paper/75 text-sm">
+        Crowe Logic, Inc., founded by Michael Crowe. We ship the CLI as our
+        primary product. The same framework powers other Crowe Logic AI agents
+        (cultivation advisor, research, compliance) sold to adjacent markets.
+        We're a bootstrapped company, not VC-backed. The product exists because
+        we needed it for our own work.
+      </p>
+    </details>
+
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section id="cta" class="border-t border-gold/20 bg-gradient-to-b from-ash to-ink">
+  <div class="max-w-3xl mx-auto px-6 py-24 text-center">
+    <div class="text-gold text-xs uppercase tracking-[0.25em] mb-5">Start today</div>
+    <h2 class="brand-serif text-5xl mb-6">Ready to run two models?</h2>
+    <p class="text-paper/70 text-lg mb-10 max-w-2xl mx-auto">
+      Personal tier is $29/mo, first month 50% off with
+      <span class="text-gold font-mono">FOUNDRY50</span>.
+      Or start BYOK at $19/mo if you already have provider keys.
+      No cards held for trials, no lock-in, cancel anytime.
+    </p>
+    <div class="flex flex-wrap justify-center gap-4">
+      <a href="mailto:michael@crowelogic.com?subject=Foundry · Personal signup&body=I'd like to start the Personal tier with FOUNDRY50.%0D%0A%0D%0AName:%0D%0ACompany (optional):%0D%0APrimary use case:" class="cta-primary">Start Personal · $29</a>
+      <a href="mailto:michael@crowelogic.com?subject=Foundry · BYOK signup&body=I'd like to start BYOK.%0D%0A%0D%0AName:%0D%0AProvider keys I plan to use (Anthropic / OpenAI / Azure / Moonshot / NIM):" class="cta-ghost">Start BYOK · $19</a>
+    </div>
+    <p class="text-paper/40 text-xs mt-10">
+      During closed beta, signups are processed within 24 hours.
+      Self-serve checkout opens publicly in Q2 2026.
+    </p>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer class="border-t border-gold/10">
+  <div class="max-w-6xl mx-auto px-6 py-12 grid md:grid-cols-4 gap-10 text-sm">
+    <div>
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-7 h-7 rounded-full bg-gold text-ink flex items-center justify-center brand-serif font-bold text-sm">C</span>
+        <span class="brand-serif">Crowe Logic Foundry</span>
+      </div>
+      <p class="text-paper/60">The multi-model agent CLI for operators. Built by Crowe Logic, Inc. in Phoenix, AZ.</p>
+    </div>
+    <div>
+      <div class="text-gold text-xs uppercase tracking-widest mb-3">Product</div>
+      <ul class="space-y-2 text-paper/70">
+        <li><a href="#features" class="hover:text-gold">Features</a></li>
+        <li><a href="#pricing" class="hover:text-gold">Pricing</a></li>
+        <li><a href="#install" class="hover:text-gold">Install</a></li>
+        <li><a href="https://github.com/MichaelCrowe11/crowe-logic-foundry" class="hover:text-gold">GitHub</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="text-gold text-xs uppercase tracking-widest mb-3">Docs</div>
+      <ul class="space-y-2 text-paper/70">
+        <li><a href="https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/docs/nemoclaw-integration.md" class="hover:text-gold">NemoClaw setup</a></li>
+        <li><a href="https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/docs/pricing-strategy.md" class="hover:text-gold">Pricing rationale</a></li>
+        <li><a href="https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/docs/developer-report.md" class="hover:text-gold">Developer report</a></li>
+        <li><a href="https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/docs/ARCHITECTURE.md" class="hover:text-gold">Architecture</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="text-gold text-xs uppercase tracking-widest mb-3">Company</div>
+      <ul class="space-y-2 text-paper/70">
+        <li><a href="mailto:michael@crowelogic.com" class="hover:text-gold">michael@crowelogic.com</a></li>
+        <li><a href="https://crowelogic.com" class="hover:text-gold">crowelogic.com</a></li>
+        <li class="text-paper/40">Phoenix, Arizona</li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-gold/10">
+    <div class="max-w-6xl mx-auto px-6 py-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-paper/40">
+      <div>© 2026 Crowe Logic, Inc. All rights reserved.</div>
+      <div class="flex gap-6">
+        <a href="#" class="hover:text-gold">Terms</a>
+        <a href="#" class="hover:text-gold">Privacy</a>
+        <a href="#" class="hover:text-gold">Security</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

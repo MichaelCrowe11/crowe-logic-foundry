@@ -1,0 +1,17 @@
+# Nixpacks config for the Crowe Logic Foundry landing page.
+# Static HTML served by Python's built-in http.server. Zero build
+# step. Railway auto-provisions a TLS hostname. To swap in a custom
+# domain, point foundry.crowelogic.com (or similar) at the Railway
+# hostname via CNAME.
+
+[phases.setup]
+nixPkgs = ["python311"]
+
+[phases.install]
+cmds = ["echo 'static site, no install'"]
+
+[phases.build]
+cmds = ["echo 'static site, no build'"]
+
+[start]
+cmd = "python3 -m http.server $PORT --directory ."

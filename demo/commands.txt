@@ -1,0 +1,37 @@
+# Copy-pasteable command sequence for the asciinema demo tour.
+# One command per line. Blank lines and # comments are for the
+# reader; don't paste them into the CLI.
+#
+# Follow demo/tour.md for narration beats and timing.
+
+# 1. Overview
+/help
+
+# 2. Single-model Supreme turn
+/model supreme
+Explain RICO claims in two paragraphs.
+
+# 3. Cache-hit follow-up
+Now summarize that in one sentence.
+
+# 4. Alias diagnostic
+/model resolve eclipse
+
+# 5. Dual mode
+/dual on
+What's the best strategy for a contested landlord dispute with RICO elements?
+
+# 6. Dual mode plus synthesis
+/dual synth on
+/dual synth mode merge
+How do I structure a demand letter for this?
+
+# 7. Replay on a different model
+/dual off
+/replay 2 crescent
+
+# 8. Fork
+/fork 3
+
+# 9. Exit
+/exit
