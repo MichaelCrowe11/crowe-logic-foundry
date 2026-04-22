@@ -712,6 +712,118 @@ async def record_usage(
     return {"recorded": True}
 
 
+# ─── Public checkout (landing page, unauthenticated) ────────────────
+
+class PublicCheckoutRequest(BaseModel):
+    email: EmailStr
+    tier_key: str
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+_TIER_STRIPE_ENV_MAP = {
+    "personal":   "STRIPE_PRICE_PERSONAL",
+    "pro":        "STRIPE_PRICE_PRO",
+    "team":       "STRIPE_PRICE_TEAM",
+    "enterprise": "STRIPE_PRICE_ENTERPRISE",
+    "byok":       "STRIPE_PRICE_BYOK",
+}
+
+
+@app.post("/api/billing/checkout/public")
+async def public_checkout(req: PublicCheckoutRequest, db: Database = Depends(get_db)):
+    """Create a Stripe Checkout session for a not-yet-registered visitor.
+
+    Called by the landing page CTAs. Stores email + tier_key in the
+    session metadata so the checkout.session.completed webhook can
+    provision the user, workspace, and API key after payment.
+    No authentication required; Stripe handles email verification.
+    """
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+
+    tier = req.tier_key.lower()
+    env_var = _TIER_STRIPE_ENV_MAP.get(tier)
+    if env_var is None:
+        raise HTTPException(status_code=400, detail=f"Unknown tier '{tier}'")
+    price_id = os.environ.get(env_var, "")
+    if not price_id:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Stripe price not configured for {tier} ({env_var} unset)",
+        )
+
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    success = req.success_url or os.environ.get(
+        "STRIPE_SUCCESS_URL",
+        "https://foundry.crowelogic.com/success.html?session_id={CHECKOUT_SESSION_ID}",
+    )
+    cancel = req.cancel_url or os.environ.get(
+        "STRIPE_CANCEL_URL",
+        "https://foundry.crowelogic.com/",
+    )
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        line_items=[{"price": price_id, "quantity": 1}],
+        customer_email=req.email,
+        success_url=success,
+        cancel_url=cancel,
+        allow_promotion_codes=True,
+        metadata={
+            "tier_key": tier,
+            "email": req.email,
+            "flow": "public_landing",
+        },
+        subscription_data={
+            "metadata": {"tier_key": tier, "email": req.email},
+        },
+    )
+    return {"session_id": session.id, "url": session.url}
+
+
+@app.get("/api/billing/checkout/session/{session_id}")
+async def get_checkout_result(session_id: str, db: Database = Depends(get_db)):
+    """Return the API key provisioned for a completed Checkout session.
+
+    Called by the success page on load. Only returns the key once
+    (subsequent calls return 410 Gone). Stripe session id is the
+    one-time token that authorizes this read; after the first
+    successful read we mark the pending row as claimed.
+    """
+    row = await db.fetchrow(
+        "SELECT * FROM checkout_provisions WHERE stripe_session_id = $1",
+        session_id,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No provisioning record for this session (webhook may not have fired yet)",
+        )
+    if row["claimed"]:
+        raise HTTPException(
+            status_code=410,
+            detail="API key already retrieved. Rotate via /account if lost.",
+        )
+    await db.execute(
+        "UPDATE checkout_provisions SET claimed = TRUE WHERE stripe_session_id = $1",
+        session_id,
+    )
+    return {
+        "email": row["email"],
+        "tier_key": row["tier_key"],
+        "workspace_id": row["workspace_id"],
+        "api_key": row["api_key"],
+        "next_steps": [
+            "1. Install Foundry: pip install -e . (or via git clone)",
+            "2. Set CROWE_LOGIC_API_KEY in ~/.config/crowe-logic/.env",
+            "3. Run `crowe-logic` and issue your first prompt",
+            "4. Check `/account` to confirm your balance",
+        ],
+    }
+
+
 # ─── Credit accounting (Gate 1 billing) ─────────────────────────────
 
 class CreditBalance(BaseModel):
@@ -928,7 +1040,10 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
         event["id"], event["type"], payload.decode(),
     )
 
-    if event["type"] == "invoice.paid":
+    if event["type"] == "checkout.session.completed":
+        await _provision_from_checkout(db, event["data"]["object"])
+
+    elif event["type"] == "invoice.paid":
         sub_id = event["data"]["object"].get("subscription")
         if sub_id:
             await db.execute(
@@ -1011,6 +1126,150 @@ _TIER_ALLOCATIONS = {
     "enterprise": 100_000,   # effectively unlimited; billed separately
     "byok": 0,          # BYOK bypasses credit meter entirely
 }
+
+
+async def _provision_from_checkout(db, session_obj: dict) -> None:
+    """Create user + workspace + api_key after a successful Checkout session.
+
+    Called by the checkout.session.completed webhook. Idempotent via
+    the checkout_provisions table: a repeat webhook delivery for the
+    same session_id short-circuits before doing any writes.
+
+    The API key is formatted ``clk_<workspace_id>_<secret>`` to match
+    the format cli/foundry_api.py parses. That format encodes the
+    workspace_id in the key so the CLI can talk to the right
+    workspace without an extra round trip.
+    """
+    session_id = session_obj.get("id")
+    if not session_id:
+        return
+
+    existing = await db.fetchrow(
+        "SELECT 1 FROM checkout_provisions WHERE stripe_session_id = $1",
+        session_id,
+    )
+    if existing:
+        return   # idempotent retry
+
+    metadata = session_obj.get("metadata") or {}
+    email = (session_obj.get("customer_email") or metadata.get("email") or "").strip().lower()
+    tier_key = (metadata.get("tier_key") or "personal").lower()
+    if not email:
+        # No email means we can't provision. Log and bail.
+        await db.execute(
+            """INSERT INTO checkout_provisions
+                   (stripe_session_id, email, tier_key, workspace_id, api_key,
+                    claimed, error)
+               VALUES ($1, '', $2, '', '', TRUE, 'no_email_in_session')""",
+            session_id, tier_key,
+        )
+        return
+
+    # Find or create the user by email.
+    user = await db.fetchrow("SELECT * FROM users WHERE email = $1", email)
+    if user is None:
+        user_id = secrets.token_hex(16)
+        # No password: the user will set one via password-reset on first
+        # web login, or stay API-key-only forever (Crowe Logic doesn't
+        # strictly require a web login for CLI-only usage).
+        placeholder = secrets.token_hex(32)   # unreachable hash, forces reset
+        await db.execute(
+            """INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, $3, $4)""",
+            user_id, email, email.split("@")[0],
+            _hash_password(placeholder),
+        )
+    else:
+        user_id = user["id"]
+
+    # Find or create the user's personal org.
+    org = await db.fetchrow(
+        "SELECT * FROM organizations WHERE owner_id = $1 ORDER BY created_at LIMIT 1",
+        user_id,
+    )
+    if org is None:
+        org_id = secrets.token_hex(16)
+        org_slug = email.split("@")[0].lower().replace(".", "-")
+        await db.execute(
+            """INSERT INTO organizations (id, name, slug, owner_id)
+               VALUES ($1, $2, $3, $4)""",
+            org_id, f"{email.split('@')[0]} Org", org_slug, user_id,
+        )
+        await db.execute(
+            "INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'owner')",
+            org_id, user_id,
+        )
+    else:
+        org_id = org["id"]
+
+    # Find or create the default workspace.
+    ws = await db.fetchrow(
+        "SELECT * FROM workspaces WHERE org_id = $1 ORDER BY created_at LIMIT 1",
+        org_id,
+    )
+    if ws is None:
+        workspace_id = secrets.token_hex(16)
+        await db.execute(
+            """INSERT INTO workspaces (id, org_id, name, slug, plan_id,
+                                        stripe_customer_id, stripe_subscription_id)
+               VALUES ($1, $2, 'Default', 'default', $3, $4, $5)""",
+            workspace_id, org_id, tier_key,
+            session_obj.get("customer", ""),
+            session_obj.get("subscription", ""),
+        )
+    else:
+        workspace_id = ws["id"]
+        # Stamp the Stripe ids so the refill helper can find this workspace.
+        await db.execute(
+            """UPDATE workspaces
+                  SET plan_id = $2,
+                      stripe_customer_id = COALESCE(NULLIF($3, ''), stripe_customer_id),
+                      stripe_subscription_id = COALESCE(NULLIF($4, ''), stripe_subscription_id)
+                WHERE id = $1""",
+            workspace_id, tier_key,
+            session_obj.get("customer", ""),
+            session_obj.get("subscription", ""),
+        )
+
+    # Mint the CLI-style API key. Format: clk_<workspace_id>_<secret>.
+    secret = secrets.token_hex(24)
+    api_key = f"clk_{workspace_id}_{secret}"
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    key_prefix = api_key[:18]
+    key_id = secrets.token_hex(16)
+    await db.execute(
+        """INSERT INTO api_keys
+               (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
+           VALUES ($1, $2, $3, $4, $5, 'CLI (checkout)', '["cli"]')""",
+        key_id, workspace_id, user_id, key_hash, key_prefix,
+    )
+
+    # Refill credits immediately so the user can start using the product
+    # without waiting for a separate invoice.paid webhook.
+    allocation = _TIER_ALLOCATIONS.get(tier_key, _TIER_ALLOCATIONS["personal"])
+    await db.execute(
+        """INSERT INTO workspace_credits
+               (workspace_id, tier_key, balance, allocation, active)
+           VALUES ($1, $2, $3, $3, TRUE)
+           ON CONFLICT (workspace_id) DO UPDATE SET
+               tier_key = EXCLUDED.tier_key,
+               balance = EXCLUDED.balance,
+               allocation = EXCLUDED.allocation,
+               active = TRUE,
+               updated_at = now()""",
+        workspace_id, tier_key, allocation,
+    )
+
+    # Store the provisioned key in the one-time-retrieval table so the
+    # success page can display it. The table has (claimed BOOLEAN) so
+    # subsequent GETs return 410 Gone.
+    await db.execute(
+        """INSERT INTO checkout_provisions
+               (stripe_session_id, email, tier_key, workspace_id, api_key,
+                claimed, error)
+           VALUES ($1, $2, $3, $4, $5, FALSE, '')""",
+        session_id, email, tier_key, workspace_id, api_key,
+    )
 
 
 async def _refill_credits_for_subscription(db, stripe_subscription_id: str) -> None:

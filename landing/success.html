@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Welcome to Crowe Logic Foundry</title>
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23bfa669'/><text x='50' y='68' font-size='56' text-anchor='middle' fill='%23141414' font-family='Georgia' font-weight='700'>C</text></svg>" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gold: '#bfa669', 'gold-dim': '#8a7850',
+            ink: '#0c0c0c', paper: '#f5f3ee', ash: '#1a1a1a',
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    body { background: #0c0c0c; color: #f5f3ee; font-family: system-ui, -apple-system, sans-serif; }
+    .brand-serif { font-family: Georgia, Cambria, serif; letter-spacing: -0.01em; }
+    .card { background: #141414; border: 1px solid #2a2a2a; }
+    .code {
+      background: #0a0a0a; border: 1px solid #1f1f1f;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #bfa669; padding: .5rem .75rem; border-radius: 2px;
+      word-break: break-all;
+    }
+    .key {
+      background: #0a0a0a; border: 2px solid #bfa669;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #bfa669; padding: 1rem; border-radius: 4px;
+      font-size: .85rem; word-break: break-all;
+    }
+    .copy-btn {
+      background: #bfa669; color: #0c0c0c;
+      padding: .4rem .8rem; font-weight: 600; font-size: .8rem;
+      border-radius: 2px; cursor: pointer; border: 0;
+      margin-top: .75rem;
+    }
+    .copy-btn:hover { background: #d4be84; }
+    .copy-btn.copied { background: #6fbf73; }
+  </style>
+</head>
+<body>
+
+<nav class="border-b border-gold/10">
+  <div class="max-w-4xl mx-auto px-6 py-5 flex items-center gap-3">
+    <span class="w-8 h-8 rounded-full bg-gold text-ink flex items-center justify-center brand-serif font-bold">C</span>
+    <span class="brand-serif text-xl">Crowe Logic Foundry</span>
+  </div>
+</nav>
+
+<main class="max-w-3xl mx-auto px-6 py-16">
+
+  <!-- Loading state -->
+  <div id="loading" class="text-center py-20">
+    <div class="text-gold text-sm uppercase tracking-widest mb-3">Provisioning</div>
+    <h1 class="brand-serif text-3xl mb-4">Setting up your account...</h1>
+    <p class="text-paper/60 text-sm">This usually takes 5-15 seconds. If it takes longer, the payment webhook may still be processing. Reload to retry.</p>
+  </div>
+
+  <!-- Success state -->
+  <div id="success" class="hidden">
+    <div class="text-center mb-12">
+      <div class="text-gold text-xs uppercase tracking-[0.25em] mb-4">Welcome to the foundry</div>
+      <h1 class="brand-serif text-5xl mb-4">You're in.</h1>
+      <p class="text-paper/70 text-lg">
+        Your <span id="tier-label" class="text-gold font-semibold"></span> subscription is active.
+        Below is your CLI API key and the four steps to get running.
+      </p>
+    </div>
+
+    <div class="card p-8 rounded mb-8">
+      <div class="flex justify-between items-start mb-4">
+        <h2 class="brand-serif text-xl">Your API key</h2>
+        <div class="text-xs text-paper/40 text-right">
+          Shown once.<br/>Save it before closing this page.
+        </div>
+      </div>
+      <div id="api-key" class="key mb-2">loading...</div>
+      <button class="copy-btn" onclick="copyApiKey()">Copy to clipboard</button>
+    </div>
+
+    <div class="card p-8 rounded mb-8">
+      <h2 class="brand-serif text-xl mb-5">Get running in four steps</h2>
+      <ol class="space-y-4">
+        <li>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 1 · Install</div>
+          <div class="code">git clone https://github.com/MichaelCrowe11/crowe-logic-foundry.git && cd crowe-logic-foundry && pip install -e .</div>
+        </li>
+        <li>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 2 · Set your API key</div>
+          <div class="code" id="env-line">echo 'CROWE_LOGIC_API_KEY=YOUR_KEY' >> ~/.config/crowe-logic/.env</div>
+        </li>
+        <li>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 3 · Launch</div>
+          <div class="code">crowe-logic</div>
+        </li>
+        <li>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 4 · Verify your balance</div>
+          <div class="code">/account</div>
+          <p class="text-paper/60 text-sm mt-2">Confirms your tier and credit allocation are live.</p>
+        </li>
+      </ol>
+    </div>
+
+    <div class="card p-8 rounded">
+      <h2 class="brand-serif text-xl mb-4">What's next</h2>
+      <ul class="space-y-3 text-paper/80 text-sm">
+        <li><span class="text-gold">▸</span> Try <span class="font-mono text-gold">/dual on</span> to run two flagship models in parallel</li>
+        <li><span class="text-gold">▸</span> Then <span class="font-mono text-gold">/dual synth on</span> to get a synthesized final answer</li>
+        <li><span class="text-gold">▸</span> Read the <a href="https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/docs/nemoclaw-integration.md" class="text-gold hover:underline">NemoClaw integration guide</a> if you want the sandboxed shell</li>
+        <li><span class="text-gold">▸</span> Questions? <a href="mailto:michael@crowelogic.com" class="text-gold hover:underline">michael@crowelogic.com</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Error state -->
+  <div id="error-state" class="hidden">
+    <div class="text-center py-10">
+      <div class="text-red-400 text-sm uppercase tracking-widest mb-3">Something went sideways</div>
+      <h1 class="brand-serif text-3xl mb-4">We can't retrieve your key</h1>
+      <p id="error-message" class="text-paper/60 mb-6"></p>
+      <p class="text-paper/60 text-sm">
+        Your payment did go through. Email
+        <a href="mailto:michael@crowelogic.com" class="text-gold hover:underline">michael@crowelogic.com</a>
+        with this URL and we'll sort it out within a few hours.
+      </p>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const API_BASE = window.CROWE_LOGIC_API_URL || "https://api.crowelogic.com";
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get("session_id");
+
+  async function loadAccount() {
+    if (!sessionId) {
+      return showError("No session_id in the URL. If you arrived here directly from Stripe, try reloading.");
+    }
+
+    const deadline = Date.now() + 45000;   // 45s total retry window
+    let delay = 2000;
+
+    while (Date.now() < deadline) {
+      try {
+        const resp = await fetch(API_BASE + "/api/billing/checkout/session/" + encodeURIComponent(sessionId));
+        if (resp.ok) {
+          const data = await resp.json();
+          return showSuccess(data);
+        }
+        if (resp.status === 410) {
+          return showError("This link has already been used. API keys can only be retrieved once.");
+        }
+        if (resp.status === 404) {
+          // Webhook hasn't fired yet, poll.
+        } else {
+          const body = await resp.json().catch(() => ({detail: "Unknown error"}));
+          return showError(body.detail || ("Failed: HTTP " + resp.status));
+        }
+      } catch (e) {
+        // Transient, retry
+      }
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(delay * 1.4, 6000);
+    }
+    showError("The payment webhook is slow to land. Reload in 30 seconds or contact support.");
+  }
+
+  function showSuccess(data) {
+    document.getElementById("loading").classList.add("hidden");
+    document.getElementById("success").classList.remove("hidden");
+    document.getElementById("tier-label").textContent = (data.tier_key || "personal").toUpperCase();
+    document.getElementById("api-key").textContent = data.api_key || "";
+    document.getElementById("env-line").textContent =
+      "echo 'CROWE_LOGIC_API_KEY=" + (data.api_key || "YOUR_KEY") + "' >> ~/.config/crowe-logic/.env";
+  }
+
+  function showError(msg) {
+    document.getElementById("loading").classList.add("hidden");
+    document.getElementById("error-state").classList.remove("hidden");
+    document.getElementById("error-message").textContent = msg;
+  }
+
+  window.copyApiKey = function() {
+    const key = document.getElementById("api-key").textContent;
+    navigator.clipboard.writeText(key).then(() => {
+      const btn = event.target;
+      const original = btn.textContent;
+      btn.textContent = "Copied";
+      btn.classList.add("copied");
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove("copied");
+      }, 2000);
+    });
+  };
+
+  loadAccount();
+</script>
+
+</body>
+</html>

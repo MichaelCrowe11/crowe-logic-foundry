@@ -94,7 +94,7 @@
       <a href="#pricing" class="hover:text-gold">Pricing</a>
       <a href="#install" class="hover:text-gold">Install</a>
       <a href="https://github.com/MichaelCrowe11/crowe-logic-foundry" class="hover:text-gold">GitHub</a>
-      <a href="#cta" class="cta-primary">Start Free</a>
+      <a href="#" class="cta-primary" data-checkout-tier="personal">Start Free</a>
     </div>
   </div>
 </nav>
@@ -118,7 +118,7 @@
         sandboxed shell that can't touch your filesystem.
       </p>
       <div class="flex flex-wrap gap-4 mb-6">
-        <a href="#cta" class="cta-primary">Start Personal · $29/mo</a>
+        <a href="#" class="cta-primary" data-checkout-tier="personal">Start Personal · $29/mo</a>
         <a href="#features" class="cta-ghost">See the features</a>
       </div>
       <p class="text-sm text-paper/50">
@@ -287,7 +287,7 @@
         <li>1-hour session memory</li>
         <li>200 turns/day burst</li>
       </ul>
-      <a href="#cta" class="cta-primary block text-center">Start Free Trial</a>
+      <a href="#" class="cta-primary block text-center" data-checkout-tier="personal">Start Personal</a>
     </div>
 
     <!-- Pro -->
@@ -307,7 +307,7 @@
         <li>Managed NemoClaw VM</li>
         <li>1 free L40S-hour/day</li>
       </ul>
-      <a href="#cta" class="cta-ghost block text-center">Choose Pro</a>
+      <a href="#" class="cta-ghost block text-center" data-checkout-tier="pro">Choose Pro</a>
     </div>
 
     <!-- Team -->
@@ -361,7 +361,7 @@
         and updates. No credit meter.
       </div>
     </div>
-    <a href="#cta" class="cta-ghost whitespace-nowrap">Start BYOK</a>
+    <a href="#" class="cta-ghost whitespace-nowrap" data-checkout-tier="byok">Start BYOK</a>
   </div>
 
 </section>
@@ -506,8 +506,8 @@
       No cards held for trials, no lock-in, cancel anytime.
     </p>
     <div class="flex flex-wrap justify-center gap-4">
-      <a href="mailto:michael@crowelogic.com?subject=Foundry · Personal signup&body=I'd like to start the Personal tier with FOUNDRY50.%0D%0A%0D%0AName:%0D%0ACompany (optional):%0D%0APrimary use case:" class="cta-primary">Start Personal · $29</a>
-      <a href="mailto:michael@crowelogic.com?subject=Foundry · BYOK signup&body=I'd like to start BYOK.%0D%0A%0D%0AName:%0D%0AProvider keys I plan to use (Anthropic / OpenAI / Azure / Moonshot / NIM):" class="cta-ghost">Start BYOK · $19</a>
+      <a href="#" class="cta-primary" data-checkout-tier="personal">Start Personal · $29</a>
+      <a href="#" class="cta-ghost" data-checkout-tier="byok">Start BYOK · $19</a>
     </div>
     <p class="text-paper/40 text-xs mt-10">
       During closed beta, signups are processed within 24 hours.
@@ -564,6 +564,121 @@
     </div>
   </div>
 </footer>
+
+<!-- ── CHECKOUT MODAL ── -->
+<div id="checkout-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+  <div class="card p-8 rounded max-w-md w-full relative">
+    <button id="checkout-close" class="absolute top-3 right-4 text-paper/40 hover:text-gold text-2xl leading-none">&times;</button>
+    <div class="text-gold text-xs uppercase tracking-[0.25em] mb-3">Start today</div>
+    <h3 class="brand-serif text-2xl mb-2" id="checkout-title">Personal · $29/mo</h3>
+    <p class="text-paper/70 text-sm mb-6" id="checkout-subtitle">First month 50% off with <span class="text-gold font-mono">FOUNDRY50</span>.</p>
+    <form id="checkout-form" class="space-y-4">
+      <div>
+        <label class="text-xs text-paper/60 uppercase tracking-wider block mb-2">Email</label>
+        <input type="email" id="checkout-email" required
+               class="w-full bg-ink border border-ash rounded px-3 py-2 text-paper
+                      focus:border-gold focus:outline-none"
+               placeholder="you@example.com" />
+      </div>
+      <button type="submit" id="checkout-submit" class="cta-primary w-full text-center">
+        Continue to Checkout
+      </button>
+      <p class="text-xs text-paper/50 text-center">
+        You'll be redirected to Stripe. Secure payment, cancel anytime.
+      </p>
+    </form>
+    <div id="checkout-error" class="hidden mt-4 text-sm text-red-400 border border-red-500/30 bg-red-950/30 rounded p-3"></div>
+  </div>
+</div>
+
+<script>
+  // ── Checkout flow ──────────────────────────────────────────────
+  // Tier metadata and API base URL. In production deploy the control
+  // plane at api.crowelogic.com; for local testing, override via
+  // a window.CROWE_LOGIC_API_URL global before this script runs.
+  const API_BASE = window.CROWE_LOGIC_API_URL || "https://api.crowelogic.com";
+  const TIER_META = {
+    personal: {title: "Personal · $29/mo",   subtitle: "First month 50% off with FOUNDRY50. Cancel anytime."},
+    pro:      {title: "Pro · $99/mo",        subtitle: "3,000 credits, unmetered dual mode, priority queue."},
+    byok:     {title: "BYOK · $19/mo",       subtitle: "You bring the API keys. We run the CLI."},
+  };
+
+  const modal = document.getElementById("checkout-modal");
+  const form = document.getElementById("checkout-form");
+  const emailInput = document.getElementById("checkout-email");
+  const submit = document.getElementById("checkout-submit");
+  const errorBox = document.getElementById("checkout-error");
+  const title = document.getElementById("checkout-title");
+  const subtitle = document.getElementById("checkout-subtitle");
+  let selectedTier = null;
+
+  function openModal(tier) {
+    selectedTier = tier;
+    const meta = TIER_META[tier] || TIER_META.personal;
+    title.textContent = meta.title;
+    subtitle.textContent = meta.subtitle;
+    errorBox.classList.add("hidden");
+    errorBox.textContent = "";
+    submit.disabled = false;
+    submit.textContent = "Continue to Checkout";
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    setTimeout(() => emailInput.focus(), 50);
+  }
+
+  function closeModal() {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+    selectedTier = null;
+  }
+
+  document.addEventListener("click", function(e) {
+    const trigger = e.target.closest("[data-checkout-tier]");
+    if (trigger) {
+      e.preventDefault();
+      openModal(trigger.getAttribute("data-checkout-tier"));
+    }
+  });
+
+  document.getElementById("checkout-close").addEventListener("click", closeModal);
+  modal.addEventListener("click", function(e) {
+    if (e.target === modal) closeModal();
+  });
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) closeModal();
+  });
+
+  form.addEventListener("submit", async function(e) {
+    e.preventDefault();
+    if (!selectedTier) return;
+    const email = emailInput.value.trim();
+    if (!email) return;
+
+    submit.disabled = true;
+    submit.textContent = "Opening Stripe...";
+    errorBox.classList.add("hidden");
+
+    try {
+      const response = await fetch(API_BASE + "/api/billing/checkout/public", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({email: email, tier_key: selectedTier}),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({detail: "Unknown error"}));
+        throw new Error(body.detail || ("Checkout failed: HTTP " + response.status));
+      }
+      const data = await response.json();
+      if (!data.url) throw new Error("Checkout session had no URL");
+      window.location.href = data.url;
+    } catch (err) {
+      submit.disabled = false;
+      submit.textContent = "Continue to Checkout";
+      errorBox.textContent = String(err.message || err);
+      errorBox.classList.remove("hidden");
+    }
+  });
+</script>
 
 </body>
 </html>
