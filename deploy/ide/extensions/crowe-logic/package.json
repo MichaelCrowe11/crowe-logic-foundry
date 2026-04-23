@@ -1,8 +1,8 @@
 {
   "name": "crowe-logic",
   "displayName": "Crowe Logic",
-  "description": "Crowe Logic Foundry agent — chat, plans, and tool execution inside the IDE.",
-  "version": "0.2.7",
+  "description": "Crowe Logic Foundry agent, chat, plans, and tool execution inside the IDE.",
+  "version": "0.2.8",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -289,13 +289,13 @@
         },
         "croweLogic.apiBaseUrl": {
           "type": "string",
-          "default": "https://ai.southwestmushrooms.com",
-          "description": "Base URL for the Crowe Logic AI platform. Used for `/api/ide/launch` and other HTTP endpoints.",
+          "default": "https://api.crowelogic.com",
+          "description": "Base URL for the Crowe Logic control plane. Used for `/api/ide/launch`, billing, and other HTTP endpoints.",
           "order": 6
         },
         "croweLogic.ideUrl": {
           "type": "string",
-          "default": "https://ide.southwestmushrooms.com",
+          "default": "https://ide.crowelogic.com",
           "description": "Remote IDE origin used as a fallback when handoff fails.",
           "order": 7
         }

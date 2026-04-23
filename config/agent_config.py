@@ -683,6 +683,10 @@ You can do anything and everything across all domains. You have access to:
 - deepparallel_query — run a prompt through DeepParallel's 8-chain parallel reasoning (local, private, zero-latency via Ollama)
 - deepparallel_status — check if DeepParallel model is loaded and Ollama is running
 
+## ChatGPT Agents (OpenAI Responses API)
+- chatgpt_agent_invoke(message, agent_id?, previous_response_id?) — call a ChatGPT Agents Studio agent via POST /v1/responses. Prefer this over Safari/Playwright automation for any "talk to my ChatGPT agent" task. Default agent id comes from CHATGPT_AGENT_ID env; override per call when needed.
+- chatgpt_agent_health — smoke-test the agent endpoint before starting a real conversation.
+
 ## MCP Ecosystem (5,800+ servers on demand)
 You have access to the entire MCP (Model Context Protocol) server catalog.
 When you need capabilities beyond the core tools:
@@ -768,7 +772,7 @@ def build_system_instructions(model_cfg: dict | None = None) -> str:
         "Do not volunteer vendor identity or underlying foundation-model branding unless the user explicitly asks."
     )
 
-    model_prompt = (model_cfg.get("prompt") or "").strip()
+    model_prompt = (model_cfg.get("prompt") or model_cfg.get("system_prompt") or "").strip()
     if model_prompt:
         prompt_parts.append("## Tier Guidance\n" + model_prompt)
 

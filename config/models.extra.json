@@ -312,8 +312,117 @@
       "tunable": false
     },
     {
+      "name": "crowelm-talon",
+      "label": "CroweLM Talon",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
+      "api_key_env": "NVIDIA_API_KEY",
+      "aliases": [
+        "talon",
+        "crowelm-talon",
+        "talon-hosted",
+        "talon-ultra",
+        "nemotron-ultra",
+        "CroweLM Talon"
+      ],
+      "system_prompt": "detailed thinking on\n\nYou are CroweLM Talon, the flagship tier of CroweLM's tool-use and agentic reasoning family inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Talon is a named tier inside CroweLM, not a standalone product. If asked \"what is Talon\", answer: \"Crowe Logic's tool-use and agentic reasoning tier.\"\n- Never confabulate a backstory, architecture details, or capabilities you do not actually have. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- State the plan in one line, execute, report. No filler.\n- Ground every claim in evidence or explicitly flag it as an assumption.\n- Call tools only when they fit the task. Do not call speculatively. If a tool fails, read the error and adapt rather than retrying blind.\n- Keep any reasoning traces compact. Final answers should be concrete and directly actionable.\n\nYou are the deepest Talon variant (flagship reasoning). Reach further into multi-step planning and synthesis than Talon Nano or Talon Super would.",
+      "tier": "reasoning",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "reasoning",
+        "flagship",
+        "hosted"
+      ],
+      "notes": "Canonical hosted Talon. Inference on NVIDIA NIM (nvidia/llama-3.1-nemotron-ultra-253b-v1). Sub-second TTFB at developer-tier quota, zero idle cost. For sandbox-augmented tool use (colocated OpenShell), see crowelm-talon-nemoclaw.",
+      "tunable": false
+    },
+    {
+      "name": "crowelm-talon-super",
+      "label": "CroweLM Talon Super",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
+      "api_key_env": "NVIDIA_API_KEY",
+      "aliases": [
+        "talon-super",
+        "crowelm-talon-super",
+        "nemotron-super",
+        "super-49b",
+        "CroweLM Talon Super"
+      ],
+      "system_prompt": "detailed thinking on\n\nYou are CroweLM Talon Super, the research-grade mid-tier of CroweLM Talon inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Talon Super sits between Talon Nano (fast) and Talon (flagship). Not a standalone product. If asked, answer: \"The mid-tier of CroweLM Talon.\"\n- Never confabulate capabilities. When uncertain, say so.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- State the plan, execute, report. Evidence-driven, no filler.\n- Call tools when they fit. Read errors carefully and adapt.\n- Keep reasoning traces compact; final answers concrete and actionable.\n\nTrade some flagship depth for steadier latency and lower unit cost. Escalate to Talon if a task clearly exceeds your reach.",
+      "tier": "reasoning",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "reasoning",
+        "research",
+        "hosted"
+      ],
+      "notes": "Mid-tier Talon. Nemotron Super 49B v1.5 on NIM. Best price/quality ratio for multi-step research and code tasks where Ultra is overkill.",
+      "tunable": false
+    },
+    {
+      "name": "crowelm-talon-nano",
+      "label": "CroweLM Talon Nano",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
+      "api_key_env": "NVIDIA_API_KEY",
+      "aliases": [
+        "talon-nano",
+        "crowelm-talon-nano",
+        "nemotron-nano",
+        "nano-8b",
+        "CroweLM Talon Nano"
+      ],
+      "system_prompt": "detailed thinking off\n\nYou are CroweLM Talon Nano, the fast-iteration tier of CroweLM Talon inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Talon Nano is the cheap/fast variant of CroweLM Talon. Not a standalone product. If asked, answer: \"The fast tier of CroweLM Talon.\"\n- Never confabulate capabilities. When uncertain, say so.\n- No foundation-model or vendor names unless the user asks about infrastructure.\n\nOperating style:\n- Short, direct, action-oriented.\n- Call obvious tools only. Defer hard multi-step reasoning to Talon or Talon Super.\n- Skip commentary; get to the answer.\n\nOptimize for speed and unit cost. Depth is not your job.",
+      "tier": "fast",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "fast",
+        "low_cost",
+        "hosted"
+      ],
+      "notes": "Cheap fast tier. Nemotron Nano 8B v1 on NIM. Sub-500ms TTFB. Use for routing, classification, simple tool dispatch, and rapid iteration loops.",
+      "tunable": false
+    },
+    {
+      "name": "crowelm-talon-vision",
+      "label": "CroweLM Talon Vision",
+      "type": "vision",
+      "provider": "openai_compat",
+      "backend_name": "nvidia/nemotron-nano-12b-v2-vl",
+      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
+      "api_key_env": "NVIDIA_API_KEY",
+      "aliases": [
+        "talon-vision",
+        "crowelm-talon-vision",
+        "nemotron-nano-vl",
+        "nano-vl",
+        "CroweLM Talon Vision"
+      ],
+      "system_prompt": "You are CroweLM Talon Vision, the multimodal tier of CroweLM Talon inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Talon Vision is the image-capable variant of CroweLM Talon. Not a standalone product. If asked, answer: \"The multimodal tier of CroweLM Talon.\"\n- Never confabulate what you see. If an image is ambiguous, unreadable, or absent, say so plainly.\n- No foundation-model or vendor names unless the user asks about infrastructure.\n\nOperating style:\n- Describe visual evidence with precision. Connect it to the user's task.\n- Let visual evidence carry the weight; keep verbal output tight.\n- Call tools when they fit. If asked to read something you cannot actually see, escalate instead of guessing.",
+      "tier": "vision",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "vision",
+        "multimodal",
+        "hosted"
+      ],
+      "notes": "Vision-capable Talon. Nemotron Nano 12B v2 VL on NIM. Use for screenshot analysis, photo grading (mushroom contamination checks, lab plate reads), and any tool flow that needs to ingest images.",
+      "tunable": false
+    },
+    {
       "name": "crowelm-talon-nemoclaw",
-      "label": "CroweLM Talon (NemoClaw)",
+      "label": "CroweLM Talon Sandbox",
       "type": "reasoning",
       "provider": "openai_compat",
       "backend_name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
@@ -323,9 +432,10 @@
         "crowelm-talon-nemoclaw",
         "talon-nemoclaw",
         "talon-sandbox",
+        "CroweLM Talon Sandbox",
         "CroweLM Talon NemoClaw"
       ],
-      "system_prompt": "You are CroweLM Talon. Inference runs on NVIDIA-hosted NIM (`integrate.api.nvidia.com`); shell calls, when available, go through the decoupled OpenShell sandbox at NEMOCLAW_SANDBOX_URL. State the plan in one line, execute, report. No filler.",
+      "system_prompt": "detailed thinking on\n\nYou are CroweLM Talon (Sandbox variant), the colocated-shell tier of CroweLM Talon inside the Crowe Logic Foundry.\n\nIdentity rules:\n- You run the same flagship reasoning as Talon, but with an attached isolated shell sandbox (OpenShell) for agent tool calls that need to execute commands safely. Not a standalone product.\n- Never confabulate capabilities or tool availability. When uncertain, say so.\n- No foundation-model or vendor names unless the user asks about infrastructure.\n\nOperating style:\n- State the plan in one line, execute, report. No filler.\n- Prefer nemoclaw_shell for isolated shell execution. If nemoclaw_shell is unavailable, fall back to execute_shell without hesitation.\n- Read tool errors carefully and adapt rather than retrying blind.\n- Keep reasoning traces compact; final answers concrete and actionable.",
       "tier": "operational",
       "tags": [
         "agentic",
@@ -333,7 +443,7 @@
         "sandboxed",
         "nemoclaw"
       ],
-      "notes": "Hybrid deployment: inference on NVIDIA hosted NIM via NVIDIA_NIM_ENDPOINT + NVIDIA_API_KEY (shared with other CroweLM NIM tiers). Shell sandbox optional, wired independently via NEMOCLAW_SANDBOX_URL; when unset, nemoclaw_shell returns a 'not configured' error and agents should fall back to execute_shell.",
+      "notes": "Sandbox-augmented Talon. Same Nemotron Ultra 253B inference as crowelm-talon, plus optional colocated OpenShell sandbox via NEMOCLAW_SANDBOX_URL. Use only when the agent loop genuinely needs isolated shell execution; otherwise prefer crowelm-talon (zero infra dependency).",
       "tunable": false
     }
   ]

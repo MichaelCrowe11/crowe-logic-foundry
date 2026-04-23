@@ -10,12 +10,12 @@ export const TOKEN_SECRET_KEY = 'croweLogic.apiToken';
 
 export function getApiBaseUrl(): string {
     const cfg = vscode.workspace.getConfiguration('croweLogic');
-    return (cfg.get<string>('apiBaseUrl') ?? 'https://ai.southwestmushrooms.com').replace(/\/+$/, '');
+    return (cfg.get<string>('apiBaseUrl') ?? 'https://api.crowelogic.com').replace(/\/+$/, '');
 }
 
 export function getIdeUrl(): string {
     const cfg = vscode.workspace.getConfiguration('croweLogic');
-    return (cfg.get<string>('ideUrl') ?? 'https://ide.southwestmushrooms.com').replace(/\/+$/, '');
+    return (cfg.get<string>('ideUrl') ?? 'https://ide.crowelogic.com').replace(/\/+$/, '');
 }
 
 export async function getApiToken(ctx: vscode.ExtensionContext): Promise<string | undefined> {

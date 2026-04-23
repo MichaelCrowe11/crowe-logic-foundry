@@ -231,8 +231,11 @@ async def _resolve_api_key(
     raw_key = None
     if x_api_key:
         raw_key = x_api_key
-    elif authorization and authorization.startswith("Bearer cl_"):
-        raw_key = authorization[7:]
+    elif authorization and authorization.startswith("Bearer "):
+        candidate = authorization[7:]
+        # Accept both new `crowe_pat_` PATs and legacy `cl_` keys.
+        if candidate.startswith("crowe_pat_") or candidate.startswith("cl_"):
+            raw_key = candidate
 
     if not raw_key:
         raise HTTPException(status_code=401, detail="API key required")

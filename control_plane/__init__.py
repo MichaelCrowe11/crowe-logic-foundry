@@ -415,6 +415,104 @@ async def pricing_page():
     return _HTMLResponse(_PRICING_HTML)
 
 
+# ─── Remote IDE handoff ──────────────────────────────────────────────
+#
+# Called by the VS Code extension's "Open in Remote IDE" command.
+# Mints a short-lived single-use JWT that the session-router at
+# ide.crowelogic.com verifies and uses to spawn the user's code-server
+# container. If IDE_LAUNCH_ENABLED is not truthy, returns a friendly
+# message so the extension can display a useful notice instead of
+# opening a broken URL.
+
+IDE_LAUNCH_ENABLED = os.environ.get("IDE_LAUNCH_ENABLED", "").lower() in ("1", "true", "yes")
+IDE_JWT_SECRET = os.environ.get("IDE_JWT_SECRET", JWT_SECRET)
+IDE_PUBLIC_URL = os.environ.get("IDE_PUBLIC_URL", "https://ide.crowelogic.com")
+
+
+async def _resolve_pat_or_jwt(
+    authorization: Optional[str] = Header(None),
+    db: Database = Depends(get_db),
+) -> dict:
+    """Accept either a `crowe_pat_...` PAT or a JWT bearer token.
+
+    Returns {"user_id", "workspace_id", "plan_id"} so IDE-launch can
+    mint a routing token without caring which auth method the client
+    used.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    token = authorization[7:]
+
+    if token.startswith("crowe_pat_") or token.startswith("cl_"):
+        key_hash = hashlib.sha256(token.encode()).hexdigest()
+        row = await db.fetchrow(
+            """SELECT ak.user_id, ak.workspace_id, w.plan_id, w.status AS ws_status
+               FROM api_keys ak
+               JOIN workspaces w ON ak.workspace_id = w.id
+               WHERE ak.key_hash = $1 AND NOT ak.revoked""",
+            key_hash,
+        )
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+        if row["ws_status"] != "active":
+            raise HTTPException(status_code=403, detail="Workspace suspended")
+        await db.execute(
+            "UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1",
+            key_hash,
+        )
+        return {"user_id": row["user_id"], "workspace_id": row["workspace_id"], "plan_id": row["plan_id"]}
+
+    # Otherwise treat as JWT
+    claims = _decode_token(token)
+    user_id = claims["sub"]
+    ws = await db.fetchrow(
+        """SELECT w.id, w.plan_id FROM workspaces w
+           JOIN org_members om ON w.org_id = om.org_id
+           WHERE om.user_id = $1 AND w.status = 'active'
+           ORDER BY w.created_at LIMIT 1""",
+        user_id,
+    )
+    if not ws:
+        raise HTTPException(status_code=404, detail="No active workspace for user")
+    return {"user_id": user_id, "workspace_id": ws["id"], "plan_id": ws["plan_id"]}
+
+
+@app.post("/api/ide/launch")
+async def ide_launch(auth: dict = Depends(_resolve_pat_or_jwt)):
+    """Mint a handoff URL the browser can open to drop into a remote IDE session."""
+    if not IDE_LAUNCH_ENABLED:
+        return {
+            "url": None,
+            "error": (
+                "Hosted Remote IDE is not yet available (Phase 2). "
+                "The Crowe Logic extension works against your local Foundry checkout today; "
+                "the one-click remote IDE lands with ide.crowelogic.com going live."
+            ),
+            "status": "pending",
+        }
+
+    # Short-lived handoff JWT (5 min). Session-router validates and sets a
+    # session cookie scoped to ide.crowelogic.com before redirecting the
+    # user into their code-server container.
+    now = datetime.now(timezone.utc)
+    handoff = jwt.encode(
+        {
+            "sub": auth["user_id"],
+            "workspace_id": auth["workspace_id"],
+            "plan_id": auth["plan_id"],
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+            "purpose": "ide-handoff",
+        },
+        IDE_JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+    return {
+        "url": f"{IDE_PUBLIC_URL.rstrip('/')}/launch?token={handoff}",
+        "expires_in": 300,
+    }
+
+
 # ─── Auth endpoints ──────────────────────────────────────────────────
 
 @app.post("/api/auth/register", response_model=TokenResponse)
@@ -539,9 +637,9 @@ async def create_api_key(
 ):
     await _resolve_workspace(workspace_id, user, db)
 
-    raw_key = f"cl_{secrets.token_hex(24)}"
+    raw_key = f"crowe_pat_{secrets.token_hex(24)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    key_prefix = raw_key[:11]
+    key_prefix = raw_key[:14]  # "crowe_pat_" + 4 hex chars
     key_id = secrets.token_hex(16)
 
     await db.execute(
