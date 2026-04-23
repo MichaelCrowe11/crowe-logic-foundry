@@ -137,7 +137,7 @@ Presets live in `tools/parallel/presets.json` so new mixes can be A/B tested wit
 
 | Preset | Composition | Est. cost/call | When to use |
 |---|---|---|---|
-| `fast` | 1x local DeepParallel (single call, all 8 personas in one prompt) | ~$0 | bulk / hot-loop, equivalent behavior to existing `deepparallel_query` |
+| `fast` | Delegates to existing `deepparallel_query` (1 call, 8 personas in one prompt) | ~$0 | bulk / hot-loop; preset is a thin wrapper, no code duplication |
 | `cloud-balanced` | 3 Kimi + 3 GLM + 2 local | $0.15 to $0.30 | default for deep reasoning |
 | `deep` | 4 Kimi + 4 GLM | $0.25 to $0.50 | maximum cloud diversity, no local |
 | `max` | 2 Kimi + 2 GLM + 2 DeepSeek + 2 local | $0.35 to $0.60 | research, high-stakes, four transports |
@@ -149,7 +149,7 @@ Cost estimates are placeholder until phase 6 calibrates against real ledger data
 1. Caller invokes `multimodel_parallel_query(prompt, config="cloud-balanced")`.
 2. Dispatcher loads the preset: 3 Kimi chains, 3 GLM chains, 2 local chains. Personas are assigned round-robin from the canonical 8-persona list.
 3. Cost estimator multiplies configured `max_tokens` by per-backend price (from `costs.py`) and sums across planned chains. If the estimate exceeds `budget_usd`, `BudgetError` is raised before any request fires.
-4. `asyncio.gather` dispatches eight concurrent transport calls. Each chain has a per-chain timeout equal to `timeout_s / 2` so a slow backend cannot stall the whole batch.
+4. `asyncio.gather` dispatches eight concurrent transport calls. The total `timeout_s` budget is split 50/50 between dispatch and synthesis. Per-chain timeout is `timeout_s / 2`. Because chains run concurrently, the dispatch phase wall time is bounded by the slowest surviving chain, capped at `timeout_s / 2`. The remaining `timeout_s / 2` is reserved for the synthesis call. One slow backend cannot starve the synthesis layer.
 5. Collector iterates results. Successful chains go forward. Failed chains (transport error, 4xx, timeout) are recorded in `dropped_chains` and skipped. If fewer than three chains succeeded, the function returns early with `synthesis="skipped"` in metadata and no judge call.
 6. Synthesis layer runs. For `judge` mode: Claude Opus 4.7 receives the original prompt plus every surviving chain output labeled by backend and persona. The judge returns a synthesized answer, a disagreement map, and a confidence score.
 7. Ledger writes one JSONL record containing: prompt hash, config name, per-chain results, synthesis output, total cost, total latency, timestamp, and a UUID `ledger_id`.
