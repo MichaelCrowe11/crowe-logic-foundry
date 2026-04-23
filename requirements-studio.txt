@@ -1,12 +1,21 @@
-# Crowe Studio optional dependencies.
+# Crowe Studio + Substrate optional dependencies.
 #
-# Only needed if you run multi-camera sync (tools/sync.py) or other
-# scientific-computing pipelines inside Foundry. Main CLI loads without
-# these because tools/sync.py imports them lazily.
+# Needed only when you run Studio multi-camera sync (tools/sync.py) or
+# Substrate music rendering (tools/substrate.py). Main CLI loads without
+# these because both feature entrypoints import them lazily.
 #
 # Install:   pip install -r requirements-studio.txt
-# Skip:      main CLI works without them; sync_shoot() will raise a
-#            clean ImportError if you call it and they're missing.
+# Skip:      main CLI works without them; the feature tools will raise
+#            a clean ImportError if called and the deps are missing.
 
+# Studio: multi-camera audio waveform sync
 numpy>=2.0,<3
 scipy>=1.14,<2
+
+# Substrate: MIDI composition rendering
+# Builder scripts in ~/Projects/talon/examples/legacy/python/ import
+# midiutil via `subprocess.run([sys.executable, ...])` from tools/
+# substrate.py. The subprocess uses the same Python interpreter as the
+# Foundry CLI, so the package must be installed in the CLI's env
+# (typically /opt/homebrew/opt/python@3.11/bin/python3.11).
+midiutil>=1.2,<2
