@@ -491,25 +491,27 @@ async def ide_launch(auth: dict = Depends(_resolve_pat_or_jwt)):
             "status": "pending",
         }
 
-    # Short-lived handoff JWT (5 min). Session-router validates and sets a
-    # session cookie scoped to ide.crowelogic.com before redirecting the
-    # user into their code-server container.
+    # Short-lived handoff JWT (60 s, router enforces 5 min maxTokenAge).
+    # Claims match the contract in deploy/ide/session-router/auth.js:
+    # iss=crowe-logic-ai, aud=crowe-ide-router, role in {admin,subscriber}.
     now = datetime.now(timezone.utc)
-    handoff = jwt.encode(
-        {
-            "sub": auth["user_id"],
-            "workspace_id": auth["workspace_id"],
-            "plan_id": auth["plan_id"],
-            "iat": now,
-            "exp": now + timedelta(minutes=5),
-            "purpose": "ide-handoff",
-        },
-        IDE_JWT_SECRET,
-        algorithm=JWT_ALGORITHM,
-    )
+    role = "admin" if auth.get("plan_id") == "admin" else "subscriber"
+    claims = {
+        "iss": "crowe-logic-ai",
+        "aud": "crowe-ide-router",
+        "sub": auth["user_id"],
+        "role": role,
+        "workspace_id": auth["workspace_id"],
+        "plan_id": auth["plan_id"],
+        "iat": now,
+        "exp": now + timedelta(seconds=60),
+    }
+    if auth.get("email"):
+        claims["email"] = auth["email"]
+    handoff = jwt.encode(claims, IDE_JWT_SECRET, algorithm=JWT_ALGORITHM)
     return {
-        "url": f"{IDE_PUBLIC_URL.rstrip('/')}/launch?token={handoff}",
-        "expires_in": 300,
+        "url": f"{IDE_PUBLIC_URL.rstrip('/')}/?token={handoff}",
+        "expires_in": 60,
     }
 
 
