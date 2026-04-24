@@ -38,7 +38,7 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
             const signedIn = !!(await getApiToken(ctx));
             const items: (vscode.QuickPickItem & { id: string })[] = [
                 { id: 'chat', label: '$(comment-discussion) Open Crowe chat', description: '@crowe' },
-                { id: 'remote', label: '$(remote) Open in remote IDE', description: 'Hand off to ai.southwestmushrooms.com' },
+                { id: 'remote', label: '$(remote) Open in remote IDE', description: 'Hand off to ide.crowelogic.com' },
                 signedIn
                     ? { id: 'signOut', label: '$(sign-out) Sign out' }
                     : { id: 'signIn', label: '$(sign-in) Sign in with API token' },
