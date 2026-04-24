@@ -1,97 +1,96 @@
-# Crowe Logic — VS Code Extension
+# Crowe Logic
 
-> **Universal AI Agent** inside your IDE — chat, plan, execute, and review with the full CroweLM model chain.
+Crowe Logic is the Foundry agent inside VS Code. It ships as a chat participant, a pair of activity-bar views, and a dark/light theme pair tuned to the same gold palette as the mark.
 
-![Crowe Logic](media/avatar-light.png)
+![Crowe Logic](media/avatar-dark.png)
 
-## Features
+## What it does
 
-- **`@crowe` Chat Participant** — Talk to the Foundry agent directly in VS Code's chat panel. Streaming responses with real-time reasoning display.
-- **Slash Commands** — `/plan`, `/run`, `/explain`, `/dataset`, `/steer`, `/transcript`
-- **Plan View** — Watch the agent's execution plan build step-by-step in the activity bar
-- **Tool Activity View** — Live feed of every tool call: name, args, status, duration, result
-- **CroweLM Model Chain** — Smart routing across Titan, Apex, Oracle, Sovereign, Prime, Nexus, Reason
-- **Color Themes** — Crowe Logic Dark and Crowe Logic Light, both built around the signature gold accent palette
-- **Keyboard Shortcuts** — `Cmd+Shift+L` (macOS) / `Ctrl+Shift+L` to open chat
+- **`@crowe` chat participant.** Streams responses and reasoning into the chat panel. Routes across the CroweLM model chain (Azure Foundry, NVIDIA NIM, Ollama) based on availability and task.
+- **Plan view.** The agent drafts a plan before running anything. You can approve, reorder, or cancel steps.
+- **Tool Activity view.** Every tool call surfaces with name, args, status, duration, and result. Nothing runs silently.
+- **Slash commands.** `/plan`, `/run`, `/explain`, `/dataset`, `/steer`, `/transcript`.
+- **Remote IDE handoff.** `Crowe Logic: Open in Remote IDE` hands you off to a cloud session at `ide.crowelogic.com` when the hosted plane is available. Otherwise the extension runs against your local Foundry checkout.
+
+## Install
+
+```bash
+code --install-extension crowe-logic-0.2.10.vsix
+```
+
+On first activation the extension auto-detects the Foundry checkout and its Python interpreter. The defaults:
+
+1. **Foundry path**: the active workspace if it contains `cli/headless.py`, else `~/Projects/crowe-logic-foundry` or `~/crowe-logic-foundry`, else the container path `/workspace/crowe-logic-foundry`.
+2. **Python path**: `<foundry>/.venv/bin/python3` > `<foundry>/venv/bin/python3` > `/opt/venv/bin/python3` > `python3` on PATH.
+
+Override either in Settings under **Crowe Logic** if the auto-detect picks wrong.
+
+## Quick start
+
+1. Open chat with `Cmd+Shift+L` (or `Ctrl+Shift+L` on Windows/Linux).
+2. Type `@crowe plan a PR that updates the README.`
+3. Approve tool calls as they stream in the **Tool Activity** pane, or `/run` to proceed end to end.
 
 ## Architecture
 
 ```
-┌──────────────────┐  stdin (JSON)   ┌──────────────────────┐
-│ VS Code chat     │ ──────────────▶ │ python -m cli.headless│
-│ participant      │                 │ (Foundry agent loop)  │
-│ (this extension) │ ◀────────────── │                       │
-└──────────────────┘  stdout (NDJSON)└──────────────────────┘
+VS Code chat participant
+        │  stdin: {messages, model, session}
+        ▼
+python -m cli.headless
+        │  stdout: NDJSON event stream
+        ▼
+VS Code chat stream + Plan + Tool Activity views
 ```
 
-The extension never imports Foundry code directly. Everything goes through the line-delimited JSON protocol defined in `cli/headless.py`. The wire format is a strict contract — adding a new event type means updating both the Python emitter and `src/agent.ts`'s `FoundryEvent` union.
-
-## Quick Start
-
-1. **Install the extension**
-   ```bash
-   code --install-extension crowe-logic.vsix
-   ```
-
-2. **Open Chat** — Press `Cmd+Shift+L` or click the Crowe Logic icon in the activity bar
-
-3. **Start talking** — Type `@crowe` followed by your request
-
-4. **Watch it work** — Plans, tool calls, and reasoning stream in real time
-
-## Build
-
-```bash
-cd deploy/ide/extensions/crowe-logic
-./build.sh
-```
-
-Produces `crowe-logic.vsix`. Install locally or deploy via `code-server --install-extension`.
+The extension does not import Foundry code. Every turn is one subprocess, one JSON payload in, one NDJSON stream out. The wire protocol lives in `cli/headless.py`; the TypeScript side in `src/agent.ts` parses it into `FoundryEvent` discriminated-union cases.
 
 ## Configuration
 
-| Setting                       | Default                          | Description                                                      |
-|-------------------------------|----------------------------------|------------------------------------------------------------------|
-| `croweLogic.pythonPath`       | `/opt/venv/bin/python3`          | Python interpreter for the headless agent                        |
-| `croweLogic.foundryPath`      | `/workspace/crowe-logic-foundry` | Path to the Foundry checkout (cwd + PYTHONPATH)                  |
-| `croweLogic.model`            | `auto`                           | CroweLM model (auto, Titan, Apex, Oracle, Sovereign, Prime, etc)|
-| `croweLogic.maxToolRounds`    | `20`                             | Max tool-call rounds per turn (1–100)                            |
-| `croweLogic.theme`            | `auto`                           | Color theme preference (auto, dark, light)                       |
+| Setting | Default | Description |
+|---|---|---|
+| `croweLogic.pythonPath` | *(auto-detect)* | Python interpreter that runs the headless agent. |
+| `croweLogic.foundryPath` | *(auto-detect)* | Filesystem path to the `crowe-logic-foundry` checkout. |
+| `croweLogic.model` | `auto` | CroweLM model tier. `auto` selects the first reachable model in the chain. |
+| `croweLogic.maxToolRounds` | `20` | Maximum tool-call rounds per chat turn (1 to 100). |
+| `croweLogic.apiBaseUrl` | `https://api.crowelogic.com` | Control-plane endpoint for billing, auth, and IDE launch. |
+| `croweLogic.ideUrl` | `https://ide.crowelogic.com` | Remote IDE origin used when `Open in Remote IDE` is invoked. |
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
-| Shortcut              | Action                    |
-|-----------------------|---------------------------|
-| `Cmd+Shift+L`        | Open Crowe Logic Chat     |
-| `Cmd+Shift+P` (in Plan view) | Focus Plan View    |
+| Shortcut | Action |
+|---|---|
+| `Cmd+Shift+L` (macOS) / `Ctrl+Shift+L` | Open Crowe Logic chat |
 
-## Slash Commands
+## Slash commands
 
-| Command       | Description                                           |
-|---------------|-------------------------------------------------------|
-| `/plan`       | Draft a plan before running tools                     |
-| `/run`        | Execute the current plan end-to-end                   |
-| `/explain`    | Explain the selected file or symbol                   |
-| `/dataset`    | Show or set the active CroweLM dataset context        |
-| `/steer`      | Persist operator steering for this chat session       |
-| `/transcript` | Show the last full answer and reasoning transcript    |
+| Command | Description |
+|---|---|
+| `/plan` | Draft a plan before running tools. |
+| `/run` | Execute the current plan end to end. |
+| `/explain` | Explain the selected file or symbol. |
+| `/dataset` | Show or set the active CroweLM dataset context. |
+| `/steer` | Persist operator steering for this chat session. |
+| `/transcript` | Show the last full answer and reasoning transcript. |
 
-## Color Themes
+## Themes
 
-### Crowe Logic Dark
-Deep blacks (`#0a0b0e`, `#0e0f12`) with warm gold (`#bfa669`) accents. Designed for extended sessions.
+**Crowe Logic Dark.** Deep graphite (`#0e0f12`, `#0a0b0e`) with a warm gold accent (`#bfa669`) and a toned-down palette for strings, numbers, and comments. Tuned for long sessions.
 
-### Crowe Logic Light
-Warm cream (`#faf8f5`) background with amber gold (`#8c7a3e`) accents. Clean and readable in bright environments.
+**Crowe Logic Light.** Warm cream (`#faf8f5`) with amber gold (`#8c7a3e`). Readable in daylight without losing the brand accent.
+
+Both themes cover the full surface: borders, menus, notifications, scrollbars, and git decorations are tuned deliberately rather than inherited.
 
 ## Development
 
 ```bash
-npm install          # Install dependencies
-npm run compile      # Build TypeScript
-npm run watch        # Watch mode for development
-npm run package      # Create .vsix package
+cd deploy/ide/extensions/crowe-logic
+npm install
+npm run compile
+npm run package
 ```
+
+Produces `crowe-logic.vsix`. Install locally with `code --install-extension` or deploy into a code-server image via `code-server --install-extension`.
 
 ## License
 

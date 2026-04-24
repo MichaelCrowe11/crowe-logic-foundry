@@ -47,7 +47,28 @@
     "dropdown.foreground": "#2c2a25",
     "list.activeSelectionBackground": "#ede5c8",
     "list.activeSelectionForeground": "#2c2a25",
-    "list.hoverBackground": "#f3f0ea"
+    "list.hoverBackground": "#f3f0ea",
+    "contrastBorder": "#e8e2d0",
+    "sideBar.border": "#e8e2d0",
+    "editorGroup.border": "#e8e2d0",
+    "widget.shadow": "#2c2a2522",
+    "menu.background": "#faf8f5",
+    "menu.foreground": "#2c2a25",
+    "menu.selectionBackground": "#ede5c8",
+    "menu.selectionForeground": "#2c2a25",
+    "menu.border": "#d8d2c0",
+    "notifications.background": "#ffffff",
+    "notifications.foreground": "#2c2a25",
+    "notificationLink.foreground": "#8c7a3e",
+    "scrollbarSlider.background": "#8c7a3e22",
+    "scrollbarSlider.hoverBackground": "#8c7a3e44",
+    "scrollbarSlider.activeBackground": "#8c7a3e66",
+    "editorError.foreground": "#b24a38",
+    "editorWarning.foreground": "#a37628",
+    "editorInfo.foreground": "#4e7683",
+    "gitDecoration.addedResourceForeground": "#5a7a3a",
+    "gitDecoration.modifiedResourceForeground": "#9a7a22",
+    "gitDecoration.deletedResourceForeground": "#b24a38"
   },
   "tokenColors": [
     {
@@ -81,6 +102,34 @@
     {
       "scope": ["variable.other.constant", "constant.other"],
       "settings": { "foreground": "#9a7a22" }
+    },
+    {
+      "scope": ["punctuation", "meta.brace", "meta.bracket"],
+      "settings": { "foreground": "#8a8270" }
+    },
+    {
+      "scope": ["entity.other.attribute-name"],
+      "settings": { "foreground": "#7a6a28", "fontStyle": "italic" }
+    },
+    {
+      "scope": ["markup.heading", "markup.bold"],
+      "settings": { "foreground": "#8c7a3e", "fontStyle": "bold" }
+    },
+    {
+      "scope": ["markup.italic"],
+      "settings": { "foreground": "#4a4738", "fontStyle": "italic" }
+    },
+    {
+      "scope": ["markup.inserted"],
+      "settings": { "foreground": "#5a7a3a" }
+    },
+    {
+      "scope": ["markup.deleted"],
+      "settings": { "foreground": "#b24a38" }
+    },
+    {
+      "scope": ["invalid", "invalid.illegal"],
+      "settings": { "foreground": "#b24a38", "fontStyle": "underline" }
     }
   ]
 }
