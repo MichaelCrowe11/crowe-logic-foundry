@@ -1,8 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Crowe Logic activity-bar glyph: stylized C with an inset spark.
-       currentColor lets VS Code tint it via theme tokens, matching the
-       behavior of built-in codicons. -->
-  <path d="M19 6.5A8 8 0 1 0 19 17.5"/>
-  <circle cx="12.5" cy="12" r="1.4" fill="currentColor" stroke="none"/>
-  <path d="M12.5 8.6 V10.6 M12.5 13.4 V15.4 M9 12 H10.6 M14.4 12 H16"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <!-- Crowe Logic activity-bar glyph.
+       A confident partial-ring (the C) with an inset forward-chevron
+       (logic / progression). Uses currentColor so VS Code tints it with
+       the active icon theme token, matching built-in codicons at 16 and
+       24 px. Stroke width tuned for crispness at 16 px on a 24-unit grid. -->
+  <!-- Outer C, open on the right, golden-ratio arc length. -->
+  <path d="M17.25 6.25A7.75 7.75 0 1 0 17.25 17.75"/>
+  <!-- Logic chevron pointing forward, centered in the open gap. -->
+  <path d="M10.75 9.25 14 12 10.75 14.75"/>
 </svg>

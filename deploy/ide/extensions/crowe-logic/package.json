@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic",
   "description": "Crowe Logic Foundry agent, chat, plans, and tool execution inside the IDE.",
-  "version": "0.2.8",
+  "version": "0.2.10",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -193,14 +193,14 @@
       "properties": {
         "croweLogic.pythonPath": {
           "type": "string",
-          "default": "/opt/venv/bin/python3",
-          "description": "Path to the Python interpreter that runs the Foundry headless agent.",
+          "default": "",
+          "markdownDescription": "Path to the Python interpreter that runs the Foundry headless agent. Leave empty to auto-detect (checks `${foundryPath}/.venv/bin/python3`, `${foundryPath}/venv/bin/python3`, `/opt/venv/bin/python3`, then `python3` on PATH).",
           "order": 1
         },
         "croweLogic.foundryPath": {
           "type": "string",
-          "default": "/workspace/crowe-logic-foundry",
-          "description": "Filesystem path to the crowe-logic-foundry checkout.",
+          "default": "",
+          "markdownDescription": "Filesystem path to the crowe-logic-foundry checkout. Leave empty to auto-detect from the current workspace, then from `~/Projects/crowe-logic-foundry` or `~/crowe-logic-foundry`.",
           "order": 2
         },
         "croweLogic.model": {

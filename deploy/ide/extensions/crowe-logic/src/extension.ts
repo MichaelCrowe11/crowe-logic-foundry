@@ -19,6 +19,7 @@ import { openInRemoteIde } from './commands/openInRemoteIde';
 import { askWithContext } from './commands/askWithContext';
 import { CroweCodeActionProvider, CROWE_CODE_ACTION_KINDS } from './codeActions';
 import { registerStatusBar } from './statusBar';
+import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage, clearPathCache } from './resolvePaths';
 
 export function activate(context: vscode.ExtensionContext) {
     const planView = new PlanViewProvider();
@@ -77,6 +78,15 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     void registerStatusBar(context);
+
+    // Invalidate the resolver cache when the user edits pythonPath or foundryPath.
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('croweLogic.pythonPath') || e.affectsConfiguration('croweLogic.foundryPath')) {
+                clearPathCache();
+            }
+        }),
+    );
 }
 
 export function deactivate() { /* no-op */ }
@@ -94,8 +104,12 @@ async function handleChat(
     toolsView: ToolsViewProvider,
 ): Promise<vscode.ChatResult | void> {
     const config = vscode.workspace.getConfiguration('croweLogic');
-    const pythonPath = config.get<string>('pythonPath', '/opt/venv/bin/python3');
-    const foundryPath = config.get<string>('foundryPath', '/workspace/crowe-logic-foundry');
+    const foundryPath = resolveFoundryPath();
+    const pythonPath = resolvePythonPath(foundryPath);
+    if (!pythonPath) {
+        stream.markdown('> **' + pythonNotFoundMessage(foundryPath).replace(/\n/g, '\n> ') + '**');
+        return { metadata: { errorKind: 'python-not-found' } };
+    }
     const model = config.get<string>('model', 'auto');
 
     // Replay prior turns from VS Code's chat history. We only forward

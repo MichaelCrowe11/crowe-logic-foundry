@@ -1,21 +1,23 @@
-# Welcome to Crowe Logic
+# Crowe Logic
 
-The Crowe Logic Foundry agent is now your default chat participant in this
-IDE. Press `⌃⌘I` (or click the chat icon) and type `@crowe` to talk to it.
+The Foundry agent is your chat participant in this IDE. Press `⌃⌘I` and type `@crowe`.
 
-The Foundry agent runs the same brain as the terminal CLI — it can read and
-edit files in your workspace, run shell commands, query the model chain
-(Azure Foundry → NVIDIA NIM → Ollama), and stream tool execution into the
-**Crowe Logic** activity-bar pane on the left.
+It reads and edits files in your workspace, runs shell commands, queries the model chain (Azure Foundry, NVIDIA NIM, Ollama), and streams each tool call into the **Crowe Logic** activity-bar pane on the left.
 
 ## Slash commands
 
-- `/plan` — draft a plan before running tools
-- `/run`  — execute the current plan end-to-end
-- `/explain` — explain the selected file or symbol
+- `/plan` drafts a plan before running anything
+- `/run` executes the current plan end to end
+- `/explain` walks the selected file or symbol
 
 ## Where things live
 
-- **Chat** — the right-side panel, with the Crowe Logic avatar
-- **Plan** — left activity bar, top pane
-- **Tool Activity** — left activity bar, second pane
+- **Chat** sits on the right. The Crowe Logic mark is its avatar.
+- **Plan** and **Tool Activity** sit in the left activity bar.
+- **Remote IDE** (when enabled) hands you off to a cloud session at ide.crowelogic.com.
+
+## Getting started
+
+1. Run `Crowe Logic: Sign In` from the command palette to connect to the platform.
+2. Open the chat and ask `@crowe plan a PR that updates the README`.
+3. Approve tool calls as they stream, or hit `/run` to let it proceed.
