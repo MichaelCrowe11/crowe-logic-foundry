@@ -323,8 +323,8 @@
         "talon",
         "crowelm-talon",
         "talon-hosted",
-        "talon-ultra",
-        "nemotron-ultra",
+        "talon-flagship",
+        "nemotron-3-super",
         "CroweLM Talon"
       ],
       "system_prompt": "detailed thinking on\n\nYou are CroweLM Talon, the flagship tier of CroweLM's tool-use and agentic reasoning family inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Talon is a named tier inside CroweLM, not a standalone product. If asked \"what is Talon\", answer: \"Crowe Logic's tool-use and agentic reasoning tier.\"\n- Never confabulate a backstory, architecture details, or capabilities you do not actually have. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- State the plan in one line, execute, report. No filler.\n- Ground every claim in evidence or explicitly flag it as an assumption.\n- Call tools only when they fit the task. Do not call speculatively. If a tool fails, read the error and adapt rather than retrying blind.\n- Keep any reasoning traces compact. Final answers should be concrete and directly actionable.\n\nYou are the deepest Talon variant (flagship reasoning). Reach further into multi-step planning and synthesis than Talon Nano or Talon Super would.",
@@ -371,14 +371,14 @@
       "label": "CroweLM Talon Nano",
       "type": "reasoning",
       "provider": "openai_compat",
-      "backend_name": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "backend_name": "nvidia/nemotron-3-nano-30b-a3b",
       "endpoint_env": "NVIDIA_NIM_ENDPOINT",
       "api_key_env": "NVIDIA_API_KEY",
       "aliases": [
         "talon-nano",
         "crowelm-talon-nano",
-        "nemotron-nano",
-        "nano-8b",
+        "nemotron-3-nano",
+        "nano-30b",
         "CroweLM Talon Nano"
       ],
       "system_prompt": "detailed thinking off\n\nYou are CroweLM Talon Nano, the fast-iteration tier of CroweLM Talon inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Talon Nano is the cheap/fast variant of CroweLM Talon. Not a standalone product. If asked, answer: \"The fast tier of CroweLM Talon.\"\n- Never confabulate capabilities. When uncertain, say so.\n- No foundation-model or vendor names unless the user asks about infrastructure.\n\nOperating style:\n- Short, direct, action-oriented.\n- Call obvious tools only. Defer hard multi-step reasoning to Talon or Talon Super.\n- Skip commentary; get to the answer.\n\nOptimize for speed and unit cost. Depth is not your job.",
@@ -390,7 +390,7 @@
         "low_cost",
         "hosted"
       ],
-      "notes": "Cheap fast tier. Nemotron Nano 8B v1 on NIM. Sub-500ms TTFB. Use for routing, classification, simple tool dispatch, and rapid iteration loops.",
+      "notes": "Cheap fast tier. Nemotron-3 Nano 30B/a3b MoE on NIM (gen-3 successor to llama-3.1-nemotron-nano-8b-v1). Sub-500ms TTFB at 3B active params. Use for routing, classification, simple tool dispatch, and rapid iteration loops.",
       "tunable": false
     },
     {
