@@ -11,15 +11,22 @@ This module is imported by the Control Plane API; it doesn't run standalone.
 """
 
 import json
+import os
 import time
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .db import Database, get_db
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
+
+# Reversible flag for the SSE streaming endpoint. Off by default so a
+# misconfigured deploy can't accidentally expose it; flip to "1" once
+# the surface is dogfood-ready. See docs/protocols/crowe-stream-v0.md.
+CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in ("1", "true", "yes")
 
 # Model tier → plan minimum. Models not listed are enterprise-only.
 MODEL_PLAN_ACCESS = {
@@ -325,6 +332,107 @@ async def gateway_chat(
         content=content,
         usage={"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": token_count},
         latency_ms=elapsed_ms,
+    )
+
+
+@router.post("/chat/stream")
+async def gateway_chat_stream(
+    req: GatewayRequest,
+    key_info: dict = Depends(_resolve_api_key),
+    db: Database = Depends(get_db),
+):
+    """Streaming model gateway. Emits crowe-stream v0 events as SSE.
+
+    Behind CROWE_STREAM_ENABLED so the rollout is reversible without a
+    redeploy. Plan gating mirrors /chat exactly so streamed access can
+    never exceed the user's tier.
+
+    Token accounting note: the v0 renderer counts SDK content deltas
+    (one increment per feed call), which is approximately the
+    completion_tokens count but does not include prompt_tokens. We
+    record what we have on the done event; v1 of the protocol adds the
+    real provider usage block (gap #3 in the spec) at which point this
+    becomes accurate. The endpoint is dogfood-only until that lands.
+    """
+    if not CROWE_STREAM_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Streaming endpoint is disabled (set CROWE_STREAM_ENABLED=1)",
+        )
+
+    from .streaming import stream_agent_events, sse_frame
+
+    model = req.model
+    plan_id = key_info["plan_id"]
+    workspace_id = key_info["workspace_id"]
+    user_id = key_info["user_id"]
+
+    required_plan = MODEL_PLAN_ACCESS.get(model, "enterprise")
+    if PLAN_RANK.get(plan_id, 0) < PLAN_RANK.get(required_plan, 3):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Model '{model}' requires {required_plan} plan or higher",
+        )
+
+    # Pre-stream budget check, identical to /chat. We can't know final
+    # cost up front for a streamed turn, so this only guards against
+    # users who are already over budget when the request arrives.
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+    if plan and plan["token_budget_month"] != -1:
+        used_row = await db.fetchrow(
+            """SELECT COALESCE(SUM(quantity), 0) AS used
+               FROM usage_events
+               WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
+            workspace_id, month_start,
+        )
+        if used_row and used_row["used"] >= plan["token_budget_month"]:
+            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+
+    session_id = f"http-{workspace_id[:12]}"
+    messages = req.messages or []
+    if not messages or messages[-1].get("role") != "user":
+        raise HTTPException(status_code=400, detail="messages must end with a user turn")
+
+    async def _sse() -> "AsyncIterator[str]":
+        recorded_tokens = 0
+        try:
+            async for event in stream_agent_events(
+                messages=messages, model_id=model, session_id=session_id,
+            ):
+                if event.get("type") == "done":
+                    recorded_tokens = (
+                        int(event.get("tokens") or 0)
+                        + int(event.get("reasoning_tokens") or 0)
+                    )
+                yield sse_frame(event)
+        finally:
+            # Record usage even if the client disconnected mid-stream;
+            # the model has already produced (and billed) the tokens.
+            if recorded_tokens > 0:
+                try:
+                    await db.execute(
+                        """INSERT INTO usage_events
+                               (workspace_id, user_id, event_type, quantity, model)
+                           VALUES ($1, $2, 'tokens', $3, $4)""",
+                        workspace_id, user_id, recorded_tokens, model,
+                    )
+                except Exception:
+                    # Don't crash the response on a usage-write failure;
+                    # billing reconciliation is a separate batch job.
+                    pass
+
+    return StreamingResponse(
+        _sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Disable proxy buffering so events flush in real time.
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

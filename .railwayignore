@@ -1,0 +1,15 @@
+# Railway upload exclusions (separate from .dockerignore)
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+*.egg-info/
+dist/
+build/
+.next/
+deploy/ide/extensions/*/node_modules/
+data/azure-ft/
+data/crowelm-*/
+*.vsix

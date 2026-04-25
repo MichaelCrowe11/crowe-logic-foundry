@@ -1,0 +1,56 @@
+# Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
+# Fly.io configuration for the Crowe Studio cloud container.
+#
+# Deploy:
+#   cd deploy/fly/studio-cloud
+#   fly launch --copy-config --no-deploy   # if first time (creates app)
+#   fly volumes create models --region ord --size 20   # one-time
+#   fly deploy
+#
+# After deploy, point the Mac at the cloud endpoint:
+#   export CROWELM_BASE_URL="https://<app-name>.fly.dev/v1"
+#
+# Change the app name below to whatever you choose at fly launch.
+
+app = "crowe-studio-cloud"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  OLLAMA_HOST = "0.0.0.0"
+  OLLAMA_MODELS = "/models"
+  OLLAMA_KEEP_ALIVE = "24h"
+
+# Mount a persistent volume so the model doesn't re-download on every
+# rolling restart. The entrypoint idempotently pulls on first boot.
+[mounts]
+  source = "models"
+  destination = "/models"
+
+[http_service]
+  internal_port = 11434
+  force_https = true
+  auto_stop_machines = "stop"     # scale to zero when idle
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 8
+    hard_limit = 16
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    path = "/api/tags"
+    timeout = "5s"
+
+# Default machine size. Bump to performance-cpu-2x + 16gb_mem if you
+# move to a 7B+ model. M-series Mac local stays fast for development;
+# the cloud tier is for multi-Mac, multi-user, and agency shoots.
+[[vm]]
+  size = "shared-cpu-4x"
+  memory = "8gb"
