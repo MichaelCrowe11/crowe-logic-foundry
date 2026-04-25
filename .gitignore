@@ -19,8 +19,10 @@ data/
 
 .npmrc
 
-# Stripe bootstrap output
+# Stripe bootstrap output (.env.railway.out, .env.railway.out.test, etc.)
 *.out
+*.out.*
+.env.railway.out*
 
 # Studio runtime data (camera captures, shoot manifests)
 studio_data/
