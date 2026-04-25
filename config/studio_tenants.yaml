@@ -1,0 +1,108 @@
+# Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
+# Part of Crowe Studio — proprietary, private repository.
+# Studio Tenants — declarative registry of content pipelines the studio
+# agent can route captures into.
+#
+# The studio agent treats this file as the source of truth for "which
+# projects accept captured clips and how do they want them delivered?"
+# Add a new tenant by appending a block. No code changes required.
+#
+# Schema per tenant:
+#   name:         unique identifier used by the agent (snake-case)
+#   label:        human-readable
+#   root:         absolute project path
+#   raw_dir:      where to drop captures (absolute, or relative to root)
+#   ingest_cmd:   optional list[str] to exec after drop. {session_dir}, {clip_path},
+#                 and {session_id} are substituted. Set to null to stage only.
+#   manifests_dir: optional, absolute. Used to look up resulting manifest id.
+#   default_specs:
+#     width, height, framerate, video_bitrate, aspect
+#   platforms:    list of target platforms (informational; helps the agent
+#                 reason about which aspect ratio to capture).
+#   notes:        free-form, shown to the agent when picking a tenant.
+
+tenants:
+
+  - name: toxicteetv
+    label: ToxicTeeTv content pipeline
+    root: /Users/crowelogic/Projects/toxicteetv
+    raw_dir: /Users/crowelogic/Projects/toxicteetv/storage/raw
+    manifests_dir: /Users/crowelogic/Projects/toxicteetv/manifests
+    # Router already placed the clip in raw_dir/<session_id>/. Just run the
+    # existing stage 01 ingest; it scans raw_dir and builds the manifest.
+    ingest_cmd:
+      - node
+      - /Users/crowelogic/Projects/toxicteetv/automation/pipeline/01_ingest.js
+    default_specs:
+      width: 1920
+      height: 1080
+      framerate: 30
+      video_bitrate: 8M
+      aspect: "16:9"
+    platforms: [onlyfans, manyvids, chaturbate, reddit, twitter, pornhub]
+    notes: >-
+      Adult creator brand. 8-stage pipeline with cascade scheduling.
+      After ingest the pipeline creates a manifest in manifests_dir.
+
+  - name: southwest-mushrooms
+    label: Southwest Mushrooms / The Mushroom Grower
+    root: /Users/crowelogic/Projects/southwest-mushrooms
+    raw_dir: /Users/crowelogic/Projects/southwest-mushrooms/content/captures
+    ingest_cmd: null
+    default_specs:
+      width: 1920
+      height: 1080
+      framerate: 30
+      video_bitrate: 10M
+      aspect: "16:9"
+    platforms: [youtube, shopify, ai_southwestmushrooms, instagram]
+    notes: >-
+      Educational grow tutorials, Lion's Mane SOP B-roll, product shots.
+      Stage-only ingest for now; post-processing handled manually.
+
+  - name: mushroom-grower-audio
+    label: Mushroom Grower Audiobook B-roll
+    root: /Users/crowelogic/Projects/mushroom-grower-audio-fix
+    raw_dir: /Users/crowelogic/Projects/mushroom-grower-audio-fix/film/broll
+    ingest_cmd: null
+    default_specs:
+      width: 3840
+      height: 2160
+      framerate: 30
+      video_bitrate: 25M
+      aspect: "16:9"
+    platforms: [audiobook_video_companion, youtube]
+    notes: >-
+      Producer's Edition companion B-roll. Capture at 4K when possible.
+
+  - name: crowe-psychedelics
+    label: Crowe Psychedelics demos
+    root: /Users/crowelogic/crowe-psychedelics
+    raw_dir: /Users/crowelogic/crowe-psychedelics/media/captures
+    ingest_cmd: null
+    default_specs:
+      width: 1920
+      height: 1080
+      framerate: 30
+      video_bitrate: 10M
+      aspect: "16:9"
+    platforms: [crowelogic_bio_landing, internal]
+    notes: >-
+      CLI walkthroughs, cultivation matcher demos, reg-pack previews.
+      Phase 0 shipped 2026-04-21; demos drive Week 1 launch outreach.
+
+  - name: scratch
+    label: Scratch / unsorted captures
+    root: /tmp/crowe-capture
+    raw_dir: /tmp/crowe-capture/scratch
+    ingest_cmd: null
+    default_specs:
+      width: 1920
+      height: 1080
+      framerate: 30
+      video_bitrate: 8M
+      aspect: "16:9"
+    platforms: []
+    notes: >-
+      Fallback when the user has not decided where a clip belongs. Safe
+      default that keeps the agent from blocking on tenant choice.

@@ -61,8 +61,15 @@ nvidia = [
     "nvidia-cuda-runtime-cu12",
     "cupy-cuda12x",
 ]
+studio-vision = [
+    "torch>=2.2",
+    "transformers>=4.44",
+    "Pillow>=10.0",
+    "scikit-learn>=1.4",
+    "joblib>=1.3",
+]
 all = [
-    "crowe-logic[quantum,nvidia]",
+    "crowe-logic[quantum,nvidia,studio-vision]",
 ]
 
 [project.urls]

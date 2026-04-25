@@ -1,0 +1,800 @@
+<!--
+  Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
+  Part of Crowe Studio — proprietary, private repository.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Studio Control Center</title>
+<style>
+  :root{
+    --bg:#0a0b0d; --panel:#131519; --panel2:#1a1d22; --line:#23272e;
+    --fg:#e8eaed; --muted:#8b92a0; --accent:#7fd0ff; --accent2:#a890ff;
+    --danger:#ff6b6b; --ok:#4ade80; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,system-ui,"Inter",sans-serif;
+    font-feature-settings:"ss01","cv11";}
+  body{font-size:14px;line-height:1.45;}
+  .grid{display:grid;grid-template-columns:280px 1fr 340px;
+    grid-template-rows:56px 1fr;height:100vh;}
+  header{grid-column:1/-1;display:flex;align-items:center;
+    padding:0 22px;border-bottom:1px solid var(--line);background:var(--panel);}
+  header h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.02em;}
+  header .dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:var(--muted);margin-right:8px;}
+  header .dot.ok{background:var(--ok);box-shadow:0 0 10px var(--ok);}
+  header .spacer{flex:1;}
+  header .meta{color:var(--muted);font-size:12px;}
+
+  aside.left,aside.right{background:var(--panel);overflow-y:auto;
+    border-right:1px solid var(--line);}
+  aside.right{border-right:none;border-left:1px solid var(--line);}
+  main{overflow-y:auto;padding:22px;background:var(--bg);}
+
+  section{padding:16px 18px;border-bottom:1px solid var(--line);}
+  section h3{margin:0 0 10px;font-size:11px;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--muted);font-weight:600;}
+
+  .card{background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:14px;margin-bottom:10px;}
+  .card .t{font-weight:600;font-size:13px;}
+  .card .s{color:var(--muted);font-size:11px;margin-top:3px;}
+
+  button{font:inherit;cursor:pointer;background:var(--panel2);
+    color:var(--fg);border:1px solid var(--line);border-radius:8px;
+    padding:8px 14px;transition:all .12s;}
+  button:hover{border-color:var(--accent);color:var(--accent);}
+  button.primary{background:linear-gradient(180deg,#2a4866,#1e334b);
+    border-color:#2d4d6f;color:#cfe8ff;}
+  button.primary:hover{border-color:var(--accent);box-shadow:0 0 0 3px rgba(127,208,255,.12);}
+  button.danger{background:#2d1718;border-color:#4a2628;color:#ffb4b4;}
+  button.danger:hover{border-color:var(--danger);color:#ffd7d7;}
+  button.big{padding:18px 20px;font-size:16px;width:100%;font-weight:600;letter-spacing:.02em;}
+  button[disabled]{opacity:.4;cursor:not-allowed;}
+
+  input,select,textarea{font:inherit;background:var(--panel2);
+    color:var(--fg);border:1px solid var(--line);border-radius:6px;
+    padding:7px 10px;width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+  label{display:block;font-size:11px;color:var(--muted);margin:8px 0 4px;
+    text-transform:uppercase;letter-spacing:.06em;}
+  .row{display:flex;gap:8px;align-items:center;}
+  .row > *{flex:1;}
+
+  .device{display:flex;justify-content:space-between;align-items:center;
+    padding:6px 10px;border-radius:6px;margin-bottom:3px;
+    background:var(--panel2);}
+  .device .idx{color:var(--muted);font-size:11px;font-family:ui-monospace,monospace;}
+  .device.iphone{border-left:3px solid var(--accent);}
+
+  .session{background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:14px;margin-bottom:10px;
+    display:flex;flex-direction:column;gap:6px;}
+  .session .title{font-weight:600;font-size:13px;display:flex;justify-content:space-between;}
+  .session .stats{display:grid;grid-template-columns:repeat(4,1fr);
+    gap:10px;font-size:11px;color:var(--muted);margin-top:4px;}
+  .session .stats b{display:block;color:var(--fg);font-weight:600;
+    font-size:13px;font-variant-numeric:tabular-nums;}
+  .session .actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .session.recording{border-color:#4a2628;box-shadow:0 0 0 1px rgba(255,107,107,.2);}
+  .session .pulse{width:8px;height:8px;border-radius:50%;background:var(--danger);
+    display:inline-block;margin-right:6px;animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+  .tenant{padding:10px 12px;border-radius:8px;background:var(--panel2);
+    border:1px solid var(--line);margin-bottom:6px;cursor:pointer;transition:all .12s;}
+  .tenant:hover{border-color:var(--accent);}
+  .tenant.selected{border-color:var(--accent2);background:#1d1a2b;}
+  .tenant .tn{font-weight:600;font-size:13px;}
+  .tenant .tm{font-size:11px;color:var(--muted);margin-top:3px;}
+  .tenant .platforms{font-size:10px;color:var(--accent);margin-top:4px;
+    letter-spacing:.04em;text-transform:uppercase;}
+
+  .recent-list{display:grid;gap:6px;}
+  .recent{padding:8px 12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;display:flex;justify-content:space-between;align-items:center;
+    font-size:12px;gap:8px;}
+  .recent .fn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-family:ui-monospace,monospace;color:var(--accent);cursor:pointer;}
+  .recent .fn:hover{color:#fff;}
+  .recent .sz{color:var(--muted);font-variant-numeric:tabular-nums;}
+  .recent .when{color:var(--muted);font-size:10px;}
+
+  .kbd{font-family:ui-monospace,monospace;background:var(--panel2);
+    border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-size:11px;}
+
+  .pill{display:inline-block;padding:2px 8px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:999px;font-size:10px;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  .pill.ok{color:var(--ok);border-color:#1c4829;}
+  .pill.rec{color:var(--danger);border-color:#4a2628;}
+
+  .zoom-row{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;}
+  .zoom-row select{min-width:0;}
+
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:10px 18px;opacity:0;transition:opacity .2s;pointer-events:none;
+    box-shadow:0 10px 30px rgba(0,0,0,.6);z-index:100;font-size:13px;}
+  #toast.show{opacity:1;}
+
+  details{background:var(--panel2);border:1px solid var(--line);
+    border-radius:8px;padding:8px 12px;margin-bottom:8px;}
+  summary{cursor:pointer;font-size:12px;color:var(--muted);}
+  details[open] summary{color:var(--fg);margin-bottom:8px;}
+
+  .hint{color:var(--muted);font-size:11px;margin-top:6px;}
+</style>
+</head>
+<body>
+
+<div class="grid">
+  <header>
+    <span class="dot" id="statusDot"></span>
+    <h1>Studio Control Center</h1>
+    <span class="spacer"></span>
+    <span class="meta" id="metaTime"></span>
+  </header>
+
+  <!-- LEFT: devices + tenants -->
+  <aside class="left">
+    <section>
+      <h3>Devices</h3>
+      <div id="devices">Loading…</div>
+    </section>
+
+    <section>
+      <h3>Tenants <span style="color:var(--muted)">(click to pin)</span></h3>
+      <div id="tenants">Loading…</div>
+    </section>
+
+    <section>
+      <h3>Script</h3>
+      <label>Path</label>
+      <input id="scriptPath" value="/tmp/crowe-capture/presentations/sample_script.md" />
+      <label>WPM</label>
+      <div class="row">
+        <input id="scriptWpm" type="number" value="150" min="60" max="300" />
+        <label style="flex:0 0 auto;margin:0;display:flex;gap:4px;align-items:center;">
+          <input id="scriptMirror" type="checkbox" style="width:auto;"/>mirror
+        </label>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:6px;">
+        <button onclick="launchTeleprompter()" class="primary" style="flex:1">Open teleprompter</button>
+      </div>
+      <div class="hint">Space play/pause · ↑↓ speed · m mirror · r reset · Esc close</div>
+    </section>
+  </aside>
+
+  <!-- MAIN -->
+  <main>
+    <section style="padding:0;border:none;">
+      <h3>Capture</h3>
+      <div class="card">
+        <div class="row" style="gap:10px;">
+          <div>
+            <label>Size</label>
+            <select id="recSize">
+              <option value="1920x1080">1920x1080 (HD)</option>
+              <option value="1280x720">1280x720 (HD light)</option>
+              <option value="1920x1440">1920x1440 (more crop room)</option>
+            </select>
+          </div>
+          <div>
+            <label>FPS</label>
+            <select id="recFps">
+              <option value="30" selected>30</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+          <div>
+            <label>Bitrate</label>
+            <select id="recBr">
+              <option value="8M">8M (default)</option>
+              <option value="10M" selected>10M (presentation)</option>
+              <option value="12M">12M (max detail)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px;gap:10px;">
+          <button class="big primary" id="recBtn" onclick="toggleRecord()">Start recording</button>
+          <button class="big" onclick="togglePreview()" id="prevBtn">Open self-view</button>
+          <button class="big" onclick="snapStill()">Snap still</button>
+        </div>
+      </div>
+    </section>
+
+    <section style="padding:0;border:none;margin-top:22px;">
+      <h3>Multi-cam shoot</h3>
+      <div class="card">
+        <div id="cameraTiles" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px;">
+          Loading cameras…
+        </div>
+        <div class="row" style="gap:10px;">
+          <button class="big primary" id="shootBtn" onclick="toggleShoot()">Start shoot (all available)</button>
+          <button class="big" onclick="autoEdit()">Auto-edit with script</button>
+        </div>
+        <div class="row" style="margin-top:10px;gap:10px;">
+          <div>
+            <label>Shot strategy</label>
+            <select id="editStrategy">
+              <option value="rule_based">rule-based (fast, deterministic)</option>
+              <option value="crowelm" selected>CroweLM / DeepParallel (AI picks)</option>
+            </select>
+          </div>
+          <div>
+            <label>Sync first</label>
+            <select id="editSync">
+              <option value="true" selected>yes — cross-correlate audio</option>
+              <option value="false">no — cut at reported start times</option>
+            </select>
+          </div>
+          <div style="flex:0 0 auto;align-self:end;">
+            <button onclick="runSync()">Sync only</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;gap:10px;">
+          <button onclick="previewEdit()">Preview shot plan</button>
+          <button onclick="renderWithOverrides()" id="commitBtn" disabled>Render with current plan</button>
+        </div>
+        <div id="activeShoot" style="margin-top:10px;"></div>
+        <div id="syncReport" style="margin-top:8px;"></div>
+        <div id="shotPreview" style="margin-top:8px;"></div>
+        <div id="edlTable" style="margin-top:10px;"></div>
+        <div class="hint">Preview shows CroweLM's picks with the reason. Click any camera to override. Render commits. Every override becomes a training tuple.</div>
+      </div>
+    </section>
+
+    <section style="padding:0;border:none;margin-top:18px;">
+      <h3>Training data (for crowelm-studio fine-tune)</h3>
+      <div id="trainingStats" class="card" style="font-size:13px;">Loading…</div>
+    </section>
+
+    <section style="padding:0;border:none;margin-top:18px;">
+      <h3>Active sessions</h3>
+      <div id="sessions">No active sessions.</div>
+    </section>
+
+    <section style="padding:0;border:none;margin-top:18px;">
+      <h3>Recent output</h3>
+      <div id="recent" class="recent-list">Loading…</div>
+    </section>
+  </main>
+
+  <!-- RIGHT: actions -->
+  <aside class="right">
+    <section>
+      <h3>Selected clip</h3>
+      <input id="selectedClip" placeholder="Click a recent file to select" readonly />
+      <video id="preview" controls style="width:100%;margin-top:8px;display:none;background:#000;border-radius:6px;"></video>
+    </section>
+
+    <section>
+      <h3>Zoom effect</h3>
+      <div class="zoom-row">
+        <select id="zoomEffect"></select>
+        <button onclick="applyZoom()" class="primary">Apply</button>
+      </div>
+      <div id="zoomHint" class="hint"></div>
+    </section>
+
+    <section>
+      <h3>Route to pinned tenant</h3>
+      <div id="pinnedTenant" style="color:var(--muted);font-size:12px;">none selected</div>
+      <div style="margin-top:10px;display:flex;gap:6px;">
+        <button onclick="routeSelected(false)" class="primary" style="flex:1">Copy</button>
+        <button onclick="routeSelected(true)" style="flex:1">Move</button>
+      </div>
+      <div class="hint">Copy keeps the original at /tmp/crowe-capture/out for reference.</div>
+    </section>
+
+    <section>
+      <h3>Debug</h3>
+      <details>
+        <summary>Raw status JSON</summary>
+        <pre id="rawStatus" style="font-size:10px;max-height:200px;overflow:auto;"></pre>
+      </details>
+    </section>
+  </aside>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+const api = (path, opts={}) => fetch(path, {
+  headers: {"Content-Type":"application/json"}, ...opts,
+}).then(r => r.json());
+
+let STATE = {sessions:[], tenants:[], recent:[], iphone:null, zoom:{}, pinned:null, selected:null, cameras:[], shoots:[]};
+
+function fmtBytes(n){
+  if(!n) return "0";
+  const u=["B","KB","MB","GB"];let i=0;
+  while(n>=1024 && i<u.length-1){n/=1024;i++;}
+  return n.toFixed(i?1:0)+" "+u[i];
+}
+function fmtTimeAgo(ts){
+  const s=(Date.now()/1000)-ts;
+  if(s<60) return Math.round(s)+"s ago";
+  if(s<3600) return Math.round(s/60)+"m ago";
+  if(s<86400) return Math.round(s/3600)+"h ago";
+  return Math.round(s/86400)+"d ago";
+}
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg;t.classList.add("show");
+  clearTimeout(toast._h);
+  toast._h=setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+async function refresh(){
+  try{
+    const [st, cams, shoots] = await Promise.all([
+      api("/api/status"),
+      api("/api/cameras").catch(()=>[]),
+      api("/api/shoots").catch(()=>[]),
+    ]);
+    STATE.sessions = st.sessions || [];
+    STATE.tenants = st.tenants || [];
+    STATE.recent = st.recent_outputs || [];
+    STATE.iphone = st.iphone;
+    STATE.zoom = st.zoom_presets || {};
+    STATE.cameras = Array.isArray(cams) ? cams : [];
+    STATE.shoots = Array.isArray(shoots) ? shoots : [];
+
+    renderDevices(st.devices);
+    renderTenants();
+    renderSessions();
+    renderRecent();
+    renderZoomOptions();
+    renderCameraTiles();
+    renderActiveShoot();
+    document.getElementById("rawStatus").textContent = JSON.stringify({status:st,cameras:cams,shoots:shoots},null,2);
+    document.getElementById("statusDot").classList.add("ok");
+    document.getElementById("metaTime").textContent = new Date().toLocaleTimeString();
+  }catch(e){
+    document.getElementById("statusDot").classList.remove("ok");
+    toast("Status fetch failed");
+  }
+}
+
+function renderCameraTiles(){
+  const el = document.getElementById("cameraTiles");
+  if(!STATE.cameras.length){el.innerHTML="<em style='color:var(--muted)'>No cameras in registry.</em>";return;}
+  el.innerHTML = STATE.cameras.map(c => {
+    const ok = c.available;
+    const bd = ok ? "var(--ok)" : "var(--line)";
+    const txt = ok ? c.resolved || "ready" : "unavailable";
+    return `<div style="padding:10px;border:1px solid ${bd};border-radius:8px;background:var(--panel2);">
+      <div style="font-size:12px;font-weight:600;">${c.name}</div>
+      <div style="font-size:10px;color:var(--accent);letter-spacing:.06em;text-transform:uppercase;margin-top:2px;">${c.role}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;">${txt}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;">${c.source_type}${c.sync_priority==='primary'?' · primary':''}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderActiveShoot(){
+  const el = document.getElementById("activeShoot");
+  const active = STATE.shoots.find(s => s.status === "recording");
+  if(!active){
+    const last = STATE.shoots[0];
+    el.innerHTML = last
+      ? `<div class="hint">Last shoot: <b>${last.shoot_id}</b> · ${last.cameras.join(", ")} · ${last.duration_observed||'?'}s</div>`
+      : "";
+    const btn = document.getElementById("shootBtn");
+    btn.textContent = "Start shoot (all available)";
+    btn.classList.add("primary"); btn.classList.remove("danger");
+    return;
+  }
+  el.innerHTML = `<div class="session recording"><div class="title"><span class="pulse"></span>${active.shoot_id}</div>
+    <div class="stats"><div><b>${active.alive_cameras}</b>cameras</div>
+    <div><b>${active.cameras.length}</b>total</div></div></div>`;
+  const btn = document.getElementById("shootBtn");
+  btn.textContent = "Stop shoot · " + active.shoot_id;
+  btn.classList.remove("primary"); btn.classList.add("danger");
+}
+
+async function toggleShoot(){
+  const active = STATE.shoots.find(s=>s.status==="recording");
+  if(active){
+    toast("Stopping shoot "+active.shoot_id+"...");
+    await api("/api/shoot/stop", {method:"POST", body:JSON.stringify({shoot_id: active.shoot_id})});
+    toast("Shoot stopped");
+    refresh();
+    return;
+  }
+  const r = await api("/api/shoot/start", {method:"POST", body:"{}"});
+  if(r.error){toast("Shoot failed: "+r.error);return;}
+  toast("Shoot started: "+r.shoot_id+" · "+r.started+" cameras");
+  refresh();
+}
+
+async function autoEdit(){
+  const scriptPath = document.getElementById("scriptPath").value;
+  const last = STATE.shoots[0];
+  if(!last){toast("No shoots yet. Start one first.");return;}
+  const tenant = STATE.pinned;
+  const strategy = document.getElementById("editStrategy").value;
+  const syncFirst = document.getElementById("editSync").value === "true";
+  toast("Auto-editing " + last.shoot_id + " · strategy=" + strategy + "...");
+  const r = await api("/api/shoot/auto-edit", {method:"POST", body:JSON.stringify({
+    shoot_id: last.shoot_id, script_path: scriptPath,
+    route_to_tenant: tenant, strategy, sync_first: syncFirst,
+  })});
+  if(r.error){toast("Auto-edit "+r.stage+": "+r.error);return;}
+  renderSyncReport(r.sync);
+  renderShotPreview(r.edl);
+  const finalFile = r.render && r.render.output;
+  if(finalFile){ selectClip(finalFile); }
+  const manifestId = r.routed && r.routed.manifest_id;
+  toast("Final render: " + (finalFile||"?").split('/').pop() +
+        (manifestId ? " · tenant manifest "+manifestId : ""));
+  refresh();
+}
+
+async function runSync(){
+  const last = STATE.shoots[0];
+  if(!last){toast("No shoots yet");return;}
+  toast("Cross-correlating audio for "+last.shoot_id+"...");
+  const r = await api("/api/shoot/sync", {method:"POST", body:JSON.stringify({shoot_id:last.shoot_id})});
+  if(r.error){toast("Sync failed: "+r.error);return;}
+  renderSyncReport(r);
+  toast("Sync done — primary="+r.primary_camera);
+}
+
+function renderSyncReport(sync){
+  const el = document.getElementById("syncReport");
+  if(!el) return;
+  if(!sync || sync.error){el.innerHTML = "";return;}
+  const rows = (sync.offsets||[]).map(o => {
+    const badge = o.is_primary ? '<span class="pill ok">primary</span>'
+                  : o.has_audio ? '<span class="pill">'+(o.offset_ms>=0?'+':'')+o.offset_ms.toFixed(0)+' ms</span>'
+                                : '<span class="pill">silent</span>';
+    const conf = o.confidence != null ? ' · conf ' + (o.confidence*100).toFixed(0) + '%' : '';
+    return '<div class="recent"><span class="fn">'+o.camera+'</span>'+badge+'<span class="when">'+conf+'</span></div>';
+  }).join("");
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">audio sync · primary='+sync.primary_camera+'</div>'+rows;
+}
+
+function renderShotPreview(edl){
+  const el = document.getElementById("shotPreview");
+  if(!el) return;
+  if(!edl || edl.error){el.innerHTML = "";return;}
+  const strat = edl.effective_strategy || edl.strategy;
+  const stratPill = strat.includes("crowelm") ? '<span class="pill ok">CroweLM</span>'
+                     : '<span class="pill">'+strat+'</span>';
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin:6px 0 4px;">shot plan · '+edl.sections+' sections · '+edl.total_duration+'s '+stratPill+'</div>';
+}
+
+function renderDevices(devs){
+  const el = document.getElementById("devices");
+  const video = (devs && devs.video) || [];
+  const audio = (devs && devs.audio) || [];
+  let html = "";
+  for(const d of video){
+    const cls = d.is_iphone ? "device iphone" : "device";
+    html += `<div class="${cls}"><span><span class="idx">v${d.index}</span> ${d.name}</span>${d.is_iphone?'<span class="pill ok">iPhone</span>':''}</div>`;
+  }
+  for(const d of audio){
+    const cls = d.is_iphone ? "device iphone" : "device";
+    html += `<div class="${cls}"><span><span class="idx">a${d.index}</span> ${d.name}</span></div>`;
+  }
+  el.innerHTML = html || "<em style='color:var(--muted)'>None found.</em>";
+}
+
+function renderTenants(){
+  const el = document.getElementById("tenants");
+  if(!STATE.tenants.length){el.innerHTML="<em style='color:var(--muted)'>No tenants.</em>";return;}
+  el.innerHTML = STATE.tenants.map(t=>{
+    const sel = STATE.pinned===t.name?"selected":"";
+    return `<div class="tenant ${sel}" onclick="pinTenant('${t.name}')">
+      <div class="tn">${t.label||t.name}</div>
+      <div class="tm">${t.notes||''}</div>
+      <div class="platforms">${(t.platforms||[]).slice(0,5).join(' · ')}</div>
+    </div>`;
+  }).join("");
+  document.getElementById("pinnedTenant").textContent =
+    STATE.pinned ? "→ " + STATE.pinned : "none selected";
+}
+
+function pinTenant(name){STATE.pinned = name; renderTenants();}
+
+function renderSessions(){
+  const el = document.getElementById("sessions");
+  if(!STATE.sessions.length){
+    el.innerHTML="<div class='card' style='color:var(--muted)'>No active sessions.</div>";
+    return;
+  }
+  el.innerHTML = STATE.sessions.map(s=>{
+    const isRec = !s.session_id.startsWith("preview-");
+    const cls = isRec ? "session recording" : "session";
+    const pill = isRec
+      ? `<span class="pulse"></span><span class="pill rec">RECORDING</span>`
+      : `<span class="pill">PREVIEW</span>`;
+    const stopFn = isRec ? `stopRecording('${s.session_id}')` : `stopPreview('${s.session_id}')`;
+    return `<div class="${cls}">
+      <div class="title">${pill} &nbsp;${s.session_id}</div>
+      <div class="stats">
+        <div><b>${fmtBytes(s.bytes)}</b>on disk</div>
+        <div><b>${s.elapsed}s</b>elapsed</div>
+        <div><b>pid ${s.pid}</b>process</div>
+        <div><b>${s.alive?'alive':'dead'}</b>state</div>
+      </div>
+      <div class="actions">
+        <button class="danger" onclick="${stopFn}">Stop ${isRec?'& finalize':'preview'}</button>
+        ${isRec?`<button onclick="selectClip('${s.path}')">Select clip</button>`:''}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderRecent(){
+  const el = document.getElementById("recent");
+  if(!STATE.recent.length){el.innerHTML="<em style='color:var(--muted)'>Nothing recent.</em>";return;}
+  const header = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+    <label style="margin:0;flex:0 0 auto;"><input type="checkbox" id="selAll" onchange="toggleAllRecent(this.checked)" style="width:auto;"/> select all</label>
+    <span style="flex:1"></span>
+    <button onclick="bulkRouteSelected()" class="primary" style="padding:4px 10px;font-size:12px;">Route selected → pinned tenant</button>
+  </div>`;
+  el.innerHTML = header + STATE.recent.slice(0,20).map((r,i)=>{
+    return `<div class="recent">
+      <input type="checkbox" class="recSel" data-path="${r.path}" style="width:auto;margin:0;flex:0 0 auto;"/>
+      <span class="fn" onclick="selectClip('${r.path}')" title="${r.path}">${r.name}</span>
+      <span class="sz">${fmtBytes(r.bytes)}</span>
+      <span class="when">${fmtTimeAgo(r.mtime)}</span>
+      <button onclick="openFile('${r.path}')" style="padding:3px 8px;font-size:11px;">open</button>
+    </div>`;
+  }).join("");
+}
+
+function toggleAllRecent(checked){
+  document.querySelectorAll(".recSel").forEach(cb => cb.checked = checked);
+}
+
+async function bulkRouteSelected(){
+  if(!STATE.pinned){toast("Pin a tenant on the left first");return;}
+  const paths = Array.from(document.querySelectorAll(".recSel"))
+    .filter(cb => cb.checked)
+    .map(cb => cb.dataset.path);
+  if(!paths.length){toast("No files selected");return;}
+  toast("Routing "+paths.length+" files to "+STATE.pinned+"...");
+  const r = await api("/api/route/batch", {method:"POST", body:JSON.stringify({
+    items: paths.map(p => ({path: p, tenant: STATE.pinned})),
+  })});
+  const errs = (r.results||[]).filter(x => x.result && x.result.error).length;
+  toast(`Routed ${r.count - errs}/${r.count} to ${STATE.pinned}`);
+  refresh();
+}
+
+let CURRENT_EDL = null;
+async function previewEdit(){
+  const scriptPath = document.getElementById("scriptPath").value;
+  const last = STATE.shoots[0];
+  if(!last){toast("No shoots yet. Start one first.");return;}
+  const strategy = document.getElementById("editStrategy").value;
+  toast("Building preview with "+strategy+"...");
+  const r = await api("/api/shoot/preview-edl", {method:"POST", body:JSON.stringify({
+    shoot_id: last.shoot_id, script_path: scriptPath, strategy,
+  })});
+  if(r.error){toast("Preview: "+r.error);return;}
+  CURRENT_EDL = r.edl;
+  renderEDLTable(r.edl);
+  document.getElementById("commitBtn").disabled = false;
+  toast("Preview built — " + (r.effective_strategy||r.strategy) + " picked " + r.sections + " shots");
+}
+
+function renderEDLTable(edl){
+  const el = document.getElementById("edlTable");
+  if(!edl || !edl.sections){el.innerHTML = "";return;}
+  const cameraOptions = (STATE.cameras || []).filter(c => c.available).map(c => c.name);
+  // fall back to cameras_used on the EDL if registry isn't populated
+  const options = cameraOptions.length ? cameraOptions : (edl.cameras_used || []);
+  const rows = edl.sections.map(s => {
+    const opts = options.map(o => `<option value="${o}" ${o===s.source_camera?'selected':''}>${o}</option>`).join("");
+    const reason = s.crowelm_reason ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">${s.crowelm_reason}</div>` : '';
+    return `<tr>
+      <td style="padding:8px 10px;font-size:11px;color:var(--muted);">#${s.index}</td>
+      <td style="padding:8px 10px;"><div style="font-weight:600;">${s.title}</div>${reason}</td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;">${s.duration}s</td>
+      <td style="padding:6px 10px;"><select data-section="${s.index}" class="sectionCam">${opts}</select></td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--accent);">${s.zoom}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<div style="font-size:11px;color:var(--muted);margin:0 0 6px;">shot plan · ${edl.strategy} · ${edl.total_duration}s</div>
+    <table style="width:100%;border-collapse:collapse;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+    <thead><tr style="background:#22262c;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">
+      <th style="padding:6px 10px;text-align:left;">#</th>
+      <th style="padding:6px 10px;text-align:left;">Section</th>
+      <th style="padding:6px 10px;text-align:left;">Dur</th>
+      <th style="padding:6px 10px;text-align:left;">Camera (click to override)</th>
+      <th style="padding:6px 10px;text-align:left;">Zoom</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function renderWithOverrides(){
+  if(!CURRENT_EDL){toast("Run Preview first");return;}
+  const overrides = {};
+  document.querySelectorAll(".sectionCam").forEach(sel => {
+    const idx = sel.dataset.section;
+    const orig = CURRENT_EDL.sections.find(s => String(s.index) === String(idx));
+    if(orig && sel.value !== orig.source_camera){
+      overrides[idx] = sel.value;
+    }
+  });
+  const tenant = STATE.pinned;
+  toast(`Rendering with ${Object.keys(overrides).length} override(s)...`);
+  const edlPath = CURRENT_EDL.edl_id ? `/tmp/crowe-capture/edls/${CURRENT_EDL.edl_id}.json` : null;
+  if(!edlPath){toast("No EDL path available");return;}
+  const r = await api("/api/render-with-overrides", {method:"POST", body:JSON.stringify({
+    edl_path: edlPath, overrides, route_to_tenant: tenant,
+  })});
+  if(r.error){toast("Render: "+r.error);return;}
+  if(r.render && r.render.output){
+    selectClip(r.render.output);
+  }
+  const manifestId = r.routed && r.routed.manifest_id;
+  toast(`Rendered · ${Object.keys(overrides).length} override(s)` + (manifestId ? ` · manifest ${manifestId}` : ''));
+  refresh();
+}
+
+async function renderTrainingStats(){
+  try{
+    const t = await api("/api/training/stats");
+    const el = document.getElementById("trainingStats");
+    if(!el) return;
+    const ready = t.ready_for_finetune;
+    const rate = ((t.override_rate||0)*100).toFixed(0);
+    const progress = Math.min(100, (t.count||0) * 2);
+    el.innerHTML = `<div style="font-weight:600;font-size:13px;">${t.count} training tuples collected</div>
+      <div style="height:6px;background:var(--panel);border-radius:3px;margin:8px 0;overflow:hidden;">
+        <div style="height:100%;width:${progress}%;background:${ready?'var(--ok)':'var(--accent)'};transition:width .3s;"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);">override rate: ${rate}% · ${ready ? 'READY for fine-tune' : `${50 - (t.count||0)} more tuples to 50-row threshold`}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;">root: ${t.root}</div>
+      ${t.top_overrides && t.top_overrides.length ? `<div style="font-size:11px;margin-top:8px;"><b>Frequent overrides:</b></div>` + t.top_overrides.slice(0,3).map(o => `<div style="font-size:11px;color:var(--muted);">${o.from} → ${o.to} (${o.count}×)</div>`).join('') : ''}`;
+  }catch(e){}
+}
+
+function renderZoomOptions(){
+  const sel = document.getElementById("zoomEffect");
+  const old = sel.value;
+  sel.innerHTML = "";
+  for(const [name, meta] of Object.entries(STATE.zoom)){
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = name;
+    o.dataset.desc = meta.label || "";
+    sel.appendChild(o);
+  }
+  if(old && STATE.zoom[old]) sel.value = old;
+  sel.onchange = ()=>{
+    const meta = STATE.zoom[sel.value]||{};
+    document.getElementById("zoomHint").textContent = meta.description || "";
+  };
+  sel.onchange();
+}
+
+function selectClip(path){
+  STATE.selected = path;
+  document.getElementById("selectedClip").value = path;
+  const v = document.getElementById("preview");
+  v.style.display = "block";
+  v.src = "/files" + path;
+  toast("Selected: "+path.split("/").pop());
+}
+
+async function toggleRecord(){
+  const active = STATE.sessions.find(s=>!s.session_id.startsWith("preview-"));
+  if(active){ return stopRecording(active.session_id); }
+  const [w,h] = document.getElementById("recSize").value.split("x").map(Number);
+  const fps = Number(document.getElementById("recFps").value);
+  const br = document.getElementById("recBr").value;
+  const r = await api("/api/recording/start", {method:"POST", body:JSON.stringify({
+    width:w, height:h, framerate:fps, video_bitrate:br,
+  })});
+  if(r.error){ toast("Start failed: "+r.error); return; }
+  toast("Recording: "+r.session_id);
+  refresh();
+}
+
+async function stopRecording(sid){
+  const r = await api("/api/recording/stop", {method:"POST", body:JSON.stringify({session_id:sid})});
+  if(r.error){ toast("Stop failed"); return; }
+  toast("Stopped "+sid+" · "+fmtBytes(r.bytes));
+  selectClip(r.path);
+  refresh();
+}
+
+async function togglePreview(){
+  const active = STATE.sessions.find(s=>s.session_id.startsWith("preview-"));
+  if(active){ return stopPreview(active.session_id); }
+  const r = await api("/api/preview/start", {method:"POST", body:"{}"});
+  if(r.error){ toast("Preview failed: "+r.error); return; }
+  toast("Preview opened");
+  refresh();
+}
+
+async function stopPreview(sid){
+  await api("/api/preview/stop", {method:"POST", body:JSON.stringify({session_id:sid})});
+  toast("Preview closed");
+  refresh();
+}
+
+async function snapStill(){
+  const r = await api("/api/still", {method:"POST", body:"{}"});
+  if(r.error){ toast("Still failed"); return; }
+  toast("Still: "+r.path.split("/").pop());
+  refresh();
+}
+
+async function launchTeleprompter(){
+  const p = document.getElementById("scriptPath").value;
+  const w = Number(document.getElementById("scriptWpm").value);
+  const m = document.getElementById("scriptMirror").checked;
+  const r = await api("/api/teleprompter/launch", {method:"POST", body:JSON.stringify({
+    script_path:p, wpm:w, mirror:m,
+  })});
+  if(r.error){ toast("Teleprompter: "+r.error); return; }
+  toast("Teleprompter opened · "+r.sections+" sections · "+r.word_count+" words");
+}
+
+async function applyZoom(){
+  if(!STATE.selected){ toast("Select a clip first"); return; }
+  const effect = document.getElementById("zoomEffect").value;
+  toast("Rendering "+effect+"...");
+  const r = await api("/api/zoom", {method:"POST", body:JSON.stringify({
+    clip_path: STATE.selected, effect,
+  })});
+  if(r.error){ toast("Zoom failed: "+r.error); return; }
+  toast("Wrote "+r.output.split("/").pop()+" · "+fmtBytes(r.bytes));
+  selectClip(r.output);
+  refresh();
+}
+
+async function routeSelected(move){
+  if(!STATE.selected){ toast("Select a clip first"); return; }
+  if(!STATE.pinned){ toast("Pin a tenant first"); return; }
+  const r = await api("/api/route", {method:"POST", body:JSON.stringify({
+    clip_path: STATE.selected, tenant: STATE.pinned, move,
+  })});
+  if(r.error){ toast("Route failed: "+r.error); return; }
+  toast("Routed to "+r.tenant+" · manifest "+(r.manifest_id||'—'));
+  refresh();
+}
+
+async function openFile(path){
+  await fetch("/api/open?path="+encodeURIComponent(path), {method:"POST"});
+}
+
+document.getElementById("prevBtn").addEventListener("click", ()=>{});
+
+// live loop
+refresh();
+renderTrainingStats();
+setInterval(refresh, 1500);
+setInterval(renderTrainingStats, 10000);
+
+// Update the big record button label based on state
+setInterval(()=>{
+  const btn = document.getElementById("recBtn");
+  const prev = document.getElementById("prevBtn");
+  const rec = STATE.sessions.find(s=>!s.session_id.startsWith("preview-"));
+  const pv  = STATE.sessions.find(s=>s.session_id.startsWith("preview-"));
+  if(rec){
+    btn.textContent = "Stop recording · "+rec.elapsed+"s · "+fmtBytes(rec.bytes);
+    btn.classList.remove("primary"); btn.classList.add("danger");
+  }else{
+    btn.textContent = "Start recording";
+    btn.classList.add("primary"); btn.classList.remove("danger");
+  }
+  if(pv){ prev.textContent = "Close self-view"; } else { prev.textContent = "Open self-view"; }
+}, 500);
+</script>
+</body>
+</html>

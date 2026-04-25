@@ -21,3 +21,10 @@ data/
 
 # Stripe bootstrap output
 *.out
+
+# Studio runtime data (camera captures, shoot manifests)
+studio_data/
+
+# Studio training corpus data (frames, videos, models, manifests — 5.9G).
+# Source scripts under training/{shot_selector,youtube_corpus}/*.py are tracked.
+training/youtube_corpus/sw-mushrooms/

@@ -1,0 +1,153 @@
+<!doctype html>
+<!--
+Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
+Part of Crowe Studio | proprietary, private repository.
+
+Browser-side smoke test for tools/mobile_signaling.py. Requests camera +
+mic via getUserMedia, establishes a WebRTC peer with the signaling
+server, and streams video to the Mac for recording.
+
+Token: the page pulls it from the ?t= query param so you don't have to
+type it. Example:  http://localhost:8787/?t=<STUDIO_SIGNALING_TOKEN>
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Crowe Studio | Mobile Signaling Test</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+           background: #111; color: #eee; padding: 24px; max-width: 720px;
+           margin: 0 auto; }
+    h1 { font-weight: 500; font-size: 20px; }
+    button { background: #3a6; border: none; color: white; padding: 10px 16px;
+             font-size: 14px; border-radius: 6px; cursor: pointer; margin-right: 8px; }
+    button:disabled { background: #444; cursor: not-allowed; }
+    .danger { background: #a33; }
+    video { width: 100%; background: #000; border-radius: 8px; margin: 12px 0; }
+    pre { background: #1a1a1a; padding: 12px; border-radius: 6px;
+          font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    input { background: #1a1a1a; color: #eee; border: 1px solid #333;
+            padding: 8px; border-radius: 4px; width: 100%; box-sizing: border-box; }
+    label { display: block; font-size: 12px; color: #999; margin: 8px 0 4px; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <h1>Crowe Studio mobile signaling test</h1>
+
+  <label>Camera name</label>
+  <input id="cameraName" value="browser-test" />
+  <label>Bearer token</label>
+  <input id="token" placeholder="STUDIO_SIGNALING_TOKEN" />
+
+  <div class="row" style="margin-top: 16px;">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="danger" disabled>Stop</button>
+    <span id="status" style="color: #999;">idle</span>
+  </div>
+
+  <video id="local" autoplay muted playsinline></video>
+
+  <pre id="log">waiting...</pre>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = (msg) => {
+  const el = $("log");
+  el.textContent = `[${new Date().toISOString().slice(11,19)}] ${msg}\n` + el.textContent;
+};
+
+const params = new URLSearchParams(location.search);
+if (params.get("t")) $("token").value = params.get("t");
+
+let pc = null;
+let sessionId = null;
+let stream = null;
+
+async function start() {
+  const token = $("token").value.trim();
+  if (!token) { log("need a token"); return; }
+  const cameraName = $("cameraName").value.trim() || "default";
+  $("startBtn").disabled = true;
+  $("status").textContent = "requesting camera...";
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, frameRate: 30 },
+      audio: true,
+    });
+    $("local").srcObject = stream;
+    log("got local media stream");
+
+    $("status").textContent = "creating session...";
+    const sess = await fetch("/session", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ camera_name: cameraName }),
+    }).then(r => r.json());
+    sessionId = sess.session_id;
+    log(`session ${sessionId} -> ${sess.out_dir}`);
+
+    pc = new RTCPeerConnection();
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+    pc.onicecandidate = async (ev) => {
+      if (!ev.candidate) return;
+      await fetch(`/session/${sessionId}/ice`, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidate: ev.candidate.candidate,
+          sdpMid: ev.candidate.sdpMid,
+          sdpMLineIndex: ev.candidate.sdpMLineIndex,
+        }),
+      });
+    };
+    pc.onconnectionstatechange = () => {
+      $("status").textContent = `pc ${pc.connectionState}`;
+      log(`pc state -> ${pc.connectionState}`);
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const answer = await fetch(`/session/${sessionId}/offer`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ sdp: offer.sdp, type: offer.type }),
+    }).then(r => r.json());
+
+    await pc.setRemoteDescription(answer);
+    log("answer applied, streaming...");
+
+    $("stopBtn").disabled = false;
+  } catch (err) {
+    log("start failed: " + err.message);
+    $("startBtn").disabled = false;
+    $("status").textContent = "error";
+  }
+}
+
+async function stop() {
+  $("stopBtn").disabled = true;
+  try {
+    if (sessionId) {
+      await fetch(`/session/${sessionId}`, {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + $("token").value },
+      });
+      log(`session ${sessionId} closed`);
+    }
+  } catch (err) { log("stop error: " + err.message); }
+  if (pc) pc.close();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  pc = null; sessionId = null; stream = null;
+  $("startBtn").disabled = false;
+  $("status").textContent = "idle";
+}
+
+$("startBtn").onclick = start;
+$("stopBtn").onclick = stop;
+</script>
+</body>
+</html>

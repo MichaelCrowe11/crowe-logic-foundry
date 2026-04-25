@@ -1,0 +1,107 @@
+# Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
+# Part of Crowe Studio — proprietary, private repository.
+#
+# Studio Cameras — declarative registry of capture sources, each with a
+# role, defaults, and an ingest adapter. Add new cameras here and the
+# studio agent can pick them for multi-angle shoots without code changes.
+#
+# Schema per camera:
+#   name:         unique identifier (snake-case)
+#   role:         semantic angle role — "wide", "close", "product",
+#                 "overhead", "reaction", "broll", "screen"
+#   source_type:  "avfoundation" (local), "ndi" (network stream),
+#                 "rtsp" (IP camera), "file_drop" (remote iPhone syncs
+#                 to a folder), "cloud" (cloud container streams back)
+#   source:       the concrete source. For avfoundation: device name
+#                 substring. For file_drop: watched directory. For
+#                 ndi/rtsp/cloud: URL.
+#   default_specs:
+#     width, height, framerate, video_bitrate, pixel_format
+#   sync_priority: "primary" cameras provide the master audio track the
+#                 other cameras align to during render. Only one per shoot.
+#   notes:        agent-facing description.
+
+cameras:
+
+  - name: iphone-wide
+    role: wide
+    source_type: avfoundation
+    source: "iphone"                           # auto-resolves via find_iphone_device
+    default_specs:
+      width: 1920
+      height: 1080
+      framerate: 30
+      video_bitrate: 10M
+      pixel_format: uyvy422
+    sync_priority: primary
+    notes: >-
+      Default talking-head wide shot via iPhone Continuity Camera. Captures
+      audio; serves as master audio track for multi-angle alignment.
+
+  - name: macbook-close
+    role: close
+    source_type: avfoundation
+    source: "MacBook Air Camera"
+    default_specs:
+      width: 1280
+      height: 720
+      framerate: 30
+      video_bitrate: 6M
+    sync_priority: secondary
+    notes: >-
+      MacBook built-in camera as close-up / reaction angle. Lower quality
+      than iPhone but always available, and the laptop is typically closer
+      to the user's face during seated presentation.
+
+  - name: screen
+    role: screen
+    source_type: avfoundation
+    source: "Capture screen 0"
+    default_specs:
+      width: 1920
+      height: 1080
+      framerate: 30
+      video_bitrate: 12M
+    sync_priority: secondary
+    notes: >-
+      Full-display screen recording. Useful for tutorials, dashboards in
+      action, or picture-in-picture overlays with the wide shot.
+
+  # ────────────────────────────────────────────────────────────────
+  # Slots reserved for multi-phone rigs and cloud camera containers.
+  # Uncomment and configure when wiring a physical rig.
+  # ────────────────────────────────────────────────────────────────
+
+  # - name: iphone-product
+  #   role: product
+  #   source_type: file_drop
+  #   source: /Users/crowelogic/Dropbox/Crowe Studio Ingest/iphone-product/
+  #   default_specs: { width: 3840, height: 2160, framerate: 30, video_bitrate: 40M }
+  #   sync_priority: secondary
+  #   notes: >-
+  #     Second iPhone running native Camera, AirDropping or Dropbox-syncing
+  #     to this folder. Watcher ingests new files as they arrive. Mounted
+  #     on a boom arm over a product surface for overhead beauty shots.
+
+  # - name: iphone-overhead
+  #   role: overhead
+  #   source_type: ndi
+  #   source: ndi://Michael-Phone-C/Overhead
+  #   default_specs: { width: 1920, height: 1080, framerate: 30, video_bitrate: 15M }
+  #   sync_priority: secondary
+  #   notes: >-
+  #     Third iPhone running an NDI-capable app (e.g. OBS mobile, Camo
+  #     Studio in NDI mode). Streams over WiFi; the central Mac receives
+  #     as an NDI source and records locally. Low-latency, network-robust.
+
+  # - name: cloud-renderer
+  #   role: cloud_composite
+  #   source_type: cloud
+  #   source: https://studio-cloud.crowelogic.com/ingest/<shoot_id>
+  #   default_specs: { width: 1920, height: 1080, framerate: 30, video_bitrate: 10M }
+  #   sync_priority: secondary
+  #   notes: >-
+  #     Fly.io / Railway container running a headless ffmpeg + CroweLM
+  #     vision model. Accepts a live uplink from the Mac, runs real-time
+  #     shot analysis, returns metadata + optional rendered composite back
+  #     to the central Mac. Scales horizontally for multi-tenant use.

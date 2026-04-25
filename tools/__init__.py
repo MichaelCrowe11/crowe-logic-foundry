@@ -45,6 +45,52 @@ from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_exec
 from tools.vision import analyze_image, screenshot_and_analyze
 from tools.video_generation import sora_generate_video
 
+# Studio capture (iPhone / webcam / screen via AVFoundation)
+from tools.capture import (
+    list_capture_devices, find_iphone_device,
+    capture_clip, capture_still,
+    start_live_capture, stop_live_capture, list_live_captures,
+    get_session_chunks,
+    preview_device, stop_preview, enable_center_stage,
+)
+
+# Studio routing — drops clips into any tenant pipeline registered in
+# config/studio_tenants.yaml (toxicteetv, southwest-mushrooms, etc).
+from tools.studio_route import (
+    list_tenants, get_tenant, route_clip_to_tenant, tenant_inbox_peek,
+)
+
+# Presentation — script ingestion, teleprompter, zoom effects, chapter splits
+from tools.presentation import (
+    load_script, launch_teleprompter,
+    list_zoom_effects, apply_zoom_effect,
+    split_recording_by_chapters,
+)
+
+# Control Center — single-window FastAPI dashboard that wraps all studio tools
+from tools.control_center import start_control_center
+
+# Shoot — multi-camera orchestration (camera registry + start_shoot/stop_shoot)
+from tools.shoot import (
+    list_cameras, get_camera,
+    start_shoot, stop_shoot, list_shoots,
+    register_cloud_camera,
+)
+
+# Shot selector — script + shoot manifest -> EDL (edit decision list)
+from tools.shot_selector import build_edl, load_edl, list_edls
+
+# EDL renderer — EDL -> final multi-angle cut via ffmpeg
+from tools.edl_render import render_edl
+
+# Audio waveform sync — align multi-camera clips
+from tools.sync import sync_shoot, get_sync_offsets
+
+# Training store — records shot-selection decisions for future fine-tune
+from tools.training_store import (
+    record_shot_selection, training_stats, export_finetune_jsonl,
+)
+
 # CroweLM training data
 from tools.crowelm import (
     crowelm_list_datasets, crowelm_dataset_stats, crowelm_search_examples,
@@ -77,6 +123,12 @@ from tools.deepparallel import deepparallel_query, deepparallel_status
 
 # NemoClaw sandbox (OpenShell isolation on Brev-hosted VM)
 from tools.nemoclaw import nemoclaw_shell, nemoclaw_health
+
+# ChatGPT Agents Studio (OpenAI Responses API)
+from tools.chatgpt_agent import chatgpt_agent_invoke, chatgpt_agent_health
+
+# Azure AI Foundry Agents (azure-ai-agents SDK)
+from tools.azure_agent import azure_agent_list, azure_agent_invoke, azure_agent_create
 
 # MCP ecosystem (5,800+ servers on demand)
 from tools.mcp_registry import mcp_search
@@ -143,6 +195,10 @@ user_functions = {
     deepparallel_query, deepparallel_status,
     # NemoClaw sandbox
     nemoclaw_shell, nemoclaw_health,
+    # ChatGPT Agents Studio (Responses API)
+    chatgpt_agent_invoke, chatgpt_agent_health,
+    # Azure AI Foundry Agents
+    azure_agent_list, azure_agent_invoke, azure_agent_create,
     # MCP ecosystem
     mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
     # iTerm2 terminal control

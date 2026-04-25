@@ -1,0 +1,206 @@
+# Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
+# Part of Crowe Studio | proprietary, private repository.
+#
+# Studio Training | declarative corpus registry for fine-tuning CroweLM
+# Studio and CroweLM Vision-Clip on real footage. Each corpus entry
+# describes where frames/clips come from, how to sample them, and where
+# the prepared artifacts land.
+#
+# Schema per corpus:
+#   name:              unique identifier (snake-case)
+#   source_type:       "youtube_channel" | "youtube_playlist" |
+#                      "local_dir" | "shoot_history"
+#   source:            URL (for youtube_*) or path (for local_dir).
+#                      Env-var substitutions allowed via ${VAR}.
+#   target_dir:        where the ingested videos + derived assets land.
+#   frame_sample_rate: frames/sec to extract from each video.
+#                      Use 1.0 for broad labeling, 2.0 for motion analysis.
+#   shot_detection:    "pyscenedetect" | "ffmpeg_threshold" | "none"
+#   max_videos:        cap for initial runs; null = unbounded.
+#   label_pipeline:    ordered list of labeling passes.
+#                      "shot_type"  | wide / close / overhead / product / reaction
+#                      "subject"    | primary subject bounding box + class
+#                      "aspect"     | native aspect + platform-fit scores
+#                      "energy"     | motion / edit-tempo estimate
+#   use_for:           which downstream fine-tunes consume this corpus.
+#                      "crowelm-studio"    | shot-selector (EDL choices)
+#                      "crowelm-vision-clip" | per-clip tagging
+
+corpora:
+
+  - name: southwest-mushrooms-yt
+    source_type: youtube_channel
+    source: ${SW_MUSHROOMS_YT_CHANNEL_URL}
+    target_dir: ${TRAINING_CORPUS_DIR}/sw-mushrooms
+    frame_sample_rate: 1.0
+    shot_detection: pyscenedetect
+    max_videos: null
+    label_pipeline:
+      - shot_type
+      - subject
+      - aspect
+      - energy
+    use_for:
+      - crowelm-studio
+      - crowelm-vision-clip
+    notes: >-
+      Primary bootstrap corpus. The Mushroom Grower channel has years of
+      multi-angle cultivation footage in the exact domain the Studio will
+      shoot in. Frames feed vision-clip; edit patterns feed shot-selector.
+
+  - name: shoot-history
+    source_type: shoot_history
+    source: ${STUDIO_ROOT}/shoot_manifests
+    target_dir: ${TRAINING_CORPUS_DIR}/shoot-history
+    frame_sample_rate: 2.0
+    shot_detection: none
+    max_videos: null
+    label_pipeline:
+      - shot_type
+    use_for:
+      - crowelm-studio
+    notes: >-
+      Every Studio shoot with a chosen EDL becomes a training pair
+      (script_section, available_angles, chosen_angle). This corpus grows
+      automatically with Michael's usage, so model quality compounds.
+
+# Fine-tune targets (consumed by training/shot_selector/*)
+
+fine_tunes:
+
+  - name: crowelm-vision-clip
+    base_model: Qwen/Qwen3-VL-2B-Instruct
+    task: clip_tagging
+    input: "10s clip at 1fps"
+    output_fields:
+      - shot_type
+      - subject_count
+      - aspect_hint
+      - usable_for
+    hardware: "A100-40GB or better"
+    target_agreement: 0.85
+    notes: >-
+      Small, fast vision-language model fine-tuned per-clip. Latency
+      budget: sub-2s on a single clip. Used by the real-time director.
+
+  - name: crowelm-studio-shot-selector
+    base_model: "CroweLM-Studio-Base (Ollama local)"
+    task: edl_generation
+    input_fields:
+      - script_section
+      - available_angles
+    output_fields:
+      - angle_name
+      - start
+      - end
+      - reason
+    hardware: "local M-series or Azure AI Foundry"
+    target_agreement: 0.90
+
+# ────────────────────────────────────────────────────────────────────────
+# Taxonomies | the shared vocabulary the labeler, shot-selector, and
+# director all speak. Grounded in the actual Southwest Mushrooms channel
+# rather than generic creator-YouTube categories. Example IDs resolve to
+# real videos on the channel so labelers can eyeball a canonical frame.
+
+taxonomies:
+
+  shot_type:
+    - label: facility_wide
+      description: >-
+        Establishing or tour shot of a grow room, fruiting chamber, or
+        production facility. Wide angle, multiple racks or blocks visible.
+      example: "mNnTXNS76Dw  | Inside Our Mushroom Cultivation Facility"
+      camera_role_default: wide
+      keywords: [facility, tour, inside, walkthrough, "grow room", "fruiting chamber", "full tour", "behind the scenes", "farm consulting"]
+
+    - label: talking_head
+      description: >-
+        Michael on-camera explaining, teaching, or Q&A. Medium or close
+        shot of the speaker, often with gear or product behind.
+      example: "80r6ybTjR9c  | Mushroom Cultivation Q&A with Michael Crowe"
+      camera_role_default: close
+      keywords: ["q&a", "q and a", interview, tips, update, explain, "ask me anything", ama, journey, insights, "how i scale", peddlercon, conference, lecture, "can you", "company makeover", restructuring, "well-being"]
+
+    - label: process_work
+      description: >-
+        Hands-on cultivation steps. Inoculation, grain-to-bulk transfer,
+        block pressing, sterilizer loading, packaging, shipping. Mid to
+        close range, action-driven, usually two-handed work in frame.
+      example: "Yf5WCbAs32s  | How to Use All-American Pressure Sterilizers"
+      camera_role_default: close
+      keywords: ["how to", "how we", "setting up", using, preparing, sterilizer, shipping, packaging, "grow kit", spawn, "grain spawn", inoculat, trial, making, prep, "selling produce", "clusters for market", cleaning, bleach, "farm secret", "farm secrets", "dirty secret", "killing", "backup parts"]
+
+    - label: lab_sterility
+      description: >-
+        Sterile lab work. Agar plates, liquid culture, petri dish
+        streaking, microscope, flow hood. Distinctly clean, gloved,
+        often white and metallic. Visually separate from grow-room work.
+      example: "TRH72KNFHGU  | DIY Mycology: Resourceful Tips for Liquid Culture"
+      camera_role_default: close
+      keywords: [lab, laboratory, "liquid culture", agar, petri, sterile, "flow hood", "lc", "diy mycology", "sterile substrate", "liquid culture syringe"]
+
+    - label: fruiting_overhead
+      description: >-
+        Top-down view over a growing block or substrate showing pinning,
+        primordia, or mature cluster formation. The canonical overhead-
+        camera shot; critical for documenting development stages.
+      example: "KghiaApVQbc  | Maitake Mushroom Production Blocks"
+      camera_role_default: overhead
+      keywords: [pinning, "production block", "production blocks", primordia, fruiting, colonization, substrate, "shelf vs", "top fruiting", "shelf mushroom", "oak pellet", "wheat bran", "straw vs"]
+
+    - label: harvest_close
+      description: >-
+        The cut-or-twist moment. Hands plus mushroom at harvest, close
+        range, often 45-degree angle, high motion in hands, low motion
+        in background. The emotional payoff shot.
+      example: "-z0s3GwJxpM  | 9 Minutes & 20 Seconds of Shiitake Harvesting"
+      camera_role_default: close
+      keywords: [harvest, harvesting, "getting the most", picking, "cut", "giant harvest"]
+
+    - label: specimen_product
+      description: >-
+        Isolated mushroom on a neutral surface for beauty, species
+        identification, or packaging. Studio-lit, often top-down or
+        three-quarter view. No hands, no process, just the fruit body.
+      example: "AvYz0bTKeE0  | Lion's Mane Mushrooms"
+      camera_role_default: product
+      keywords: [bundle, "pre-order", "mushroom haul", haul, exotic, "new strain", "you can grow", "types of", "mixed box", "quick mixed", "gourmet mushroom", "testing new", "dense", "aggressive", boosts, "sought after"]
+
+    - label: timelapse
+      description: >-
+        Accelerated colonization or fruiting footage. Static frame with
+        subject change over time. Distinguishable by jitter-free camera
+        plus dramatic subject motion. Goldmine content for shorts.
+      example: "PrI6gQc_Wbk | Watch Oyster Mushrooms EXPLODE in Growth Over Days"
+      camera_role_default: overhead
+      keywords: [timelapse, "time-lapse", "time lapse", "sped up", "accelerated", "over days", "growth over"]
+
+    - label: grow_tent
+      description: >-
+        Indoor grow-tent cultivation rigs. Humidity controllers, fans,
+        ducting, enclosed tent structure. Distinct from facility_wide
+        (commercial scale) and lab_sterility (sterile bench work).
+        Wide shot shows the tent and its environment in one frame.
+      example: "yRdvTH5vwxY | Grow Tent Mushroom Farming"
+      camera_role_default: wide
+      keywords: ["grow tent", "grow tents", "gorilla grow", "tent mushroom"]
+
+  aspect:
+    - label: widescreen_16_9
+      description: "Horizontal long-form YouTube format."
+      platforms: [youtube_long, x_video]
+    - label: vertical_9_16
+      description: "Shorts, Reels, TikTok format."
+      platforms: [youtube_shorts, instagram_reels, tiktok]
+    - label: square_1_1
+      description: "Legacy Instagram feed, occasional ad unit."
+      platforms: [instagram_feed]
+
+  energy:
+    - label: static
+      description: "No camera movement, minimal subject motion. Tours, talking-head."
+    - label: medium
+      description: "Deliberate hand or camera movement. Most process work, harvest."
+    - label: dynamic
+      description: "Fast cuts, accelerated motion, or high visual velocity. Timelapse, highlight reels."
