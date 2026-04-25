@@ -333,6 +333,17 @@ class BaseOpenAIProvider:
         if self.messages and self.messages[0].get("role") == "system":
             self.messages[0]["content"] = system_instructions
 
+    def _translate_provider_error(self, exc: Exception) -> Exception | None:
+        """Convert backend-specific errors into actionable messages.
+
+        Default is a no-op; the original exception is re-raised. Subclasses
+        override this to recognize provider-specific failure shapes (e.g.
+        a retired NVCF function on NVIDIA NIM) and return a clearer
+        ``Exception`` to raise in its place. Returning ``None`` keeps the
+        original behaviour.
+        """
+        return None
+
     def _next_tool_call_id(self) -> str:
         """Generate backend-safe tool_call_ids for local message history.
 
@@ -386,11 +397,14 @@ class BaseOpenAIProvider:
             else:
                 renderer.stop_spinner()
             raise
-        except Exception:
+        except Exception as exc:
             if hasattr(renderer, "abort"):
                 renderer.abort(session_state=session_state)
             else:
                 renderer.stop_spinner()
+            translated = self._translate_provider_error(exc)
+            if translated is not None:
+                raise translated from exc
             raise
 
         renderer.stop_spinner()
