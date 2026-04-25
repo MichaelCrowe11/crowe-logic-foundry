@@ -173,8 +173,8 @@ _BASE_MODEL_CHAIN = [
     # ─── Primary: Crowe Logic's self-hosted open-model serving layer ───────
     # Tier 1: Flagship (highest capability + capacity)
     {"name": "gpt-5.4",        "label": "CroweLM Titan",     "type": "reasoning",
-     "provider": "openai_compat", "backend_name": "z-ai/glm-5.1",
-     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
+     "provider": "nvidia", "backend_name": "z-ai/glm-5.1",
+     "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["titan", "crowelm-titan"],
      "prompt": (
           "You are CroweLM Titan, Crowe Logic's highest-capacity flagship tier. "
@@ -183,8 +183,8 @@ _BASE_MODEL_CHAIN = [
           "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
       )},
     {"name": "gpt-5.4-pro",    "label": "CroweLM Apex",      "type": "reasoning",
-     "provider": "openai_compat", "backend_name": "qwen/qwen3.5-397b-a17b",
-     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
+     "provider": "watsonx", "backend_name": "meta-llama/llama-4-maverick-17b-128e-instruct-fp8",
+     "endpoint_env": "WATSONX_URL", "api_key_env": "WATSONX_APIKEY",
      "aliases": ["apex", "crowelm-apex", "crowelm-pro", "pro", "CroweLM Pro"],
      "prompt": (
           "You are CroweLM Apex, Crowe Logic's peak-performance reasoning tier. "
@@ -193,8 +193,8 @@ _BASE_MODEL_CHAIN = [
           "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
       )},
     {"name": "grok-4-20-reasoning", "label": "CroweLM Oracle", "type": "reasoning",
-     "provider": "openai_compat", "backend_name": "deepseek/deepseek-r1",
-     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
+     "provider": "watsonx", "backend_name": "mistralai/mistral-medium-2505",
+     "endpoint_env": "WATSONX_URL", "api_key_env": "WATSONX_APIKEY",
      "aliases": ["oracle", "crowelm-oracle", "crowelm-grok", "grok", "CroweLM Grok"],
      "prompt": (
           "You are CroweLM Oracle, Crowe Logic's deep-foresight reasoning tier. "
@@ -205,8 +205,8 @@ _BASE_MODEL_CHAIN = [
 
     # Tier 2: Deep analysis
     {"name": "claude-opus-4-6-2", "label": "CroweLM Sovereign", "type": "reasoning",
-     "provider": "openai_compat", "backend_name": "deepseek/deepseek-v3.2",
-     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
+     "provider": "watsonx", "backend_name": "mistralai/mistral-large-2512",
+     "endpoint_env": "WATSONX_URL", "api_key_env": "WATSONX_APIKEY",
      "aliases": ["sovereign", "crowelm-sovereign", "crowelm-opus-x", "opus-x", "CroweLM Opus X"],
      "prompt": (
           "You are CroweLM Sovereign, Crowe Logic's premium writing and deep-analysis tier. "
@@ -215,8 +215,8 @@ _BASE_MODEL_CHAIN = [
           "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
       )},
     {"name": "claude-opus-4-6", "label": "CroweLM Prime",     "type": "reasoning",
-     "provider": "openai_compat", "backend_name": "moonshotai/kimi-k2.5",
-     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
+     "provider": "watsonx", "backend_name": "ibm/granite-4-h-small",
+     "endpoint_env": "WATSONX_URL", "api_key_env": "WATSONX_APIKEY",
      "aliases": ["prime", "crowelm-prime", "crowelm-opus", "opus", "CroweLM Opus"],
      "prompt": (
           "You are CroweLM Prime, Crowe Logic's core flagship analysis tier. "
@@ -238,8 +238,8 @@ _BASE_MODEL_CHAIN = [
 
     # Tier 4: Specialist reasoning
     {"name": "DeepSeek-R1",    "label": "CroweLM Reason",    "type": "reasoning",
-     "provider": "openai_compat", "backend_name": "deepseek/deepseek-r1",
-     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
+     "provider": "watsonx", "backend_name": "meta-llama/llama-3-1-8b",
+     "endpoint_env": "WATSONX_URL", "api_key_env": "WATSONX_APIKEY",
      "aliases": ["reason", "crowelm-reason", "r1"],
      "prompt": (
           "You are CroweLM Reason, Crowe Logic's chain-of-thought specialist tier. "
