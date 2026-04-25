@@ -1,11 +1,11 @@
 {
   "name": "crowe-logic-vscode",
   "displayName": "Crowe Logic",
-  "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona that replaces the default Copilot avatar.",
-  "version": "0.1.0",
+  "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona with the actual Crowe Logic avatar.",
+  "version": "0.1.1",
   "publisher": "crowe-logic",
   "engines": { "vscode": "^1.90.0" },
-  "icon": "media/crowe-logic-mark.png",
+  "icon": "media/crowe-logic-avatar-dark.png",
   "categories": ["Themes", "Other", "Chat"],
   "keywords": ["crowe", "crowe-logic", "rebrand", "theme", "icon-theme"],
   "main": "./out/extension.js",
@@ -42,21 +42,21 @@
             "id": "apply-theme",
             "title": "Apply the Crowe Logic theme",
             "description": "Switch to the gold-on-graphite Crowe Logic palette.\n[Apply Theme](command:crowe-logic.applyTheme)",
-            "media": { "image": "media/crowe-logic-mark.png", "altText": "Crowe Logic mark" },
+            "media": { "image": "media/crowe-logic-avatar-light.png", "altText": "Crowe Logic avatar" },
             "completionEvents": ["onCommand:crowe-logic.applyTheme"]
           },
           {
             "id": "apply-icons",
             "title": "Apply Crowe Logic product icons",
             "description": "Replace the default workbench icons with the Crowe Logic mark.\n[Apply Icons](command:crowe-logic.applyProductIcons)",
-            "media": { "image": "media/crowe-logic-mark.png", "altText": "Crowe Logic mark" },
+            "media": { "image": "media/crowe-logic-avatar-light.png", "altText": "Crowe Logic avatar" },
             "completionEvents": ["onCommand:crowe-logic.applyProductIcons"]
           },
           {
             "id": "open-chat",
             "title": "Talk to Crowe Logic",
             "description": "Open the chat panel and use `@crowe-logic` to route through the CroweLM model chain.\n[Open Chat](command:workbench.action.chat.open)",
-            "media": { "image": "media/crowe-logic-mark.png", "altText": "Crowe Logic mark" }
+            "media": { "image": "media/crowe-logic-avatar-light.png", "altText": "Crowe Logic avatar" }
           }
         ]
       }
@@ -68,7 +68,7 @@
         "fullName": "Crowe Logic",
         "description": "Crowe Logic agent powered by the CroweLM model chain",
         "isSticky": true,
-        "iconPath": "media/crowe-logic-mark.png"
+        "iconPath": "media/crowe-logic-avatar-dark.png"
       }
     ],
     "commands": [
@@ -91,6 +91,16 @@
         "command": "crowe-logic.showWelcome",
         "title": "Crowe Logic: Show Welcome",
         "category": "Crowe Logic"
+      },
+      {
+        "command": "crowe-logic.signIn",
+        "title": "Crowe Logic: Sign In",
+        "category": "Crowe Logic"
+      },
+      {
+        "command": "crowe-logic.signOut",
+        "title": "Crowe Logic: Sign Out",
+        "category": "Crowe Logic"
       }
     ],
     "configuration": {
@@ -105,6 +115,16 @@
           "type": "string",
           "default": "Crowe Logic — ${rootName}${separator}${activeEditorShort}",
           "description": "Override window.title with a Crowe Logic-branded format."
+        },
+        "croweLogic.foundryBaseURL": {
+          "type": "string",
+          "default": "https://api.crowelogic.com",
+          "description": "Base URL of the Crowe Logic Foundry control plane (e.g. https://api.crowelogic.com or http://localhost:8001 for local dev)."
+        },
+        "croweLogic.model": {
+          "type": "string",
+          "default": "auto",
+          "description": "Model id to send to the foundry. Use 'auto' to let the foundry pick from MODEL_CHAIN."
         }
       }
     }

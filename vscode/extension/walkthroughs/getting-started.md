@@ -6,7 +6,7 @@ Crowe Logic re-skins VS Code as a Crowe Logic-facing product:
 - **Crowe Logic Icons** product-icon theme.
 - A title bar that reads *Crowe Logic* instead of *Visual Studio Code*.
 - A **`@crowe-logic`** chat participant that replaces the default Copilot
-  avatar with the Crowe Logic mark and routes prompts through the CroweLM
+  avatar with the actual Crowe Logic avatar and routes prompts through the CroweLM
   model chain.
 
 ## Apply the rebrand

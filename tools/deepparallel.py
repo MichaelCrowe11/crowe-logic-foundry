@@ -72,7 +72,7 @@ def _cache_key(
     temperature: float, max_tokens: int, reasoning_chains: str,
 ) -> str:
     blob = json.dumps(
-        [model, prompt, system, round(temperature, 3), max_tokens, reasoning_chains],
+        [model, prompt, system, round(float(temperature), 3), int(max_tokens), reasoning_chains],
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.blake2b(blob, digest_size=16).hexdigest()
@@ -121,6 +121,12 @@ def deepparallel_query(
     """
     if not prompt.strip():
         return json.dumps({"error": "Empty prompt"})
+
+    try:
+        temperature = float(temperature)
+        max_tokens = int(max_tokens)
+    except (TypeError, ValueError):
+        return json.dumps({"error": f"Invalid numeric args: temperature={temperature!r} max_tokens={max_tokens!r}"})
 
     key = _cache_key(
         DEEPPARALLEL_MODEL, prompt, system, temperature, max_tokens, reasoning_chains,

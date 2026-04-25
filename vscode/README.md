@@ -5,7 +5,7 @@ layers of rebranding, from light-touch to full fork — use whichever fits.
 
 ```
 vscode/
-├── assets/                  Brand SVGs (mark + wordmark)
+├── assets/                  Brand SVGs (mark + avatar + wordmark)
 ├── extension/               Drop-in extension for stock VS Code
 │   ├── themes/              Crowe Logic Dark / Light color themes
 │   ├── product-icons/       Crowe Logic icon theme
@@ -27,15 +27,15 @@ vscode/
 
 Re-skins stock VS Code with the Crowe Logic palette, product icons, title bar
 text, welcome walkthrough, and a `@crowe-logic` chat participant whose avatar
-is the Crowe Logic mark — replacing the default Copilot avatar in any chat
+is the actual Crowe Logic avatar — replacing the default Copilot avatar in any chat
 thread that targets it.
 
 ```bash
 cd vscode/extension
 npm install
 npm run compile
-npx @vscode/vsce package          # produces crowe-logic-vscode-0.1.0.vsix
-code --install-extension crowe-logic-vscode-0.1.0.vsix
+npx @vscode/vsce package          # produces crowe-logic-vscode-0.1.1.vsix
+code --install-extension crowe-logic-vscode-0.1.1.vsix
 ```
 
 On first activation the extension automatically:
