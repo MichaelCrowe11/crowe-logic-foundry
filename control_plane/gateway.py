@@ -20,6 +20,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .db import Database, get_db
+from .plans import canonical_plan_id, plan_rank
+from .tokens import hash_api_key, is_supported_api_key
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
@@ -30,27 +32,24 @@ CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in ("1
 
 # Model tier → plan minimum. Models not listed are enterprise-only.
 MODEL_PLAN_ACCESS = {
-    # Developer tier (BYOK models + Nano/Forge)
-    "gpt-5.4-nano": "developer",
-    "Llama-3-3-70B": "developer",
-    "FW-GLM-5": "developer",
-    # Studio tier
-    "Kimi-K2.5": "studio",
-    "DeepSeek-R1": "studio",
-    "DeepSeek-V3-1": "studio",
-    "Mistral-Large-3": "studio",
-    "FW-MiniMax-M2.5": "studio",
-    # Lab tier
-    "claude-opus-4-6-2": "lab",
-    "claude-opus-4-6": "lab",
-    "gpt-5.4": "lab",
-    # Enterprise only
-    "gpt-5.4-pro": "enterprise",
-    "grok-4-20-reasoning": "enterprise",
-    "claude-opus-4-5": "enterprise",
+    # Personal tier
+    "gpt-5.4-nano": "personal",
+    "Llama-3-3-70B": "personal",
+    "FW-GLM-5": "personal",
+    # Pro tier
+    "Kimi-K2.5": "pro",
+    "DeepSeek-R1": "pro",
+    "DeepSeek-V3-1": "pro",
+    "Mistral-Large-3": "pro",
+    "FW-MiniMax-M2.5": "pro",
+    "claude-opus-4-6-2": "pro",
+    "claude-opus-4-6": "pro",
+    "gpt-5.4": "pro",
+    # Team tier
+    "gpt-5.4-pro": "team",
+    "grok-4-20-reasoning": "team",
+    "claude-opus-4-5": "team",
 }
-
-PLAN_RANK = {"developer": 0, "studio": 1, "lab": 2, "enterprise": 3}
 
 
 def _build_model_catalog() -> list[dict]:
@@ -68,7 +67,7 @@ def _build_model_catalog() -> list[dict]:
                 "min_plan": min_plan,
             }
         )
-    return sorted(catalog, key=lambda item: (PLAN_RANK.get(item["min_plan"], 99), item["model"]))
+    return sorted(catalog, key=lambda item: (plan_rank(item["min_plan"]), item["model"]))
 
 
 async def _call_provider(
@@ -233,21 +232,19 @@ async def _resolve_api_key(
     db: Database = Depends(get_db),
 ) -> dict:
     """Resolve an API key to workspace + user + plan."""
-    import hashlib
-
     raw_key = None
     if x_api_key:
         raw_key = x_api_key
     elif authorization and authorization.startswith("Bearer "):
         candidate = authorization[7:]
-        # Accept both new `crowe_pat_` PATs and legacy `cl_` keys.
-        if candidate.startswith("crowe_pat_") or candidate.startswith("cl_"):
+        # Accept launch PATs and legacy `cl_`/`clk_` keys.
+        if is_supported_api_key(candidate):
             raw_key = candidate
 
     if not raw_key:
         raise HTTPException(status_code=401, detail="API key required")
 
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    key_hash = hash_api_key(raw_key)
     row = await db.fetchrow(
         """SELECT ak.*, w.plan_id, w.status AS ws_status
            FROM api_keys ak
@@ -275,13 +272,13 @@ async def gateway_chat(
 ):
     """Metered model gateway. Enforces plan-based model access and records usage."""
     model = req.model
-    plan_id = key_info["plan_id"]
+    plan_id = canonical_plan_id(key_info["plan_id"])
     workspace_id = key_info["workspace_id"]
     user_id = key_info["user_id"]
 
     # ── Plan-based model access check ──
     required_plan = MODEL_PLAN_ACCESS.get(model, "enterprise")
-    if PLAN_RANK.get(plan_id, 0) < PLAN_RANK.get(required_plan, 3):
+    if plan_rank(plan_id) < plan_rank(required_plan):
         raise HTTPException(
             status_code=403,
             detail=f"Model '{model}' requires {required_plan} plan or higher",
@@ -363,12 +360,12 @@ async def gateway_chat_stream(
     from .streaming import stream_agent_events, sse_frame
 
     model = req.model
-    plan_id = key_info["plan_id"]
+    plan_id = canonical_plan_id(key_info["plan_id"])
     workspace_id = key_info["workspace_id"]
     user_id = key_info["user_id"]
 
     required_plan = MODEL_PLAN_ACCESS.get(model, "enterprise")
-    if PLAN_RANK.get(plan_id, 0) < PLAN_RANK.get(required_plan, 3):
+    if plan_rank(plan_id) < plan_rank(required_plan):
         raise HTTPException(
             status_code=403,
             detail=f"Model '{model}' requires {required_plan} plan or higher",
@@ -441,11 +438,11 @@ async def list_available_models(
     key_info: dict = Depends(_resolve_api_key),
 ):
     """Return models available for this API key's plan."""
-    plan_id = key_info["plan_id"]
-    plan_rank = PLAN_RANK.get(plan_id, 0)
+    plan_id = canonical_plan_id(key_info["plan_id"])
+    rank = plan_rank(plan_id)
     available = [
         {"model": m, "min_plan": p}
         for m, p in MODEL_PLAN_ACCESS.items()
-        if PLAN_RANK.get(p, 3) <= plan_rank
+        if plan_rank(p) <= rank
     ]
     return {"plan": plan_id, "models": available}

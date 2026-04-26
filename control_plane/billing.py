@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request, Header, Depends
 from pydantic import BaseModel
 
 from .db import Database, get_db
+from .plans import LAUNCH_PLAN_IDS, canonical_plan_id, stripe_price_id
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -46,9 +47,9 @@ PLAN_PRICE_MAP = {
 # Usage metering price (per 1K tokens overage)
 USAGE_METER_PRICE = os.environ.get("STRIPE_PRICE_USAGE_TOKENS", "")
 
-SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "https://app.southwestmushrooms.com/billing/success")
-CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "https://app.southwestmushrooms.com/billing/cancel")
-PORTAL_RETURN_URL = os.environ.get("STRIPE_PORTAL_RETURN_URL", "https://app.southwestmushrooms.com/settings")
+SUCCESS_URL = os.environ.get("STRIPE_SUCCESS_URL", "https://api.crowelogic.com/billing/success")
+CANCEL_URL = os.environ.get("STRIPE_CANCEL_URL", "https://api.crowelogic.com/billing/cancel")
+PORTAL_RETURN_URL = os.environ.get("STRIPE_PORTAL_RETURN_URL", "https://api.crowelogic.com/account")
 
 
 def _get_stripe():
@@ -126,9 +127,10 @@ async def create_checkout_session(
 ):
     """Create a Stripe Checkout session for plan subscription."""
     stripe = _get_stripe()
-    price_id = PLAN_PRICE_MAP.get(req.plan_id)
+    plan_id = canonical_plan_id(req.plan_id)
+    price_id = stripe_price_id(plan_id) or PLAN_PRICE_MAP.get(req.plan_id)
     if not price_id:
-        raise HTTPException(status_code=400, detail=f"No Stripe price configured for plan '{req.plan_id}'")
+        raise HTTPException(status_code=400, detail=f"No Stripe price configured for plan '{plan_id}'")
 
     customer_id = await _get_or_create_customer(db, req.workspace_id)
 
@@ -140,12 +142,12 @@ async def create_checkout_session(
         cancel_url=req.cancel_url or CANCEL_URL,
         metadata={
             "workspace_id": req.workspace_id,
-            "plan_id": req.plan_id,
+            "plan_id": plan_id,
         },
         subscription_data={
             "metadata": {
                 "workspace_id": req.workspace_id,
-                "plan_id": req.plan_id,
+                "plan_id": plan_id,
             },
         },
     )
@@ -308,7 +310,8 @@ async def stripe_webhook(
 
     if event_type == "checkout.session.completed":
         ws_id = data_obj.get("metadata", {}).get("workspace_id")
-        plan_id = data_obj.get("metadata", {}).get("plan_id")
+        raw_plan_id = data_obj.get("metadata", {}).get("plan_id")
+        plan_id = canonical_plan_id(raw_plan_id) if raw_plan_id else None
         sub_id = data_obj.get("subscription")
 
         if ws_id and plan_id:
@@ -370,7 +373,7 @@ async def stripe_webhook(
                 sub_id,
             )
             await db.execute(
-                "UPDATE workspaces SET plan_id = 'developer', status = 'active' WHERE id = $1",
+                "UPDATE workspaces SET plan_id = 'personal', status = 'suspended' WHERE id = $1",
                 ws_id,
             )
 
@@ -397,8 +400,11 @@ async def billing_config():
     return {
         "publishable_key": STRIPE_PUBLISHABLE_KEY,
         "plans": {
-            plan_id: {"price_id": price_id, "configured": bool(price_id)}
-            for plan_id, price_id in PLAN_PRICE_MAP.items()
+            plan_id: {
+                "price_id": stripe_price_id(plan_id),
+                "configured": bool(stripe_price_id(plan_id)),
+            }
+            for plan_id in LAUNCH_PLAN_IDS
         },
         "usage_metering": bool(USAGE_METER_PRICE),
     }

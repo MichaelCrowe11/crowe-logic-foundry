@@ -12,7 +12,10 @@ Configuration
 Environment variables, read at import time:
 
     CROWE_LOGIC_API_KEY      API key issued by the control plane.
-                             Format: `clk_<workspace_id>_<secret>`.
+                             Launch format:
+                             `crowe_pat_<workspace_id>_<secret>`.
+                             Legacy `clk_<workspace_id>_<secret>`
+                             keys are still accepted.
                              When unset, the client operates in
                              ``disabled`` mode and every method
                              returns a tombstone that the CLI
@@ -44,6 +47,16 @@ import os
 import threading
 from dataclasses import dataclass
 from typing import Any, Optional
+
+def _workspace_id_from_api_key(raw_key: str) -> Optional[str]:
+    if raw_key.startswith("clk_"):
+        parts = raw_key.split("_", 2)
+        return parts[1] if len(parts) >= 3 and parts[1] else None
+    if raw_key.startswith("crowe_pat_"):
+        body = raw_key[len("crowe_pat_"):]
+        parts = body.split("_", 1)
+        return parts[0] if len(parts) == 2 and parts[0] else None
+    return None
 
 try:
     import httpx
@@ -148,10 +161,8 @@ class FoundryAPIClient:
         self.http_timeout = http_timeout
 
         self._workspace_id: Optional[str] = None
-        if self.api_key and self.api_key.startswith("clk_"):
-            parts = self.api_key.split("_")
-            if len(parts) >= 3:
-                self._workspace_id = parts[1]
+        if self.api_key:
+            self._workspace_id = _workspace_id_from_api_key(self.api_key)
 
     # ── Mode helpers ─────────────────────────────────────────────
 

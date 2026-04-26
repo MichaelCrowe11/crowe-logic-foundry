@@ -5,7 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Welcome to Crowe Logic Foundry</title>
   <meta name="robots" content="noindex" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23bfa669'/><text x='50' y='68' font-size='56' text-anchor='middle' fill='%23141414' font-family='Georgia' font-weight='700'>C</text></svg>" />
+  <meta name="theme-color" content="#bfa669" />
+  <meta name="color-scheme" content="dark" />
+  <link rel="icon" type="image/svg+xml" href="/brand/avatar.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
+  <link rel="shortcut icon" href="/brand/favicon.ico" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -20,36 +26,75 @@
     }
   </script>
   <style>
-    body { background: #0c0c0c; color: #f5f3ee; font-family: system-ui, -apple-system, sans-serif; }
+    /* Brand tokens — mirror landing/index.html so a palette change is one place. */
+    :root {
+      --gold:      #bfa669;
+      --gold-hi:   #d4be84;
+      --ink:       #0c0c0c;
+      --paper:     #f5f3ee;
+      --card:      #141414;
+      --card-line: #2a2a2a;
+      --code-bg:   #0a0a0a;
+      --code-line: #1f1f1f;
+      --ok:        #6fbf73;
+      --disc:      #0E1014;
+    }
+    body { background: var(--ink); color: var(--paper); font-family: system-ui, -apple-system, sans-serif; }
     .brand-serif { font-family: Georgia, Cambria, serif; letter-spacing: -0.01em; }
-    .card { background: #141414; border: 1px solid #2a2a2a; }
+    .brand-mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--disc); border-radius: 9999px;
+      box-shadow: inset 0 0 0 1px rgb(191 166 105 / 0.35);
+      flex-shrink: 0;
+    }
+    .brand-mark svg { width: 60%; height: 60%; }
+    .card { background: var(--card); border: 1px solid var(--card-line); }
     .code {
-      background: #0a0a0a; border: 1px solid #1f1f1f;
+      background: var(--code-bg); border: 1px solid var(--code-line);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      color: #bfa669; padding: .5rem .75rem; border-radius: 2px;
+      color: var(--gold); padding: .5rem .75rem; border-radius: 2px;
       word-break: break-all;
     }
     .key {
-      background: #0a0a0a; border: 2px solid #bfa669;
+      background: var(--code-bg); border: 2px solid var(--gold);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      color: #bfa669; padding: 1rem; border-radius: 4px;
+      color: var(--gold); padding: 1rem; border-radius: 4px;
       font-size: .85rem; word-break: break-all;
     }
     .copy-btn {
-      background: #bfa669; color: #0c0c0c;
+      background: var(--gold); color: var(--ink);
       padding: .4rem .8rem; font-weight: 600; font-size: .8rem;
       border-radius: 2px; cursor: pointer; border: 0;
       margin-top: .75rem;
+      transition: background .15s ease;
     }
-    .copy-btn:hover { background: #d4be84; }
-    .copy-btn.copied { background: #6fbf73; }
+    .copy-btn:hover { background: var(--gold-hi); }
+    .copy-btn.copied { background: var(--ok); }
   </style>
 </head>
 <body>
 
+<!-- Brand mark sprite (matches landing/index.html) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="cl-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E9C872"/>
+      <stop offset="0.45" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#9A7A23"/>
+    </linearGradient>
+    <symbol id="cl-mark" viewBox="0 0 24 24" fill="none"
+            stroke="url(#cl-gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17.25 6.25A7.75 7.75 0 1 0 17.25 17.75"/>
+      <path d="M10.75 9.25 14 12 10.75 14.75" stroke-width="1.7"/>
+    </symbol>
+  </defs>
+</svg>
+
 <nav class="border-b border-gold/10">
   <div class="max-w-4xl mx-auto px-6 py-5 flex items-center gap-3">
-    <span class="w-8 h-8 rounded-full bg-gold text-ink flex items-center justify-center brand-serif font-bold">C</span>
+    <span class="brand-mark w-9 h-9" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><use href="#cl-mark"/></svg>
+    </span>
     <span class="brand-serif text-xl">Crowe Logic Foundry</span>
   </div>
 </nav>
@@ -70,7 +115,7 @@
       <h1 class="brand-serif text-5xl mb-4">You're in.</h1>
       <p class="text-paper/70 text-lg">
         Your <span id="tier-label" class="text-gold font-semibold"></span> subscription is active.
-        Below is your CLI API key and the four steps to get running.
+        Below is your Crowe Logic PAT and the four steps to get running.
       </p>
     </div>
 
@@ -90,20 +135,20 @@
       <ol class="space-y-4">
         <li>
           <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 1 · Install</div>
-          <div class="code">git clone https://github.com/MichaelCrowe11/crowe-logic-foundry.git && cd crowe-logic-foundry && pip install -e .</div>
+          <div class="code">Install the Crowe Logic extension in VS Code</div>
         </li>
         <li>
-          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 2 · Set your API key</div>
-          <div class="code" id="env-line">echo 'CROWE_LOGIC_API_KEY=YOUR_KEY' >> ~/.config/crowe-logic/.env</div>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 2 · Sign in</div>
+          <div class="code">Run Crowe Logic: Sign In from the command palette</div>
         </li>
         <li>
-          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 3 · Launch</div>
-          <div class="code">crowe-logic</div>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 3 · Paste your PAT</div>
+          <div class="code" id="env-line">crowe_pat_...</div>
         </li>
         <li>
-          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 4 · Verify your balance</div>
-          <div class="code">/account</div>
-          <p class="text-paper/60 text-sm mt-2">Confirms your tier and credit allocation are live.</p>
+          <div class="text-gold text-xs uppercase tracking-widest mb-2">Step 4 · Start coding</div>
+          <div class="code">@crowe-logic build the feature</div>
+          <p class="text-paper/60 text-sm mt-2">The extension routes through your metered Crowe Logic workspace.</p>
         </li>
       </ol>
     </div>
@@ -179,7 +224,7 @@
     document.getElementById("tier-label").textContent = (data.tier_key || "personal").toUpperCase();
     document.getElementById("api-key").textContent = data.api_key || "";
     document.getElementById("env-line").textContent =
-      "echo 'CROWE_LOGIC_API_KEY=" + (data.api_key || "YOUR_KEY") + "' >> ~/.config/crowe-logic/.env";
+      data.api_key || "crowe_pat_...";
   }
 
   function showError(msg) {

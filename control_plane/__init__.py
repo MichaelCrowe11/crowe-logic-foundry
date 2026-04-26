@@ -18,6 +18,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 
 from .db import get_db, Database
+from .plans import (
+    TIER_ALLOCATIONS,
+    canonical_plan_id,
+    is_self_serve_plan,
+    stripe_price_id,
+    stripe_price_env,
+)
+from .tokens import hash_api_key, is_supported_api_key, make_pat
 
 # ─── Config ──────────────────────────────────────────────────────────
 
@@ -87,7 +95,7 @@ class WorkspaceCreate(BaseModel):
     name: str
     slug: str
     ws_type: str = "personal"
-    plan_id: str = "developer"
+    plan_id: str = "personal"
 
 
 class WorkspaceResponse(BaseModel):
@@ -377,7 +385,7 @@ _PRICING_HTML = """<!doctype html>
     const { plans } = await res.json();
     grid.innerHTML = '';
     for (const p of plans) {
-      const featured = p.id === 'studio';
+      const featured = p.id === 'pro';
       const monthly = p.monthly_price_cents == null ? null : (p.monthly_price_cents / 100);
       const annual = p.annual_price_cents == null ? null : (p.annual_price_cents / 100);
       const priceHtml = monthly == null
@@ -443,8 +451,8 @@ async def _resolve_pat_or_jwt(
         raise HTTPException(status_code=401, detail="Missing authorization header")
     token = authorization[7:]
 
-    if token.startswith("crowe_pat_") or token.startswith("cl_"):
-        key_hash = hashlib.sha256(token.encode()).hexdigest()
+    if is_supported_api_key(token):
+        key_hash = hash_api_key(token)
         row = await db.fetchrow(
             """SELECT ak.user_id, ak.workspace_id, w.plan_id, w.status AS ws_status
                FROM api_keys ak
@@ -475,6 +483,11 @@ async def _resolve_pat_or_jwt(
     if not ws:
         raise HTTPException(status_code=404, detail="No active workspace for user")
     return {"user_id": user_id, "workspace_id": ws["id"], "plan_id": ws["plan_id"]}
+
+
+def _ensure_same_workspace(workspace_id: str, auth: dict) -> None:
+    if auth.get("workspace_id") != workspace_id:
+        raise HTTPException(status_code=403, detail="Token is not valid for this workspace")
 
 
 @app.post("/api/ide/launch")
@@ -546,7 +559,7 @@ async def register(req: RegisterRequest, db: Database = Depends(get_db)):
     ws_id = secrets.token_hex(16)
     await db.execute(
         """INSERT INTO workspaces (id, org_id, name, slug, plan_id)
-           VALUES ($1, $2, 'Default', 'default', 'developer')""",
+           VALUES ($1, $2, 'Default', 'default', 'personal')""",
         ws_id, org_id,
     )
 
@@ -583,7 +596,7 @@ async def auth_me(user: dict = Depends(get_current_user)):
 
 @app.get("/api/plans", response_model=list[PlanResponse])
 async def list_plans(db: Database = Depends(get_db)):
-    rows = await db.fetch("SELECT * FROM plans ORDER BY max_seats")
+    rows = await db.fetch("SELECT * FROM plans WHERE is_public = TRUE ORDER BY sort_order, max_seats")
     return [PlanResponse(**dict(r)) for r in rows]
 
 
@@ -617,14 +630,15 @@ async def create_workspace(
         raise HTTPException(status_code=400, detail="No organization found")
 
     ws_id = secrets.token_hex(16)
+    plan_id = canonical_plan_id(req.plan_id)
     await db.execute(
         """INSERT INTO workspaces (id, org_id, name, slug, ws_type, plan_id)
            VALUES ($1, $2, $3, $4, $5, $6)""",
-        ws_id, org["id"], req.name, req.slug, req.ws_type, req.plan_id,
+        ws_id, org["id"], req.name, req.slug, req.ws_type, plan_id,
     )
     return WorkspaceResponse(
         id=ws_id, org_id=org["id"], name=req.name, slug=req.slug,
-        ws_type=req.ws_type, plan_id=req.plan_id, status="active",
+        ws_type=req.ws_type, plan_id=plan_id, status="active",
     )
 
 
@@ -639,9 +653,7 @@ async def create_api_key(
 ):
     await _resolve_workspace(workspace_id, user, db)
 
-    raw_key = f"crowe_pat_{secrets.token_hex(24)}"
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    key_prefix = raw_key[:14]  # "crowe_pat_" + 4 hex chars
+    raw_key, key_prefix, key_hash = make_pat(workspace_id)
     key_id = secrets.token_hex(16)
 
     await db.execute(
@@ -821,15 +833,6 @@ class PublicCheckoutRequest(BaseModel):
     cancel_url: Optional[str] = None
 
 
-_TIER_STRIPE_ENV_MAP = {
-    "personal":   "STRIPE_PRICE_PERSONAL",
-    "pro":        "STRIPE_PRICE_PRO",
-    "team":       "STRIPE_PRICE_TEAM",
-    "enterprise": "STRIPE_PRICE_ENTERPRISE",
-    "byok":       "STRIPE_PRICE_BYOK",
-}
-
-
 @app.post("/api/billing/checkout/public")
 async def public_checkout(req: PublicCheckoutRequest, db: Database = Depends(get_db)):
     """Create a Stripe Checkout session for a not-yet-registered visitor.
@@ -842,11 +845,11 @@ async def public_checkout(req: PublicCheckoutRequest, db: Database = Depends(get
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Billing not configured")
 
-    tier = req.tier_key.lower()
-    env_var = _TIER_STRIPE_ENV_MAP.get(tier)
-    if env_var is None:
+    tier = canonical_plan_id(req.tier_key)
+    if not is_self_serve_plan(tier):
         raise HTTPException(status_code=400, detail=f"Unknown tier '{tier}'")
-    price_id = os.environ.get(env_var, "")
+    env_var = stripe_price_env(tier)
+    price_id = stripe_price_id(tier)
     if not price_id:
         raise HTTPException(
             status_code=503,
@@ -916,10 +919,10 @@ async def get_checkout_result(session_id: str, db: Database = Depends(get_db)):
         "workspace_id": row["workspace_id"],
         "api_key": row["api_key"],
         "next_steps": [
-            "1. Install Foundry: pip install -e . (or via git clone)",
-            "2. Set CROWE_LOGIC_API_KEY in ~/.config/crowe-logic/.env",
-            "3. Run `crowe-logic` and issue your first prompt",
-            "4. Check `/account` to confirm your balance",
+            "1. Install the Crowe Logic VS Code extension",
+            "2. Run `Crowe Logic: Sign In` from the command palette",
+            "3. Paste this PAT when prompted",
+            "4. Open chat and mention `@crowe-logic`",
         ],
     }
 
@@ -986,11 +989,11 @@ async def _ensure_credit_row(workspace_id: str, db: Database) -> dict:
 )
 async def get_credits(
     workspace_id: str,
-    user: dict = Depends(get_current_user),
+    auth: dict = Depends(_resolve_pat_or_jwt),
     db: Database = Depends(get_db),
 ):
     """Return the workspace's current credit balance and tier."""
-    await _resolve_workspace(workspace_id, user, db)
+    _ensure_same_workspace(workspace_id, auth)
     row = await _ensure_credit_row(workspace_id, db)
     return CreditBalance(
         workspace_id=workspace_id,
@@ -1009,7 +1012,7 @@ async def get_credits(
 async def consume_credits(
     workspace_id: str,
     req: CreditConsumeRequest,
-    user: dict = Depends(get_current_user),
+    auth: dict = Depends(_resolve_pat_or_jwt),
     db: Database = Depends(get_db),
 ):
     """Atomically decrement credits. Returns 402 if insufficient balance.
@@ -1023,7 +1026,7 @@ async def consume_credits(
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="amount must be positive")
 
-    await _resolve_workspace(workspace_id, user, db)
+    _ensure_same_workspace(workspace_id, auth)
     row = await _ensure_credit_row(workspace_id, db)
     if not row.get("active", True):
         raise HTTPException(
@@ -1216,18 +1219,6 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
 
 # ─── Webhook helpers ────────────────────────────────────────────────
 
-# Customer-tier credit allocations, kept in sync with
-# config/customer_pricing.json. Encoded here so the webhook doesn't
-# need to parse the JSON on every event.
-_TIER_ALLOCATIONS = {
-    "personal": 750,
-    "pro": 3000,
-    "team": 1500,       # per-seat; team workspaces multiply by seat count
-    "enterprise": 100_000,   # effectively unlimited; billed separately
-    "byok": 0,          # BYOK bypasses credit meter entirely
-}
-
-
 async def _provision_from_checkout(db, session_obj: dict) -> None:
     """Create user + workspace + api_key after a successful Checkout session.
 
@@ -1235,10 +1226,9 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
     the checkout_provisions table: a repeat webhook delivery for the
     same session_id short-circuits before doing any writes.
 
-    The API key is formatted ``clk_<workspace_id>_<secret>`` to match
-    the format cli/foundry_api.py parses. That format encodes the
-    workspace_id in the key so the CLI can talk to the right
-    workspace without an extra round trip.
+    The API key is formatted ``crowe_pat_<workspace_id>_<secret>`` so
+    the VS Code extension can accept it directly and the CLI can infer
+    the workspace id without an extra round trip.
     """
     session_id = session_obj.get("id")
     if not session_id:
@@ -1252,8 +1242,14 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         return   # idempotent retry
 
     metadata = session_obj.get("metadata") or {}
-    email = (session_obj.get("customer_email") or metadata.get("email") or "").strip().lower()
-    tier_key = (metadata.get("tier_key") or "personal").lower()
+    customer_details = session_obj.get("customer_details") or {}
+    email = (
+        session_obj.get("customer_email")
+        or customer_details.get("email")
+        or metadata.get("email")
+        or ""
+    ).strip().lower()
+    tier_key = canonical_plan_id(metadata.get("tier_key") or "personal")
     if not email:
         # No email means we can't provision. Log and bail.
         await db.execute(
@@ -1282,6 +1278,9 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
     else:
         user_id = user["id"]
 
+    customer_id = session_obj.get("customer", "") or ""
+    subscription_id = session_obj.get("subscription", "") or ""
+
     # Find or create the user's personal org.
     org = await db.fetchrow(
         "SELECT * FROM organizations WHERE owner_id = $1 ORDER BY created_at LIMIT 1",
@@ -1291,9 +1290,10 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         org_id = secrets.token_hex(16)
         org_slug = email.split("@")[0].lower().replace(".", "-")
         await db.execute(
-            """INSERT INTO organizations (id, name, slug, owner_id)
-               VALUES ($1, $2, $3, $4)""",
+            """INSERT INTO organizations (id, name, slug, owner_id, stripe_customer_id)
+               VALUES ($1, $2, $3, $4, $5)""",
             org_id, f"{email.split('@')[0]} Org", org_slug, user_id,
+            customer_id,
         )
         await db.execute(
             "INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'owner')",
@@ -1301,6 +1301,12 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         )
     else:
         org_id = org["id"]
+        await db.execute(
+            """UPDATE organizations
+                  SET stripe_customer_id = COALESCE(NULLIF($2, ''), stripe_customer_id)
+                WHERE id = $1""",
+            org_id, customer_id,
+        )
 
     # Find or create the default workspace.
     ws = await db.fetchrow(
@@ -1311,11 +1317,9 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         workspace_id = secrets.token_hex(16)
         await db.execute(
             """INSERT INTO workspaces (id, org_id, name, slug, plan_id,
-                                        stripe_customer_id, stripe_subscription_id)
-               VALUES ($1, $2, 'Default', 'default', $3, $4, $5)""",
-            workspace_id, org_id, tier_key,
-            session_obj.get("customer", ""),
-            session_obj.get("subscription", ""),
+                                        stripe_subscription_id)
+               VALUES ($1, $2, 'Default', 'default', $3, $4)""",
+            workspace_id, org_id, tier_key, subscription_id,
         )
     else:
         workspace_id = ws["id"]
@@ -1323,30 +1327,38 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         await db.execute(
             """UPDATE workspaces
                   SET plan_id = $2,
-                      stripe_customer_id = COALESCE(NULLIF($3, ''), stripe_customer_id),
-                      stripe_subscription_id = COALESCE(NULLIF($4, ''), stripe_subscription_id)
+                      stripe_subscription_id = COALESCE(NULLIF($3, ''), stripe_subscription_id)
                 WHERE id = $1""",
-            workspace_id, tier_key,
-            session_obj.get("customer", ""),
-            session_obj.get("subscription", ""),
+            workspace_id, tier_key, subscription_id,
         )
 
-    # Mint the CLI-style API key. Format: clk_<workspace_id>_<secret>.
-    secret = secrets.token_hex(24)
-    api_key = f"clk_{workspace_id}_{secret}"
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    key_prefix = api_key[:18]
+    if subscription_id:
+        await db.execute(
+            """INSERT INTO subscriptions
+                   (id, workspace_id, plan_id, stripe_subscription_id, status,
+                    current_period_start, current_period_end)
+               VALUES ($1, $2, $3, $4, 'active', now(), now())
+               ON CONFLICT (workspace_id)
+               DO UPDATE SET
+                   plan_id = $3,
+                   stripe_subscription_id = $4,
+                   status = 'active',
+                   updated_at = now()""",
+            f"sub_{workspace_id}", workspace_id, tier_key, subscription_id,
+        )
+
+    api_key, key_prefix, key_hash = make_pat(workspace_id)
     key_id = secrets.token_hex(16)
     await db.execute(
         """INSERT INTO api_keys
                (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
-           VALUES ($1, $2, $3, $4, $5, 'CLI (checkout)', '["cli"]')""",
+           VALUES ($1, $2, $3, $4, $5, 'VS Code (checkout)', '["chat","vision","agents","ide"]')""",
         key_id, workspace_id, user_id, key_hash, key_prefix,
     )
 
     # Refill credits immediately so the user can start using the product
     # without waiting for a separate invoice.paid webhook.
-    allocation = _TIER_ALLOCATIONS.get(tier_key, _TIER_ALLOCATIONS["personal"])
+    allocation = TIER_ALLOCATIONS.get(tier_key, TIER_ALLOCATIONS["personal"])
     await db.execute(
         """INSERT INTO workspace_credits
                (workspace_id, tier_key, balance, allocation, active)
@@ -1376,7 +1388,7 @@ async def _refill_credits_for_subscription(db, stripe_subscription_id: str) -> N
     """Refill credits on every workspace bound to the given Stripe subscription.
 
     Reads the plan_key from the subscription row (set during checkout
-    completion) and looks up the tier's allocation in _TIER_ALLOCATIONS.
+    completion) and looks up the tier's allocation in TIER_ALLOCATIONS.
     Quietly noops if no workspace or plan is associated, so webhook
     retries stay idempotent.
     """
@@ -1388,8 +1400,8 @@ async def _refill_credits_for_subscription(db, stripe_subscription_id: str) -> N
         stripe_subscription_id,
     )
     for row in rows:
-        tier_key = (row["plan_id"] or "personal").lower()
-        allocation = _TIER_ALLOCATIONS.get(tier_key, _TIER_ALLOCATIONS["personal"])
+        tier_key = canonical_plan_id(row["plan_id"] or "personal")
+        allocation = TIER_ALLOCATIONS.get(tier_key, TIER_ALLOCATIONS["personal"])
         reset_at = row.get("current_period_end")
 
         await db.execute(

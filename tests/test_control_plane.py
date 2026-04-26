@@ -4,6 +4,7 @@ Tests for the Control Plane API.
 Uses a lightweight in-memory mock DB so tests run without Postgres.
 """
 
+import asyncio
 import hashlib
 import json
 import secrets
@@ -30,25 +31,25 @@ class MockDatabase:
             "organizations": [],
             "org_members": [],
             "plans": [
-                MockRecord(id="developer", display_name="Developer",
+                MockRecord(id="personal", display_name="Personal",
                            max_seats=1, max_concurrent_sessions=1,
                            max_ide_hours_month=0, vision_quota_month=10,
                            storage_limit_gb=1, notebook_quota_month=0,
-                           agent_jobs_month=100, token_budget_month=500000,
+                           agent_jobs_month=100, token_budget_month=750000,
                            audit_retention_days=30,
                            features={"ide_enabled": False, "byok": True}),
-                MockRecord(id="studio", display_name="Studio",
-                           max_seats=3, max_concurrent_sessions=2,
+                MockRecord(id="pro", display_name="Pro",
+                           max_seats=1, max_concurrent_sessions=2,
                            max_ide_hours_month=100, vision_quota_month=500,
                            storage_limit_gb=10, notebook_quota_month=50,
-                           agent_jobs_month=500, token_budget_month=5000000,
+                           agent_jobs_month=500, token_budget_month=3000000,
                            audit_retention_days=90,
                            features={"ide_enabled": True, "byok": True}),
-                MockRecord(id="lab", display_name="Lab",
-                           max_seats=10, max_concurrent_sessions=5,
+                MockRecord(id="team", display_name="Team",
+                           max_seats=25, max_concurrent_sessions=5,
                            max_ide_hours_month=500, vision_quota_month=5000,
                            storage_limit_gb=100, notebook_quota_month=500,
-                           agent_jobs_month=5000, token_budget_month=50000000,
+                           agent_jobs_month=5000, token_budget_month=15000000,
                            audit_retention_days=365,
                            features={"ide_enabled": True}),
                 MockRecord(id="enterprise", display_name="Enterprise",
@@ -62,6 +63,8 @@ class MockDatabase:
             "workspaces": [],
             "api_keys": [],
             "usage_events": [],
+            "workspace_credits": [],
+            "credit_transactions": [],
             "billing_events": [],
             "subscriptions": [],
         }
@@ -91,9 +94,17 @@ class MockDatabase:
                     # Join workspace plan_id
                     ws = next((w for w in self.tables["workspaces"] if w["id"] == k["workspace_id"]), None)
                     rec = MockRecord(**k)
-                    rec["plan_id"] = ws["plan_id"] if ws else "developer"
+                    rec["plan_id"] = ws["plan_id"] if ws else "personal"
                     rec["ws_status"] = ws["status"] if ws else "active"
                     return rec
+            return None
+        if "from workspace_credits where workspace_id" in q:
+            return next((r for r in self.tables["workspace_credits"] if r["workspace_id"] == args[0]), None)
+        if q.startswith("update workspace_credits") and "returning balance" in q:
+            for row in self.tables["workspace_credits"]:
+                if row["workspace_id"] == args[0] and row["balance"] >= args[1] and row.get("active", True):
+                    row["balance"] -= args[1]
+                    return MockRecord(balance=row["balance"])
             return None
         if "sum(quantity)" in q:
             total = sum(
@@ -143,7 +154,7 @@ class MockDatabase:
             name = args[2] if len(args) > 2 else "Default"
             slug = args[3] if len(args) > 3 else "default"
             ws_type = args[4] if len(args) > 4 else "personal"
-            plan_id = args[5] if len(args) > 5 else "developer"
+            plan_id = args[5] if len(args) > 5 else "personal"
             self.tables["workspaces"].append(MockRecord(
                 id=args[0], org_id=args[1], name=name, slug=slug,
                 ws_type=ws_type, plan_id=plan_id, status="active",
@@ -158,6 +169,27 @@ class MockDatabase:
             self.tables["usage_events"].append(MockRecord(
                 workspace_id=args[0], user_id=args[1],
                 event_type=args[2], quantity=args[3], model=args[4] if len(args) > 4 else None,
+            ))
+        elif q.startswith("insert into workspace_credits"):
+            tier_key = args[1] if len(args) > 1 else "personal"
+            balance = args[2] if len(args) > 2 else 0
+            reset_at = args[3] if len(args) > 3 else None
+            existing = next((r for r in self.tables["workspace_credits"] if r["workspace_id"] == args[0]), None)
+            if existing:
+                existing["tier_key"] = tier_key
+                existing["balance"] = balance
+                existing["allocation"] = balance
+                existing["active"] = True
+            else:
+                self.tables["workspace_credits"].append(MockRecord(
+                    workspace_id=args[0], tier_key=tier_key, balance=balance,
+                    allocation=balance, reset_at=reset_at,
+                    active=True,
+                ))
+        elif q.startswith("insert into credit_transactions"):
+            self.tables["credit_transactions"].append(MockRecord(
+                workspace_id=args[0], amount=args[1],
+                reason=args[2] if len(args) > 2 else "unknown",
             ))
         elif "update api_keys set revoked" in q:
             for k in self.tables["api_keys"]:
@@ -201,7 +233,7 @@ class TestHealth:
         r = client.get("/health")
         assert r.status_code == 200
         assert r.json()["status"] == "healthy"
-        assert r.json()["version"] == "0.2.5"
+        assert r.json()["version"] == "0.2.8"
 
 
 class TestAuth:
@@ -277,7 +309,7 @@ class TestPlans:
         plans = r.json()
         assert len(plans) == 4
         ids = [p["id"] for p in plans]
-        assert "developer" in ids
+        assert "personal" in ids
         assert "enterprise" in ids
 
 
@@ -293,7 +325,7 @@ class TestWorkspaces:
         assert r.status_code == 200
         workspaces = r.json()
         assert len(workspaces) == 1
-        assert workspaces[0]["plan_id"] == "developer"
+        assert workspaces[0]["plan_id"] == "personal"
 
     def test_create_workspace(self, client):
         reg = client.post("/api/auth/register", json={
@@ -304,14 +336,14 @@ class TestWorkspaces:
             "name": "Discovery Lab",
             "slug": "discovery-lab",
             "ws_type": "team",
-            "plan_id": "studio",
+            "plan_id": "pro",
         }, headers={
             "Authorization": f"Bearer {token}",
         })
         assert r.status_code == 201
         data = r.json()
         assert data["name"] == "Discovery Lab"
-        assert data["plan_id"] == "studio"
+        assert data["plan_id"] == "pro"
 
 
 class TestApiKeys:
@@ -329,7 +361,7 @@ class TestApiKeys:
         )
         assert created.status_code == 201
         created_data = created.json()
-        assert created_data["key"].startswith("cl_")
+        assert created_data["key"].startswith("crowe_pat_")
         assert created_data["label"] == "dashboard"
 
         listed = client.get(
@@ -342,6 +374,59 @@ class TestApiKeys:
         assert data[0]["key_prefix"] == created_data["key_prefix"]
         assert data[0]["label"] == "dashboard"
         assert data[0]["scopes"] == ["chat", "vision"]
+
+    def test_pat_can_read_and_consume_workspace_credits(self, client, mock_db):
+        reg = client.post("/api/auth/register", json={
+            "email": "mike@crowelogic.com", "password": "pass123",
+        })
+        token = reg.json()["access_token"]
+        ws_id = mock_db.tables["workspaces"][0]["id"]
+
+        created = client.post(
+            f"/api/workspaces/{ws_id}/keys",
+            json={"label": "vscode", "scopes": ["chat"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        pat = created.json()["key"]
+        mock_db.tables["workspace_credits"].append(MockRecord(
+            workspace_id=ws_id, tier_key="personal",
+            balance=10, allocation=10, reset_at=None, active=True,
+        ))
+
+        status = client.get(
+            f"/api/workspaces/{ws_id}/credits",
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert status.status_code == 200
+        assert status.json()["balance"] == 10
+
+        consumed = client.post(
+            f"/api/workspaces/{ws_id}/credits/consume",
+            json={"amount": 3, "reason": "turn", "model_label": "CroweLM"},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert consumed.status_code == 200
+        assert consumed.json()["balance"] == 7
+
+    def test_pat_cannot_consume_another_workspace(self, client, mock_db):
+        reg = client.post("/api/auth/register", json={
+            "email": "mike@crowelogic.com", "password": "pass123",
+        })
+        token = reg.json()["access_token"]
+        ws_id = mock_db.tables["workspaces"][0]["id"]
+        created = client.post(
+            f"/api/workspaces/{ws_id}/keys",
+            json={"label": "vscode", "scopes": ["chat"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        pat = created.json()["key"]
+
+        denied = client.post(
+            "/api/workspaces/not-this-workspace/credits/consume",
+            json={"amount": 1},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert denied.status_code == 403
 
 
 class TestEntitlements:
@@ -359,9 +444,9 @@ class TestEntitlements:
         assert r.status_code == 200
         data = r.json()
         assert data["allowed"] is True
-        assert data["remaining"] == 500000
+        assert data["remaining"] == 750000
 
-    def test_ide_not_in_developer_plan(self, client, mock_db):
+    def test_ide_not_in_personal_plan(self, client, mock_db):
         reg = client.post("/api/auth/register", json={
             "email": "mike@crowelogic.com", "password": "pass123",
         })
@@ -399,3 +484,64 @@ class TestUsage:
         assert r.status_code == 200
         data = r.json()
         assert data["tokens"] == 1500
+
+
+class RecordingProvisionDatabase:
+    def __init__(self):
+        self.fetches = []
+        self.executes = []
+
+    async def fetchrow(self, query: str, *args):
+        self.fetches.append((query, args))
+        return None
+
+    async def fetch(self, query: str, *args):
+        self.fetches.append((query, args))
+        return []
+
+    async def execute(self, query: str, *args):
+        self.executes.append((query, args))
+
+
+class TestCheckoutProvisioning:
+    def test_checkout_provisions_launch_pat_and_subscription_without_workspace_customer_column(self):
+        from control_plane import _provision_from_checkout
+
+        db = RecordingProvisionDatabase()
+        asyncio.run(_provision_from_checkout(db, {
+            "id": "cs_test_launch",
+            "customer_email": "buyer@example.com",
+            "customer": "cus_123",
+            "subscription": "sub_123",
+            "metadata": {"tier_key": "studio"},
+        }))
+
+        workspace_writes = [
+            query
+            for query, _args in db.executes
+            if "workspaces" in query.lower()
+        ]
+        assert workspace_writes
+        assert all("stripe_customer_id" not in query for query in workspace_writes)
+
+        workspace_insert = next(
+            args for query, args in db.executes
+            if "insert into workspaces" in query.lower()
+        )
+        assert workspace_insert[2] == "pro"
+        assert workspace_insert[3] == "sub_123"
+
+        subscription_insert = [
+            args for query, args in db.executes
+            if "insert into subscriptions" in query.lower()
+        ]
+        assert subscription_insert
+        assert subscription_insert[0][2] == "pro"
+        assert subscription_insert[0][3] == "sub_123"
+
+        provision_insert = next(
+            args for query, args in db.executes
+            if "insert into checkout_provisions" in query.lower()
+        )
+        assert provision_insert[2] == "pro"
+        assert provision_insert[4].startswith("crowe_pat_")

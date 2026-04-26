@@ -74,6 +74,18 @@ def test_client_extracts_workspace_id_from_valid_key():
     assert client.workspace_id == "ws"
 
 
+def test_client_extracts_workspace_id_from_launch_pat():
+    client = FoundryAPIClient(api_key="crowe_pat_wsabc123_secretpart")
+    assert client.enabled is True
+    assert client.workspace_id == "wsabc123"
+
+
+def test_client_older_pat_without_workspace_segment_stays_disabled():
+    client = FoundryAPIClient(api_key="crowe_pat_0123456789abcdef")
+    assert client.enabled is False
+    assert client.workspace_id is None
+
+
 def test_client_without_workspace_segment_stays_disabled():
     client = FoundryAPIClient(api_key="not_a_valid_key_format")
     assert client.enabled is False

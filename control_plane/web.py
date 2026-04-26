@@ -35,6 +35,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Res
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .db import Database, get_db
+from .plans import canonical_plan_id, display_plan_name, is_self_serve_plan, stripe_price_id
+from .tokens import make_pat
 
 
 router = APIRouter(tags=["web"])
@@ -44,15 +46,6 @@ COOKIE_MAX_AGE = 60 * 60 * 24  # 24 hours, matches JWT_EXPIRY_HOURS in __init__.
 JWT_SECRET = os.environ.get("CROWE_JWT_SECRET", "dev-secret-change-me-in-prod")
 JWT_ALG = "HS256"
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
-
-PLAN_PRICE_MAP = {
-    "developer":        os.environ.get("STRIPE_PRICE_DEVELOPER", ""),
-    "developer_annual": os.environ.get("STRIPE_PRICE_DEVELOPER_ANNUAL", ""),
-    "studio":           os.environ.get("STRIPE_PRICE_STUDIO", ""),
-    "studio_annual":    os.environ.get("STRIPE_PRICE_STUDIO_ANNUAL", ""),
-    "lab":              os.environ.get("STRIPE_PRICE_LAB", ""),
-    "lab_annual":       os.environ.get("STRIPE_PRICE_LAB_ANNUAL", ""),
-}
 
 
 def _hash_password(password: str) -> str:
@@ -179,7 +172,9 @@ def _page(title: str, body: str, subtitle: str = "") -> str:
 # ─── Signup ──────────────────────────────────────────────────────────
 
 @router.get("/signup", response_class=HTMLResponse)
-async def signup_form(plan: str = Query("studio"), error: Optional[str] = None):
+async def signup_form(plan: str = Query("pro"), error: Optional[str] = None):
+    plan = canonical_plan_id(plan)
+    plan_label = display_plan_name(plan)
     err_html = f'<div class="err">{error}</div>' if error else ''
     body = f"""
 <p class="sub">Pick a plan first, pay after. We provision your workspace immediately so your extension can sign in as soon as payment clears.</p>
@@ -194,7 +189,7 @@ async def signup_form(plan: str = Query("studio"), error: Optional[str] = None):
   <button type="submit">Create account and continue</button>
   <p class="alt">Already have an account? <a href="/login?plan={plan}">Log in</a></p>
 </form>"""
-    return HTMLResponse(_page("Sign up", body, f"Create your <em>{plan.capitalize()}</em> account."))
+    return HTMLResponse(_page("Sign up", body, f"Create your <em>{plan_label}</em> account."))
 
 
 @router.post("/signup")
@@ -202,9 +197,10 @@ async def signup_submit(
     email: str = Form(...),
     password: str = Form(...),
     display_name: Optional[str] = Form(None),
-    plan: str = Query("studio"),
+    plan: str = Query("pro"),
     db: Database = Depends(get_db),
 ):
+    plan = canonical_plan_id(plan)
     existing = await db.fetchrow("SELECT id FROM users WHERE email = $1", email)
     if existing:
         return RedirectResponse(f"/signup?plan={plan}&error=Email+already+registered.+Try+logging+in.", status_code=303)
@@ -229,7 +225,7 @@ async def signup_submit(
     ws_id = secrets.token_hex(16)
     await db.execute(
         """INSERT INTO workspaces (id, org_id, name, slug, plan_id)
-           VALUES ($1, $2, 'Default', 'default', 'developer')""",
+           VALUES ($1, $2, 'Default', 'default', 'personal')""",
         ws_id, org_id,
     )
 
@@ -306,13 +302,13 @@ async def checkout(
     if not user:
         return RedirectResponse(f"/signup?plan={plan}", status_code=303)
 
-    if plan not in ("developer", "studio", "lab"):
+    plan = canonical_plan_id(plan)
+    if not is_self_serve_plan(plan):
         return RedirectResponse("/pricing?error=Unknown+plan", status_code=303)
 
-    key = plan if interval == "month" else f"{plan}_annual"
-    price_id = PLAN_PRICE_MAP.get(key)
+    price_id = stripe_price_id(plan, interval=interval)
     if not price_id:
-        raise HTTPException(status_code=503, detail=f"No Stripe price configured for {key}")
+        raise HTTPException(status_code=503, detail=f"No Stripe price configured for {plan}")
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Billing not configured on server")
 
@@ -346,9 +342,9 @@ async def billing_success(session_id: Optional[str] = None):
 <div class="ok">Payment confirmed. Your workspace is being upgraded now.</div>
 <p>What to do next:</p>
 <ol style="color:var(--parchment);padding-left:22px">
-  <li>Install the Crowe Logic extension in VS Code (search for <code style="color:var(--gold)">crowe-logic</code>).</li>
+  <li>Install the Crowe Logic extension in VS Code.</li>
   <li>Run <code style="color:var(--gold)">Crowe Logic: Sign In</code> from the command palette.</li>
-  <li>Paste your API token from <a href="/account">your account page</a>.</li>
+  <li>Paste your PAT from <a href="/account">your account page</a>.</li>
 </ol>
 {sid_note}
 <p class="alt"><a href="/account">Go to account</a> &middot; <a href="/pricing">Pricing</a></p>"""
@@ -378,7 +374,7 @@ async def account_page(request: Request, db: Database = Depends(get_db)):
             ws["id"],
         )
 
-    plan_label = (sub_row and sub_row["plan_id"]) or (ws and ws["plan_id"]) or "developer"
+    plan_label = display_plan_name((sub_row and sub_row["plan_id"]) or (ws and ws["plan_id"]) or "personal")
     status_label = (sub_row and sub_row["status"]) or "free"
     period_end = (sub_row and sub_row.get("current_period_end")) or ""
 
@@ -465,9 +461,7 @@ async def account_create_token(
     if not ws:
         raise HTTPException(status_code=404, detail="No workspace")
 
-    raw_key = f"crowe_pat_{secrets.token_hex(24)}"
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    key_prefix = raw_key[:14]
+    raw_key, key_prefix, key_hash = make_pat(ws["id"])
     key_id = secrets.token_hex(16)
 
     await db.execute(
