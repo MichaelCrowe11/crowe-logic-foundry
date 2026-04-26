@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 160" fill="none">
+  <title>Crowe Logic</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8c089"/>
+      <stop offset="1" stop-color="#9c8451"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(20 20)" stroke="url(#g)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M60 0 L120 60 L60 120 L0 60 Z"/>
+    <circle cx="60" cy="60" r="5" fill="url(#g)" stroke="none"/>
+  </g>
+  <text x="170" y="105" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="500" font-size="62" letter-spacing="2" fill="#bfa669">Crowe Logic</text>
+</svg>

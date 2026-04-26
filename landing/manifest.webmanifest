@@ -1,0 +1,30 @@
+{
+  "name": "Crowe Logic Foundry",
+  "short_name": "Foundry",
+  "description": "Multi-model AI CLI for operators. Dual-model concurrent reasoning with synthesis. Sandboxed shell. Built by Crowe Logic, Inc.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0c0c0c",
+  "theme_color": "#bfa669",
+  "icons": [
+    {
+      "src": "/brand/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/brand/avatar.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

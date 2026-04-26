@@ -1,0 +1,31 @@
+/*
+  PROPOSAL — Studio dashboard palette unified with the Crowe Logic brand.
+
+  Drop the contents of :root below into dashboard/static/studio.html
+  (replacing the existing :root block at the top of <style>) to flip
+  the dashboard from its current cyan/purple accent to the brand's gold.
+
+  Design tradeoff:
+    KEEP cyan/purple — signals "internal control surface" distinct from
+                       customer-facing marketing (Stripe Dashboard model).
+    SWITCH to gold   — single visual identity across landing, IDE, chat,
+                       and ops dashboard. Reads as one product family.
+
+  This file is a STUB. It is not loaded by studio.html — it exists so you
+  can preview the swap without committing to it. Delete this file once
+  the decision is made.
+*/
+
+:root {
+  --bg:      #0c0c0c;            /* matches landing --ink */
+  --panel:   #141414;            /* matches landing --card */
+  --panel2:  #1a1a1a;            /* one notch lighter for nested cards */
+  --line:    #2a2a2a;            /* matches landing --card-line */
+  --fg:      #f5f3ee;            /* matches landing --paper */
+  --muted:   #8a7850;            /* matches landing --gold-dim */
+  --accent:  #bfa669;            /* primary brand gold */
+  --accent2: #d4be84;            /* gold-hi for hover/highlight states */
+  --danger:  #bf6f6f;            /* tone-mapped to brand warmth */
+  --ok:      #6fbf73;            /* matches landing --ok */
+  --warn:    #d4a645;            /* warm yellow that lives in the gold family */
+}
