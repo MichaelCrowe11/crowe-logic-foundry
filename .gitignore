@@ -27,6 +27,9 @@ data/
 # Studio runtime data (camera captures, shoot manifests)
 studio_data/
 
+# Local Postgres dumps captured before destructive migrations
+backups/
+
 # Studio training corpus data (frames, videos, models, manifests — 5.9G).
 # Source scripts under training/{shot_selector,youtube_corpus}/*.py are tracked.
 training/youtube_corpus/sw-mushrooms/
