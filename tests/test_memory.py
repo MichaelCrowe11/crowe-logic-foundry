@@ -3,6 +3,7 @@
 import os
 import tempfile
 import pytest
+import crowe_synapse_engine.memory as memory_module
 from crowe_synapse_engine.memory import MemoryStore, _is_sqlite_compatible
 
 
@@ -109,6 +110,19 @@ class TestMigration:
         tables = store._get_tables()
         expected = {"sessions", "pipeline_runs", "tool_executions", "agent_delegations", "project_knowledge", "checkpoints"}
         assert expected.issubset(set(tables))
+
+    def test_bootstraps_when_migration_assets_are_missing(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "missing-assets.db"
+        missing_dir = tmp_path / "does-not-exist"
+        monkeypatch.setattr(memory_module, "_MIGRATIONS_DIR", str(missing_dir))
+
+        store = MemoryStore(db_path=str(db_path))
+        try:
+            tables = store._get_tables()
+            expected = {"sessions", "pipeline_runs", "tool_executions", "agent_delegations", "project_knowledge", "checkpoints"}
+            assert expected.issubset(set(tables))
+        finally:
+            store.close()
 
     def test_sqlite_compatibility_guard_skips_postgres_migrations(self):
         repo_root = os.path.dirname(os.path.dirname(__file__))

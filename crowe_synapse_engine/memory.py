@@ -27,6 +27,72 @@ _SQLITE_INCOMPATIBLE_PATTERNS = (
     re.compile(r"::[A-Za-z_][A-Za-z0-9_]*"),
     re.compile(r"\bvector\s*\(", re.IGNORECASE),
 )
+_CORE_TABLES = {
+    "sessions",
+    "pipeline_runs",
+    "tool_executions",
+    "agent_delegations",
+    "project_knowledge",
+    "checkpoints",
+}
+_CORE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP,
+    summary TEXT,
+    project_context TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id),
+    pipeline_name TEXT NOT NULL,
+    steps TEXT NOT NULL,
+    status TEXT DEFAULT 'running',
+    duration_ms INTEGER,
+    result TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tool_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT REFERENCES sessions(id),
+    pipeline_run_id TEXT REFERENCES pipeline_runs(id),
+    tool_name TEXT NOT NULL,
+    arguments TEXT,
+    output TEXT,
+    duration_ms INTEGER,
+    status TEXT DEFAULT 'success',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_delegations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT REFERENCES sessions(id),
+    agent_name TEXT NOT NULL,
+    task TEXT NOT NULL,
+    result TEXT,
+    duration_ms INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS project_knowledge (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    source TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_run_id TEXT REFERENCES pipeline_runs(id),
+    step_index INTEGER NOT NULL,
+    state_snapshot TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
 
 
 class _LockedCursor:
@@ -146,18 +212,27 @@ class MemoryStore:
     def _run_migrations(self):
         self.conn.execute("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP)")
         applied = {row[0] for row in self.conn.execute("SELECT name FROM _migrations").fetchall()}
-        if not os.path.isdir(_MIGRATIONS_DIR):
-            return
-        for filename in sorted(os.listdir(_MIGRATIONS_DIR)):
-            if filename.endswith(".sql") and filename not in applied:
-                path = os.path.join(_MIGRATIONS_DIR, filename)
-                with open(path) as f:
-                    sql = f.read()
-                if not _is_sqlite_compatible(sql):
+        if os.path.isdir(_MIGRATIONS_DIR):
+            for filename in sorted(os.listdir(_MIGRATIONS_DIR)):
+                if filename.endswith(".down.sql"):
                     continue
-                self.conn.executescript(sql)
-                self.conn.execute("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", (filename, _now()))
-                self.conn.commit()
+                if filename.endswith(".sql") and filename not in applied:
+                    path = os.path.join(_MIGRATIONS_DIR, filename)
+                    with open(path) as f:
+                        sql = f.read()
+                    if not _is_sqlite_compatible(sql):
+                        continue
+                    self.conn.executescript(sql)
+                    self.conn.execute("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", (filename, _now()))
+                    self.conn.commit()
+        self._ensure_core_schema()
+
+    def _ensure_core_schema(self):
+        """Guarantee the portable Synapse schema even in slim packages."""
+        if _CORE_TABLES.issubset(set(self._get_tables())):
+            return
+        self.conn.executescript(_CORE_SCHEMA)
+        self.conn.commit()
 
     def _get_tables(self) -> list[str]:
         rows = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
