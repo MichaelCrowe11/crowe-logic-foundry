@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Crowe Logic Foundry">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E9C872"/>
+      <stop offset="0.45" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#9A7A23"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="0.25" cy="0.25" r="0.9">
+      <stop offset="0" stop-color="#bfa669" stop-opacity="0.08"/>
+      <stop offset="0.6" stop-color="#bfa669" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="discSheen" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grain" width="16" height="16" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.7" fill="#bfa669" fill-opacity="0.06"/>
+    </pattern>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1200" height="630" fill="#0c0c0c"/>
+  <rect width="1200" height="630" fill="url(#grain)"/>
+  <rect width="1200" height="630" fill="url(#vignette)"/>
+
+  <!-- Hairline frame -->
+  <rect x="32" y="32" width="1136" height="566" fill="none" stroke="#bfa669" stroke-opacity="0.18" stroke-width="1"/>
+
+  <!-- Eyebrow -->
+  <text x="100" y="130" font-family="Georgia, serif" font-size="18" letter-spacing="5" fill="#bfa669" font-weight="600">CROWE LOGIC, INC.</text>
+
+  <!-- Avatar disc + mark on the left -->
+  <g transform="translate(240 360)">
+    <circle r="130" fill="#0E1014"/>
+    <circle r="125" fill="none" stroke="url(#gold)" stroke-opacity="0.4" stroke-width="1.25"/>
+    <circle r="130" fill="url(#discSheen)"/>
+    <g transform="scale(8.5) translate(-12 -12)" stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M17.25 6.25A7.75 7.75 0 1 0 17.25 17.75" stroke-width="2.25"/>
+      <path d="M10.75 9.25 14 12 10.75 14.75" stroke-width="1.85"/>
+    </g>
+  </g>
+
+  <!-- Wordmark area on the right -->
+  <text x="420" y="320" font-family="Georgia, 'Cambria', serif" font-size="92" font-weight="600" fill="#f5f3ee" letter-spacing="-1.5">Crowe Logic</text>
+  <text x="420" y="412" font-family="Georgia, 'Cambria', serif" font-size="92" font-weight="600" fill="url(#gold)" letter-spacing="-1.5">Foundry</text>
+
+  <!-- Tagline -->
+  <text x="420" y="468" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="20" fill="#8a7850" letter-spacing="0.5">Multi-model AI CLI · dual concurrent · sandboxed</text>
+
+  <!-- Bottom-right hint -->
+  <text x="1100" y="565" text-anchor="end" font-family="Georgia, serif" font-size="17" fill="#bfa669" letter-spacing="3">crowelogic.com</text>
+</svg>

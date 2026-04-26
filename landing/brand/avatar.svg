@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Crowe Logic">
+  <!-- Premium-positioned chat avatar.
+       Flat disc backplate + tone-mapped gold mark. Designed as one asset
+       that reads well on both light and dark chat backgrounds via a warm
+       outer disc and a luminous mark. The two theme-specific PNGs are
+       rendered from a copy of this file with the disc fill swapped. -->
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E9C872"/>
+      <stop offset="0.45" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#9A7A23"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.2"/>
+      <feOffset dx="0" dy="1" result="off"/>
+      <feComponentTransfer in="off" result="soft">
+        <feFuncA type="linear" slope="0.35"/>
+      </feComponentTransfer>
+      <feComposite in="soft" in2="SourceGraphic" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Disc: deep graphite for contrast against both themes. -->
+  <circle cx="128" cy="128" r="124" fill="#0E1014"/>
+  <!-- Inner hairline ring for a "pressed coin" edge. -->
+  <circle cx="128" cy="128" r="120" fill="none" stroke="url(#gold)" stroke-opacity="0.35" stroke-width="1"/>
+  <!-- Specular sheen catches a soft highlight. -->
+  <circle cx="128" cy="128" r="124" fill="url(#sheen)"/>
+
+  <!-- Mark, centered and proportioned on a 24-unit sub-grid, scaled 8x.
+       Geometry matches mark.svg so the activity-bar icon and the avatar
+       read as the same identity. Stroke width tuned for 256 px output. -->
+  <g transform="translate(128 128) scale(8) translate(-12 -12)" filter="url(#soft)">
+    <path d="M17.25 6.25A7.75 7.75 0 1 0 17.25 17.75"
+          fill="none" stroke="url(#gold)" stroke-width="2.25"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10.75 9.25 14 12 10.75 14.75"
+          fill="none" stroke="url(#gold)" stroke-width="1.85"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -14,30 +14,38 @@
   ],
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestArgs": ["tests"],
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
   "python.envFile": "${workspaceFolder}/.env",
-
   "editor.formatOnSave": true,
   "editor.codeActionsOnSave": {
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit"
   },
-  "editor.rulers": [100],
+  "editor.rulers": [
+    100
+  ],
   "editor.tabSize": 4,
-
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.tabSize": 4
   },
-  "[json]": { "editor.tabSize": 2 },
-  "[jsonc]": { "editor.tabSize": 2 },
-  "[yaml]": { "editor.tabSize": 2 },
-  "[toml]": { "editor.tabSize": 2 },
-
+  "[json]": {
+    "editor.tabSize": 2
+  },
+  "[jsonc]": {
+    "editor.tabSize": 2
+  },
+  "[yaml]": {
+    "editor.tabSize": 2
+  },
+  "[toml]": {
+    "editor.tabSize": 2
+  },
   "ruff.enable": true,
   "ruff.lint.enable": true,
   "ruff.organizeImports": true,
-
   "files.exclude": {
     "**/__pycache__": true,
     "**/.pytest_cache": true,
@@ -54,18 +62,17 @@
     "**/.chat_history": true,
     "**/__pycache__": true
   },
-
   "terminal.integrated.env.osx": {
     "PYTHONPATH": "${workspaceFolder}"
   },
   "terminal.integrated.env.linux": {
     "PYTHONPATH": "${workspaceFolder}"
   },
-
   "github.copilot.enable": {
     "*": true,
     "plaintext": true,
     "markdown": true,
     "yaml": true
-  }
+  },
+  "croweLogic.model": "CroweLM Titan"
 }

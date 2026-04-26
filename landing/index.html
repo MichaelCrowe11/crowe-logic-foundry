@@ -5,11 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Crowe Logic Foundry · Multi-Model AI CLI for Operators</title>
   <meta name="description" content="The multi-model agent CLI for operators. Run two flagship models concurrently, synthesize their output, execute tools in a sandboxed shell. Built by Crowe Logic, Inc." />
-  <meta property="og:title" content="Crowe Logic Foundry" />
-  <meta property="og:description" content="Multi-model AI CLI. Dual-model concurrent reasoning with synthesis. Sandboxed shell. Seven provider chain." />
+
+  <!-- Open Graph / Facebook / LinkedIn / Slack / Discord -->
   <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Crowe Logic Foundry" />
+  <meta property="og:title" content="Crowe Logic Foundry · Multi-Model AI CLI" />
+  <meta property="og:description" content="Two flagship models, one prompt, one synthesized answer. Dual-model concurrent reasoning with synthesis layer and sandboxed shell." />
+  <meta property="og:url" content="https://crowelogic.com/" />
+  <meta property="og:image" content="https://crowelogic.com/brand/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Crowe Logic Foundry — multi-model AI CLI" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Crowe Logic Foundry" />
+  <meta name="twitter:description" content="Two flagship models, one prompt, one synthesized answer. Built by Crowe Logic, Inc." />
+  <meta name="twitter:image" content="https://crowelogic.com/brand/og-image.png" />
+
+  <!-- Theme -->
   <meta name="theme-color" content="#bfa669" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23bfa669'/><text x='50' y='68' font-size='56' text-anchor='middle' fill='%23141414' font-family='Georgia' font-weight='700'>C</text></svg>" />
+  <meta name="color-scheme" content="dark" />
+
+  <!-- Icons (modern browsers prefer SVG; PNG fallbacks for legacy) -->
+  <link rel="icon" type="image/svg+xml" href="/brand/avatar.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/brand/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
+  <link rel="shortcut icon" href="/brand/favicon.ico" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="canonical" href="https://crowelogic.com/" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -31,62 +56,118 @@
     }
   </script>
   <style>
+    /* ── Brand tokens ──────────────────────────────────────────────
+       Single source of truth for the Crowe Logic palette. Tailwind
+       config above mirrors these names so utility classes (text-gold,
+       bg-gold) and raw CSS stay in lockstep. */
+    :root {
+      --gold:       #bfa669;
+      --gold-hi:    #d4be84;
+      --gold-dim:   #8a7850;
+      --ink:        #0c0c0c;
+      --paper:      #f5f3ee;
+      --ash:        #1a1a1a;
+      --card:       #141414;
+      --card-line:  #2a2a2a;
+      --code-bg:    #0a0a0a;
+      --code-line:  #1f1f1f;
+      --ok:         #6fbf73;
+      --disc:       #0E1014;
+    }
+
     html { scroll-behavior: smooth; }
-    body { background: #0c0c0c; color: #f5f3ee; }
+    body { background: var(--ink); color: var(--paper); }
     .brand-serif { font-family: Georgia, Cambria, serif; letter-spacing: -0.01em; }
     .grain {
-      background-image: radial-gradient(#bfa66910 1px, transparent 1px);
+      background-image: radial-gradient(rgb(191 166 105 / 0.06) 1px, transparent 1px);
       background-size: 16px 16px;
     }
-    .dot::before { content: "·"; margin: 0 .6em; color: #bfa669; opacity: .7; }
-    .card { background: #141414; border: 1px solid #2a2a2a; }
-    .card:hover { border-color: #bfa669; transition: border-color .2s; }
+    .dot::before { content: "·"; margin: 0 .6em; color: var(--gold); opacity: .7; }
+
+    /* Brand lockup: small avatar disc with gold mark.
+       Matches the chat avatar identity at favicon scale. */
+    .brand-mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--disc); border-radius: 9999px;
+      box-shadow: inset 0 0 0 1px rgb(191 166 105 / 0.35);
+      flex-shrink: 0;
+    }
+    .brand-mark svg { width: 60%; height: 60%; }
+
+    .card { background: var(--card); border: 1px solid var(--card-line); }
+    .card:hover { border-color: var(--gold); transition: border-color .2s; }
     .cta-primary {
-      background: #bfa669; color: #0c0c0c;
+      background: var(--gold); color: var(--ink);
       padding: .85rem 1.5rem; font-weight: 600; letter-spacing: .02em;
       border-radius: 2px; display: inline-block;
+      transition: background .15s ease;
     }
-    .cta-primary:hover { background: #d4be84; }
+    .cta-primary:hover { background: var(--gold-hi); }
     .cta-ghost {
-      border: 1px solid #bfa669; color: #bfa669;
+      border: 1px solid var(--gold); color: var(--gold);
       padding: .85rem 1.5rem; font-weight: 500; letter-spacing: .02em;
       border-radius: 2px; display: inline-block;
+      transition: background .15s ease;
     }
-    .cta-ghost:hover { background: #bfa66915; }
+    .cta-ghost:hover { background: rgb(191 166 105 / 0.08); }
     .code {
-      background: #0a0a0a; border: 1px solid #1f1f1f;
+      background: var(--code-bg); border: 1px solid var(--code-line);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: .85rem; color: #bfa669;
+      font-size: .85rem; color: var(--gold);
       padding: .5rem .75rem; border-radius: 2px;
     }
-    .tier { border: 1px solid #2a2a2a; background: #141414; }
-    .tier-featured { border-color: #bfa669; background: #151310; position: relative; }
+    .tier { border: 1px solid var(--card-line); background: var(--card); }
+    .tier-featured { border-color: var(--gold); background: #151310; position: relative; }
     .tier-featured::before {
       content: "Recommended"; position: absolute; top: -10px; right: 20px;
-      background: #bfa669; color: #0c0c0c; font-size: .7rem; font-weight: 700;
+      background: var(--gold); color: var(--ink); font-size: .7rem; font-weight: 700;
       padding: 3px 10px; letter-spacing: .08em; text-transform: uppercase;
     }
     .hero-demo {
-      background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 4px;
+      background: var(--code-bg); border: 1px solid var(--card-line); border-radius: 4px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: .82rem; line-height: 1.6;
     }
-    .prompt { color: #bfa669; }
-    .muted { color: #8a7850; }
-    .ok { color: #6fbf73; }
+    .prompt { color: var(--gold); }
+    .muted { color: var(--gold-dim); }
+    .ok { color: var(--ok); }
     details summary { cursor: pointer; list-style: none; }
     details summary::-webkit-details-marker { display: none; }
     details[open] summary .chev { transform: rotate(90deg); }
     .chev { transition: transform .2s; }
+
+    /* Reduce motion for accessibility */
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .chev, .card, .cta-primary, .cta-ghost { transition: none; }
+    }
   </style>
 </head>
 <body class="min-h-screen grain">
 
+<!-- ── Brand mark sprite (defined once, referenced via <use>) ── -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="cl-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E9C872"/>
+      <stop offset="0.45" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#9A7A23"/>
+    </linearGradient>
+    <symbol id="cl-mark" viewBox="0 0 24 24" fill="none"
+            stroke="url(#cl-gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17.25 6.25A7.75 7.75 0 1 0 17.25 17.75"/>
+      <path d="M10.75 9.25 14 12 10.75 14.75" stroke-width="1.7"/>
+    </symbol>
+  </defs>
+</svg>
+
 <!-- ── NAV ── -->
 <nav class="border-b border-gold/10">
   <div class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-    <a href="#" class="flex items-center gap-3">
-      <span class="w-8 h-8 rounded-full bg-gold text-ink flex items-center justify-center brand-serif font-bold">C</span>
+    <a href="#" class="flex items-center gap-3" aria-label="Crowe Logic Foundry home">
+      <span class="brand-mark w-9 h-9" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><use href="#cl-mark"/></svg>
+      </span>
       <span class="brand-serif text-xl">Crowe Logic Foundry</span>
     </a>
     <div class="hidden md:flex items-center gap-8 text-sm">
@@ -521,7 +602,9 @@
   <div class="max-w-6xl mx-auto px-6 py-12 grid md:grid-cols-4 gap-10 text-sm">
     <div>
       <div class="flex items-center gap-3 mb-4">
-        <span class="w-7 h-7 rounded-full bg-gold text-ink flex items-center justify-center brand-serif font-bold text-sm">C</span>
+        <span class="brand-mark w-7 h-7" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><use href="#cl-mark"/></svg>
+        </span>
         <span class="brand-serif">Crowe Logic Foundry</span>
       </div>
       <p class="text-paper/60">The multi-model agent CLI for operators. Built by Crowe Logic, Inc. in Phoenix, AZ.</p>
