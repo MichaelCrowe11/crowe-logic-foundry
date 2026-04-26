@@ -76,6 +76,18 @@ RUN chmod +x /usr/local/bin/apply-product-overrides.sh \
  && OVERRIDES=/tmp/product-overrides.json apply-product-overrides.sh \
  && rm /tmp/product-overrides.json
 
+# Brand assets — copy Crowe Logic icons over code-server's defaults so the
+# browser tab/PWA install/icons all show our mark instead of vanilla VS
+# Code. The /lib/vscode/resources/server/ path is where code-server reads
+# the favicon and PWA manifest icons from at boot. We also expose the full
+# brand pack at /static/brand/* so the product-overrides "icons" URLs
+# resolve relative to the same origin.
+COPY static/brand /static/brand
+RUN cp /static/brand/favicon.ico /usr/lib/code-server/lib/vscode/resources/server/favicon.ico 2>/dev/null || true \
+ && cp /static/brand/favicon-32.png /usr/lib/code-server/lib/vscode/resources/server/code-server.png 2>/dev/null || true \
+ && cp /static/brand/icon-192.png /usr/lib/code-server/lib/vscode/resources/server/code-server-pwa-192.png 2>/dev/null || true \
+ && cp /static/brand/icon-512.png /usr/lib/code-server/lib/vscode/resources/server/code-server-pwa-512.png 2>/dev/null || true
+
 # Default VS Code settings (must be in place before code-server boots,
 # but ownership is set above so coder owns the parent dir).
 COPY --chown=coder:coder settings.json /home/coder/.local/share/code-server/User/settings.json
