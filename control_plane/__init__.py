@@ -15,6 +15,8 @@ from typing import Optional
 import jwt
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path as _Path
 from pydantic import BaseModel, EmailStr
 
 from .db import get_db, Database
@@ -61,6 +63,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_BRAND_DIR = _Path(__file__).resolve().parent.parent / "landing" / "brand"
+if _BRAND_DIR.is_dir():
+    app.mount("/brand", StaticFiles(directory=str(_BRAND_DIR)), name="brand")
 
 
 # ─── Models ──────────────────────────────────────────────────────────
@@ -284,6 +290,13 @@ _PRICING_HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Crowe Logic Code — Pricing</title>
+<link rel="icon" type="image/x-icon" href="/brand/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta property="og:title" content="Crowe Logic Code">
+<meta property="og:description" content="A premium IDE built on the Crowe Logic agent stack.">
+<meta property="og:image" content="/brand/og-image.png">
+<meta property="og:type" content="website">
 <style>
   :root {
     --gold: #bfa669; --gold-high: #d8c089; --gold-deep: #9c8451;
@@ -368,9 +381,12 @@ _PRICING_HTML = """<!doctype html>
 </head>
 <body>
   <header>
+    <a href="/" class="brand-link" aria-label="Crowe Logic home">
+      <img src="/brand/wordmark.svg" alt="Crowe Logic" height="36" style="display:block;margin:0 0 28px">
+    </a>
     <p class="eyebrow">Crowe Logic Code</p>
     <h1>A premium IDE for developers who <em>build with intent</em>.</h1>
-    <p>Crowe Logic Code is a branded VS Code plus a hosted remote IDE, powered end-to-end by the Crowe Logic Foundry agent stack. 27 routed CroweLM models, domain-tuned for mycology, vision, research, and compound design.</p>
+    <p>Crowe Logic Code is a premium IDE built on the Crowe Logic agent stack: 27 routed CroweLM models, domain-tuned for mycology, vision, research, and compound design.</p>
   </header>
   <section class="grid" id="plans"><div class="loading">Loading plans...</div></section>
   <footer>

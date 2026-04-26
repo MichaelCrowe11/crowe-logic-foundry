@@ -115,6 +115,9 @@ def _page(title: str, body: str, subtitle: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} — Crowe Logic Code</title>
+<link rel="icon" type="image/x-icon" href="/brand/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
 <style>
   :root {{
     --gold:#bfa669;--gold-high:#d8c089;--gold-deep:#9c8451;
@@ -128,7 +131,8 @@ def _page(title: str, body: str, subtitle: str = "") -> str:
   a{{color:var(--gold);text-decoration:none}}
   a:hover{{color:var(--gold-high)}}
   nav{{max-width:1100px;width:100%;margin:0 auto;padding:20px 24px;display:flex;justify-content:space-between;align-items:center}}
-  nav .brand{{color:var(--parchment);font-weight:600;letter-spacing:-0.01em}}
+  nav .brand{{display:inline-flex;align-items:center;gap:10px;color:var(--parchment);font-weight:600;letter-spacing:-0.01em}}
+  nav .brand img{{height:24px;width:auto;display:block}}
   nav .brand b{{color:var(--gold)}}
   main{{flex:1;max-width:460px;width:100%;margin:40px auto;padding:0 24px}}
   h1{{font:600 28px/1.2 "SF Pro Display",sans-serif;color:var(--parchment);margin:0 0 6px;letter-spacing:-0.015em}}
@@ -159,7 +163,7 @@ def _page(title: str, body: str, subtitle: str = "") -> str:
     text-transform:uppercase;color:var(--gold);margin:0 0 10px}}
 </style></head>
 <body>
-<nav><span class="brand">Crowe Logic <b>Code</b></span><span><a href="/pricing">Pricing</a></span></nav>
+<nav><a href="/" class="brand" aria-label="Crowe Logic home"><img src="/brand/wordmark.svg" alt="Crowe Logic"><span>Code</span></a><span><a href="/pricing">Pricing</a></span></nav>
 <main>
   <p class="eyebrow">{title}</p>
   <h1>{subtitle or title}</h1>
