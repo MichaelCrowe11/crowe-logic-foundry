@@ -1,8 +1,8 @@
 {
   "name": "crowe-logic",
-  "displayName": "Crowe Logic",
-  "description": "Crowe Logic Foundry agent, chat, plans, and tool execution inside the IDE.",
-  "version": "0.2.12",
+  "displayName": "Crowe Logic Workstation",
+  "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
+  "version": "0.2.13",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -304,8 +304,8 @@
     "walkthroughs": [
       {
         "id": "crowe-logic.welcome",
-        "title": "Welcome to Crowe Logic",
-        "description": "Get started with the Crowe Logic Foundry agent.",
+        "title": "Welcome to Crowe Logic Workstation",
+        "description": "Get started with the Crowe Logic Workstation: Foundry agent, chat, plans, and tools.",
         "steps": [
           {
             "id": "open-chat",

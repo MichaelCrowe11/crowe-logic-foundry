@@ -1,9 +1,19 @@
 {
   "nameShort": "Crowe Logic",
-  "nameLong": "Crowe Logic IDE",
-  "applicationName": "crowe-logic",
+  "nameLong": "Crowe Logic Workstation",
+  "applicationName": "crowe-logic-workstation",
   "dataFolderName": ".crowe-logic",
   "win32MutexName": "crowelogic",
+  "reportIssueUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/issues",
+  "documentationUrl": "https://ide.southwestmushrooms.com/docs",
+  "icons": {
+    "application": {
+      "favicon": "/static/brand/favicon.ico",
+      "icon-32": "/static/brand/favicon-32.png",
+      "icon-192": "/static/brand/icon-192.png",
+      "icon-512": "/static/brand/icon-512.png"
+    }
+  },
   "defaultChatAgent": {
     "extensionId": "crowe-logic.crowe-logic",
     "chatExtensionId": "crowe-logic.crowe-logic",

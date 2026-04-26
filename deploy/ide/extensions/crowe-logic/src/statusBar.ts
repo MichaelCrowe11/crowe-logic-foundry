@@ -19,15 +19,27 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
 
     const refresh = async () => {
         const token = await getApiToken(ctx);
+        const cfg = vscode.workspace.getConfiguration('croweLogic');
+        const model = cfg.get<string>('model') || 'auto';
+        const modelLabel = formatModelLabel(model);
         if (token) {
-            item.text = '$(sparkle) Crowe';
-            item.tooltip = 'Crowe Logic — signed in. Click for actions.';
+            // CLI parity: "MODEL · session" reads like the boxed CLI session header.
+            item.text = `$(sparkle) Crowe Logic · ${modelLabel}`;
+            item.tooltip = `Crowe Logic Workstation\nModel: ${modelLabel}\nSigned in. Click for actions.`;
         } else {
-            item.text = '$(account) Crowe: sign in';
-            item.tooltip = 'Crowe Logic — not signed in. Click to sign in.';
+            item.text = '$(account) Crowe Logic · sign in';
+            item.tooltip = 'Crowe Logic Workstation — not signed in. Click to sign in.';
         }
         item.show();
     };
+
+    // Re-render when the user changes the active model from the chat picker
+    // or settings UI so the status bar always reflects what they'll talk to.
+    ctx.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('croweLogic.model')) void refresh();
+        }),
+    );
 
     ctx.subscriptions.push(
         item,
@@ -44,7 +56,7 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
                     : { id: 'signIn', label: '$(sign-in) Sign in with API token' },
             ];
             const pick = await vscode.window.showQuickPick(items, {
-                title: 'Crowe Logic',
+                title: 'Crowe Logic Workstation',
                 placeHolder: signedIn ? 'Signed in' : 'Not signed in',
             });
             if (!pick) return;
@@ -66,4 +78,22 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
     );
 
     await refresh();
+}
+
+/**
+ * Map an internal model id ("CroweLM Talon", "gpt-5.4-pro-managed", "auto")
+ * to a short display label suitable for a status bar entry.
+ */
+function formatModelLabel(model: string): string {
+    if (!model || model === 'auto') return 'auto';
+    // Drop "CroweLM " prefix; "CroweLM Talon" → "Talon".
+    if (model.startsWith('CroweLM ')) return model.slice('CroweLM '.length);
+    // Map common backend names to short forms.
+    if (model.includes('gpt-5.4-pro')) return 'gpt-5.4 pro';
+    if (model.includes('gpt-5.4')) return 'gpt-5.4';
+    if (model.includes('gpt-4o')) return 'gpt-4o';
+    if (model.includes('claude')) return 'claude';
+    if (model.includes('kimi')) return 'kimi';
+    if (model.includes('deepseek')) return 'deepseek';
+    return model;
 }
