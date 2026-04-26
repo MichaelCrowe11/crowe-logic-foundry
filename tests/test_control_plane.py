@@ -429,6 +429,118 @@ class TestApiKeys:
         assert denied.status_code == 403
 
 
+class TestResearchEndpoint:
+    def _setup_pat_with_credits(self, client, mock_db, balance=100):
+        reg = client.post("/api/auth/register", json={
+            "email": "mike@crowelogic.com", "password": "pass123",
+        })
+        token = reg.json()["access_token"]
+        ws_id = mock_db.tables["workspaces"][0]["id"]
+        created = client.post(
+            f"/api/workspaces/{ws_id}/keys",
+            json={"label": "research", "scopes": ["research"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        pat = created.json()["key"]
+        mock_db.tables["workspace_credits"].append(MockRecord(
+            workspace_id=ws_id, tier_key="personal",
+            balance=balance, allocation=balance, reset_at=None, active=True,
+        ))
+        return ws_id, pat
+
+    def test_research_debits_credits_and_returns_report(self, client, mock_db, monkeypatch):
+        from datetime import datetime, timezone
+        from control_plane._research_engine.models import (
+            Report, Source, SourceTier, Usage, StageUsage,
+        )
+
+        async def fake_research(question, *, depth="normal", budget_usd=None):
+            return Report(
+                question=question,
+                body_markdown="# Answer\nMinimum wage in 2023 was $7.25/hr federal.",
+                sources=[Source(
+                    id="s1", url="https://dol.gov/x", title="DOL",
+                    accessed_at=datetime.now(timezone.utc), tier=SourceTier.PRIMARY,
+                )],
+                contradictions=[],
+                confidence_gaps=[],
+                usage=Usage(
+                    stages=[StageUsage(
+                        stage="decompose", model="claude-sonnet-4-6",
+                        input_tokens=100, output_tokens=50,
+                        cache_read_tokens=0, cache_creation_tokens=0,
+                        cost_usd=0.001, duration_seconds=0.5,
+                    )],
+                    total_cost_usd=0.001, total_duration_seconds=0.5,
+                ),
+            )
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-fake")
+        monkeypatch.setattr("control_plane._research_engine.research", fake_research)
+
+        ws_id, pat = self._setup_pat_with_credits(client, mock_db, balance=100)
+
+        r = client.post(
+            "/api/research",
+            json={"workspace_id": ws_id, "question": "What was the federal min wage in 2023?", "depth": "quick"},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["depth"] == "quick"
+        assert data["credits_consumed"] == 5
+        assert data["balance_remaining"] == 95
+        assert data["report"]["body_markdown"].startswith("# Answer")
+        assert len(data["report"]["sources"]) == 1
+
+    def test_research_rejects_insufficient_credits(self, client, mock_db, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-fake")
+        ws_id, pat = self._setup_pat_with_credits(client, mock_db, balance=2)
+        r = client.post(
+            "/api/research",
+            json={"workspace_id": ws_id, "question": "x?", "depth": "quick"},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert r.status_code == 402
+        assert "Insufficient credits" in r.json()["detail"]
+
+    def test_research_503_when_key_unset_does_not_debit(self, client, mock_db, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        ws_id, pat = self._setup_pat_with_credits(client, mock_db, balance=100)
+        r = client.post(
+            "/api/research",
+            json={"workspace_id": ws_id, "question": "x?", "depth": "quick"},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert r.status_code == 503
+        # Balance unchanged: 503 must not charge.
+        bal = client.get(
+            f"/api/workspaces/{ws_id}/credits",
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert bal.json()["balance"] == 100
+
+    def test_research_rejects_unknown_depth(self, client, mock_db, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-fake")
+        ws_id, pat = self._setup_pat_with_credits(client, mock_db, balance=100)
+        r = client.post(
+            "/api/research",
+            json={"workspace_id": ws_id, "question": "x?", "depth": "encyclopedia"},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert r.status_code == 400
+
+    def test_research_rejects_cross_workspace_pat(self, client, mock_db, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-fake")
+        _ws_id, pat = self._setup_pat_with_credits(client, mock_db, balance=100)
+        r = client.post(
+            "/api/research",
+            json={"workspace_id": "some-other-ws", "question": "x?", "depth": "quick"},
+            headers={"Authorization": f"Bearer {pat}"},
+        )
+        assert r.status_code == 403
+
+
 class TestEntitlements:
     def test_token_entitlement(self, client, mock_db):
         reg = client.post("/api/auth/register", json={

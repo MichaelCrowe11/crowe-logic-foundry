@@ -1084,6 +1084,113 @@ async def consume_credits(
     }
 
 
+# ─── Crowe Research Engine ───────────────────────────────────────────
+#
+# Hosted research surface. Vendored from deep-researcher@0339bf6 and metered
+# off the same workspace_credits ledger as everything else. Credit costs are
+# fixed per depth (not actual-token-based) so callers can quote the price
+# before they commit. Refunds for budget_exceeded are intentionally NOT
+# issued: a partial run still consumed Anthropic spend.
+
+RESEARCH_DEPTH_CREDITS = {
+    "quick": 5,
+    "normal": 15,
+    "deep": 50,
+}
+
+
+class ResearchRequest(BaseModel):
+    workspace_id: str
+    question: str
+    depth: str = "normal"
+    budget_usd: Optional[float] = None
+
+
+@app.post("/api/research", status_code=200)
+async def run_research(
+    req: ResearchRequest,
+    auth: dict = Depends(_resolve_pat_or_jwt),
+    db: Database = Depends(get_db),
+):
+    """Run a Crowe Research Engine query, debiting workspace credits up front.
+
+    Auth: workspace-scoped PAT or owner JWT (same model as credits/consume).
+    Cost: fixed per depth via RESEARCH_DEPTH_CREDITS. Insufficient credits
+    returns 402 before any LLM call. Engine errors return 502 with the
+    engine's reason code in the body.
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(status_code=400, detail="question must be non-empty")
+    depth = (req.depth or "normal").lower()
+    if depth not in RESEARCH_DEPTH_CREDITS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"depth must be one of {sorted(RESEARCH_DEPTH_CREDITS)}",
+        )
+
+    _ensure_same_workspace(req.workspace_id, auth)
+    cost = RESEARCH_DEPTH_CREDITS[depth]
+
+    # Refuse before debiting if the engine is unconfigured: a 503 should
+    # never cost the caller credits.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="Research engine not configured (ANTHROPIC_API_KEY unset)",
+        )
+
+    row = await _ensure_credit_row(req.workspace_id, db)
+    if not row.get("active", True):
+        raise HTTPException(
+            status_code=402,
+            detail="Workspace credit consumption paused. Check billing status.",
+        )
+    updated = await db.fetchrow(
+        """UPDATE workspace_credits
+              SET balance = balance - $2, updated_at = now()
+            WHERE workspace_id = $1 AND balance >= $2 AND active = TRUE
+        RETURNING balance""",
+        req.workspace_id, cost,
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                f"Insufficient credits: balance={row['balance']}, "
+                f"requested={cost}, depth={depth}"
+            ),
+        )
+    await db.execute(
+        """INSERT INTO credit_transactions
+               (workspace_id, amount, reason, model_label, metadata)
+           VALUES ($1, $2, 'research', $3, $4)""",
+        req.workspace_id, -cost, f"research:{depth}",
+        json.dumps({"depth": depth, "question_len": len(req.question)}),
+    )
+
+    from ._research_engine import research as _research, ResearchError
+
+    try:
+        report = await _research(
+            req.question,
+            depth=depth,  # type: ignore[arg-type]
+            budget_usd=req.budget_usd,
+        )
+    except ResearchError as e:
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "research_failed", "reason": getattr(e, "reason", "unknown"), "message": str(e)},
+        )
+
+    return {
+        "workspace_id": req.workspace_id,
+        "depth": depth,
+        "credits_consumed": cost,
+        "balance_remaining": updated["balance"],
+        "report": report.model_dump(mode="json"),
+    }
+
+
 @app.post(
     "/api/workspaces/{workspace_id}/credits/refill",
     status_code=200,
