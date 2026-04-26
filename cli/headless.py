@@ -236,14 +236,78 @@ def _get_orchestrator():
 # ── Provider selection ──────────────────────────────────────────────────
 
 
+# Provider kinds this headless runner knows how to construct. Anything
+# outside this set (watsonx, mistral, cohere, fireworks, etc.) is silently
+# skipped during auto-selection so the chain falls through to the next
+# supported entry instead of raising "Headless mode does not support
+# provider kind 'X'".
+_HEADLESS_SUPPORTED_PROVIDERS = frozenset({
+    "openrouter",
+    "ollama",
+    "nvidia",
+    "openai_compat",
+    "azure_openai",
+    "anthropic",
+})
+
+
+def _is_provider_credentialed(cfg: dict) -> bool:
+    """Best-effort check that a model's required env vars are populated.
+
+    Returns False when we can predict the provider would raise immediately
+    on construction. Used during auto-selection to skip models that lack
+    credentials so /api/gateway/chat/stream picks the first model that can
+    actually answer instead of erroring on the first unconfigured one.
+    """
+    kind = cfg.get("provider", "openrouter")
+    if kind == "openrouter":
+        return bool(os.environ.get("OPENROUTER_API_KEY", ""))
+    if kind == "ollama":
+        return True
+    if kind == "nvidia":
+        return bool(os.environ.get("NVIDIA_NIM_ENDPOINT", "")) and bool(os.environ.get("NVIDIA_API_KEY", ""))
+    if kind == "openai_compat":
+        endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+        return bool(os.environ.get(endpoint_var, ""))
+    if kind == "azure_openai":
+        endpoint_var = cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
+        api_key_var = cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+        return bool(os.environ.get(endpoint_var, "")) and bool(os.environ.get(api_key_var, ""))
+    if kind == "anthropic":
+        endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+        api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+        return bool(os.environ.get(endpoint_var, "")) and bool(os.environ.get(api_key_var, ""))
+    return False
+
+
+def _pick_auto_model(chain: list[dict]) -> dict:
+    """Pick the first chain entry whose provider is supported AND credentialed.
+
+    Falls back to chain[0] if nothing qualifies; that preserves the original
+    error path so the user sees a clear message naming a model from their
+    config rather than something synthetic.
+    """
+    for cfg in chain:
+        if cfg.get("provider", "openrouter") not in _HEADLESS_SUPPORTED_PROVIDERS:
+            continue
+        if not _is_provider_credentialed(cfg):
+            continue
+        return cfg
+    return chain[0]
+
+
 def _build_provider(model_id: str, *, session_id: str = ""):
     """Construct a provider for the requested model.
 
-    ``model_id`` is either ``"auto"`` (use the first entry in
-    MODEL_CHAIN) or the ``name`` field of a MODEL_CHAIN entry. We
-    deliberately reuse MODEL_CHAIN so the headless mode and the
-    interactive CLI agree on which models exist and how to authenticate
-    against each provider type. Drift here would be very confusing.
+    ``model_id`` is either ``"auto"`` (use the first SUPPORTED + credentialed
+    entry in MODEL_CHAIN) or the ``name`` field of a MODEL_CHAIN entry.
+    Reuses MODEL_CHAIN so the headless mode and the interactive CLI agree
+    on which models exist and how to authenticate against each provider.
+
+    For 'auto', unsupported provider kinds (watsonx, mistral, cohere,
+    fireworks, etc.) are skipped and the chain falls through to the next
+    qualifying model. For an explicit model_id naming an unsupported
+    provider, we still raise so the caller sees what went wrong.
     """
     from config.agent_config import MODEL_CHAIN, resolve_model_config, provider_model_name
 
@@ -252,7 +316,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
         raise RuntimeError("MODEL_CHAIN is empty in config/agent_config.py")
 
     if model_id == "auto":
-        cfg = chain[0]
+        cfg = _pick_auto_model(chain)
     else:
         cfg = resolve_model_config(model_id)
         if cfg is None:
