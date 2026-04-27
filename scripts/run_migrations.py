@@ -74,6 +74,8 @@ async def _apply(url: str) -> None:
 
         for path in files:
             name = path.name
+            if name.endswith(".down.sql"):
+                continue
             if name in skip:
                 print(f"  ⤼ {name} — skipped (SKIP list)")
                 continue
