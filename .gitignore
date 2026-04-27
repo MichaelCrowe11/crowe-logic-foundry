@@ -33,3 +33,8 @@ backups/
 # Studio training corpus data (frames, videos, models, manifests — 5.9G).
 # Source scripts under training/{shot_selector,youtube_corpus}/*.py are tracked.
 training/youtube_corpus/sw-mushrooms/
+
+# CroweLM LoRA training artifacts (jsonl + state). The scripts to (re)build
+# them ARE committed; the data is local-only because it contains material
+# extracted from proprietary SOPs.
+data/training/
