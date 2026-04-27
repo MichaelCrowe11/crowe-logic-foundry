@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic Workstation",
   "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
-  "version": "0.2.14",
+  "version": "0.2.29",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -31,6 +31,7 @@
         "name": "crowe",
         "description": "Ask Crowe Logic — your Foundry agent.",
         "isSticky": true,
+        "iconPath": "media/avatar-dark.png",
         "commands": [
           {
             "name": "plan",
@@ -87,6 +88,14 @@
     "views": {
       "crowe-logic": [
         {
+          "type": "webview",
+          "id": "crowe-logic.chat",
+          "name": "Chat",
+          "icon": "media/mark.svg",
+          "contextualTitle": "Crowe Logic",
+          "visibility": "visible"
+        },
+        {
           "id": "crowe-logic.plan",
           "name": "Plan",
           "icon": "media/mark.svg",
@@ -135,6 +144,27 @@
       {
         "command": "crowe-logic.statusBarMenu",
         "title": "Crowe Logic: Show status menu"
+      },
+      {
+        "command": "crowe-logic.openCli",
+        "title": "Crowe Logic: Start in Crowe Logic CLI",
+        "icon": "media/mark.svg"
+      },
+      {
+        "command": "crowe-logic.openChatPanel",
+        "title": "Crowe Logic: Open Chat",
+        "shortTitle": "Crowe Logic",
+        "icon": {
+          "light": "media/avatar-titlebar.png",
+          "dark": "media/avatar-titlebar.png"
+        },
+        "category": "Crowe Logic"
+      },
+      {
+        "command": "crowe-logic.pickModel",
+        "title": "Crowe Logic: Pick Model",
+        "category": "Crowe Logic",
+        "icon": "$(symbol-event)"
       }
     ],
     "keybindings": [
@@ -144,18 +174,48 @@
         "mac": "cmd+shift+l"
       },
       {
+        "command": "crowe-logic.openCli",
+        "key": "ctrl+shift+`",
+        "mac": "cmd+shift+`"
+      },
+      {
         "command": "crowe-logic.togglePlan",
         "key": "ctrl+alt+p",
         "mac": "cmd+alt+p",
         "when": "view == crowe-logic.plan"
       }
     ],
+    "terminal": {
+      "profiles": [
+        {
+          "id": "crowe-logic.cliProfile",
+          "title": "Crowe Logic",
+          "icon": "media/mark.svg"
+        }
+      ]
+    },
     "menus": {
       "view/title": [
         {
           "command": "crowe-logic.clearTools",
           "when": "view == crowe-logic.tools",
           "group": "navigation"
+        },
+        {
+          "command": "crowe-logic.openChatPanel",
+          "when": "view == crowe-logic.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "crowe-logic.pickModel",
+          "when": "view == crowe-logic.chat",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "crowe-logic.openChatPanel",
+          "group": "navigation@1"
         }
       ],
       "editor/context": [
@@ -220,7 +280,11 @@
         "croweLogic.theme": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "dark", "light"],
+          "enum": [
+            "auto",
+            "dark",
+            "light"
+          ],
           "enumDescriptions": [
             "Match the current VS Code color theme",
             "Always use Crowe Logic Dark",

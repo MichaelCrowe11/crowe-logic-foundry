@@ -17,9 +17,13 @@ import { ToolsViewProvider, ToolEntry } from './views/toolsView';
 import { signIn, signOut } from './commands/signIn';
 import { openInRemoteIde } from './commands/openInRemoteIde';
 import { askWithContext } from './commands/askWithContext';
+import { openCli } from './commands/openCli';
+import { openChatPanel } from './commands/openChatPanel';
+import { pickModel } from './commands/pickModel';
 import { CroweCodeActionProvider, CROWE_CODE_ACTION_KINDS } from './codeActions';
 import { registerStatusBar } from './statusBar';
 import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage, clearPathCache } from './resolvePaths';
+import { CroweChatViewProvider } from './views/chatView';
 
 const BRAND_THEME_DARK = 'Crowe Logic Dark';
 const BRAND_THEME_LIGHT = 'Crowe Logic Light';
@@ -43,9 +47,16 @@ export async function activate(context: vscode.ExtensionContext) {
     const planView = new PlanViewProvider();
     const toolsView = new ToolsViewProvider();
 
+    const chatView = new CroweChatViewProvider(context);
+
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('crowe-logic.plan', planView),
         vscode.window.registerTreeDataProvider('crowe-logic.tools', toolsView),
+        vscode.window.registerWebviewViewProvider(
+            CroweChatViewProvider.VIEW_ID,
+            chatView,
+            { webviewOptions: { retainContextWhenHidden: true } },
+        ),
     );
 
     const participant = vscode.chat.createChatParticipant(
@@ -88,6 +99,9 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('crowe-logic.signOut', () => signOut(context)),
         vscode.commands.registerCommand('crowe-logic.openInRemoteIde', () => openInRemoteIde(context)),
         vscode.commands.registerCommand('crowe-logic.askWithContext', (args) => askWithContext(args)),
+        vscode.commands.registerCommand('crowe-logic.openCli', () => openCli(context)),
+        vscode.commands.registerCommand('crowe-logic.openChatPanel', () => openChatPanel(context)),
+        vscode.commands.registerCommand('crowe-logic.pickModel', () => pickModel()),
         vscode.languages.registerCodeActionsProvider(
             { scheme: 'file' },
             new CroweCodeActionProvider(),

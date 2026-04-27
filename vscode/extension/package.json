@@ -2,12 +2,24 @@
   "name": "crowe-logic-vscode",
   "displayName": "Crowe Logic",
   "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona with the actual Crowe Logic avatar.",
-  "version": "0.1.1",
+  "version": "0.1.7",
   "publisher": "crowe-logic",
-  "engines": { "vscode": "^1.90.0" },
-  "icon": "media/crowe-logic-avatar-dark.png",
-  "categories": ["Themes", "Other", "Chat"],
-  "keywords": ["crowe", "crowe-logic", "rebrand", "theme", "icon-theme"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "icon": "media/crowe-logic-extension-icon.png",
+  "categories": [
+    "Themes",
+    "Other",
+    "Chat"
+  ],
+  "keywords": [
+    "crowe",
+    "crowe-logic",
+    "rebrand",
+    "theme",
+    "icon-theme"
+  ],
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished"
@@ -35,28 +47,68 @@
     "walkthroughs": [
       {
         "id": "crowe-logic.getting-started",
-        "title": "Welcome to Crowe Logic",
-        "description": "Set up the Crowe Logic-branded VS Code experience.",
+        "title": "Welcome to Crowe Logic Code",
+        "description": "A premium AI workstation built on the CroweLM stack.",
         "steps": [
           {
-            "id": "apply-theme",
-            "title": "Apply the Crowe Logic theme",
-            "description": "Switch to the gold-on-graphite Crowe Logic palette.\n[Apply Theme](command:crowe-logic.applyTheme)",
-            "media": { "image": "media/crowe-logic-avatar-light.png", "altText": "Crowe Logic avatar" },
-            "completionEvents": ["onCommand:crowe-logic.applyTheme"]
-          },
-          {
-            "id": "apply-icons",
-            "title": "Apply Crowe Logic product icons",
-            "description": "Replace the default workbench icons with the Crowe Logic mark.\n[Apply Icons](command:crowe-logic.applyProductIcons)",
-            "media": { "image": "media/crowe-logic-avatar-light.png", "altText": "Crowe Logic avatar" },
-            "completionEvents": ["onCommand:crowe-logic.applyProductIcons"]
-          },
-          {
             "id": "open-chat",
-            "title": "Talk to Crowe Logic",
-            "description": "Open the chat panel and use `@crowe-logic` to route through the CroweLM model chain.\n[Open Chat](command:workbench.action.chat.open)",
-            "media": { "image": "media/crowe-logic-avatar-light.png", "altText": "Crowe Logic avatar" }
+            "title": "Open the Crowe Logic chat",
+            "description": "Click the gold mark in the activity bar to reveal the dedicated Crowe Logic chat panel — your face avatar, model selector, real-time tool calls, no Microsoft chrome.\n[Open Chat](command:crowe-logic.openChat)",
+            "media": {
+              "image": "media/walkthrough-banner.png",
+              "altText": "Crowe Logic Code"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.openChat"
+            ]
+          },
+          {
+            "id": "pick-model",
+            "title": "Pick a model tier",
+            "description": "52 routed CroweLM models across Anthropic Opus, NVIDIA NIM, Azure OpenAI. Auto-routing picks the right tier per task; pick manually when you want control.\n[Pick Model](command:crowe-logic.pickModel)",
+            "media": {
+              "image": "media/walkthrough-banner.png",
+              "altText": "Model selection"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.pickModel"
+            ]
+          },
+          {
+            "id": "open-cli",
+            "title": "Use the Crowe Logic CLI",
+            "description": "The same agent identity in your terminal. Press `Cmd+Shift+\\`` to open it, or pick `Crowe Logic` from the terminal profiles dropdown.\n[Open CLI](command:crowe-logic.openCli)",
+            "media": {
+              "image": "media/walkthrough-banner.png",
+              "altText": "CLI integration"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.openCli"
+            ]
+          },
+          {
+            "id": "sign-in",
+            "title": "Sign in with your API key",
+            "description": "Don't have an account? [Start free at crowelogic.com](https://crowelogic.com/start-free) — 750 credits, no card. Then run **Sign In** and paste your `crowe_pat_…` token.\n[Sign In](command:crowe-logic.signIn)",
+            "media": {
+              "image": "media/walkthrough-banner.png",
+              "altText": "Sign in"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.signIn"
+            ]
+          },
+          {
+            "id": "apply-rebrand",
+            "title": "Apply the Crowe Logic theme + icons",
+            "description": "One command applies the gold-on-graphite palette, the icon theme, and the title bar text in one shot.\n[Apply Full Rebrand](command:crowe-logic.applyAll)",
+            "media": {
+              "image": "media/walkthrough-banner.png",
+              "altText": "Theme"
+            },
+            "completionEvents": [
+              "onCommand:crowe-logic.applyAll"
+            ]
           }
         ]
       }
