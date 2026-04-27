@@ -51,23 +51,85 @@ MODEL_PLAN_ACCESS = {
     "claude-opus-4-5": "team",
 }
 
+# Customer-facing display layer. Keys are routing IDs from MODEL_PLAN_ACCESS.
+# Values are CroweLM-branded names + descriptions surfaced via /api/gateway/models.
+# Vendor names (OpenAI, Anthropic, Claude, GPT, DeepSeek, Mistral, etc.) MUST NOT
+# appear in any value here. The routing ID stays unchanged so /chat and
+# /chat/stream keep dispatching to the right provider.
+MODEL_DISPLAY = {
+    "gpt-5.4-nano": {
+        "name": "CroweLM Nano",
+        "description": "Fastest and cheapest. Best for high-volume tasks.",
+    },
+    "Llama-3-3-70B": {
+        "name": "CroweLM Forge",
+        "description": "Open-weight workhorse. Reliable for general writing and summarization.",
+    },
+    "FW-GLM-5": {
+        "name": "CroweLM Dense",
+        "description": "Dense general-purpose model. Balanced speed and quality.",
+    },
+    "Kimi-K2.5": {
+        "name": "CroweLM Lunar",
+        "description": "Long-context specialist. Use for large documents or extended threads.",
+    },
+    "DeepSeek-R1": {
+        "name": "CroweLM Reason",
+        "description": "Reasoning-tuned. Use for math, code logic, and multi-step problems.",
+    },
+    "DeepSeek-V3-1": {
+        "name": "CroweLM Vector",
+        "description": "Cost-efficient general model. Strong on technical writing.",
+    },
+    "Mistral-Large-3": {
+        "name": "CroweLM Edge",
+        "description": "Multilingual generalist with strong European-language coverage.",
+    },
+    "FW-MiniMax-M2.5": {
+        "name": "CroweLM Atlas",
+        "description": "Versatile mid-tier model. Solid default for routine work.",
+    },
+    "claude-opus-4-6": {
+        "name": "CroweLM Prime",
+        "description": "Deep analysis flagship. Careful, thorough, vision-capable.",
+    },
+    "claude-opus-4-6-2": {
+        "name": "CroweLM Sovereign",
+        "description": "Premium analytical tier. The most thorough option for high-stakes answers.",
+    },
+    "gpt-5.4": {
+        "name": "CroweLM Titan",
+        "description": "Default daily driver. Broad knowledge, fast enough for most tasks.",
+    },
+    "gpt-5.4-pro": {
+        "name": "CroweLM Apex",
+        "description": "Top-tier reasoning. Use when answers must be exhaustive and rigorous.",
+    },
+    "grok-4-20-reasoning": {
+        "name": "CroweLM Oracle",
+        "description": "Realtime-aware reasoning. Use for current-events analysis.",
+    },
+    "claude-opus-4-5": {
+        "name": "CroweLM Classic",
+        "description": "Mature analytical model. Reliable for deep document review.",
+    },
+}
+
+
+def _model_entry(model: str, min_plan: str) -> dict:
+    """Build a single catalog row with CroweLM display fields applied."""
+    display = MODEL_DISPLAY.get(model, {})
+    return {
+        "model": model,
+        "name": display.get("name", model),
+        "description": display.get("description", ""),
+        "min_plan": min_plan,
+    }
+
 
 def _build_model_catalog() -> list[dict]:
-    from config.agent_config import resolve_model_config
-
-    catalog = []
-    for model, min_plan in MODEL_PLAN_ACCESS.items():
-        cfg = resolve_model_config(model) or {}
-        catalog.append(
-            {
-                "model": model,
-                "provider": cfg.get("provider", "unknown"),
-                "surface": cfg.get("surface", "chat"),
-                "label": cfg.get("label"),
-                "min_plan": min_plan,
-            }
-        )
-    return sorted(catalog, key=lambda item: (plan_rank(item["min_plan"]), item["model"]))
+    catalog = [_model_entry(m, p) for m, p in MODEL_PLAN_ACCESS.items()]
+    return sorted(catalog, key=lambda item: (plan_rank(item["min_plan"]), item["name"]))
 
 
 async def _call_provider(
@@ -437,12 +499,12 @@ async def gateway_chat_stream(
 async def list_available_models(
     key_info: dict = Depends(_resolve_api_key),
 ):
-    """Return models available for this API key's plan."""
+    """Return models available for this API key's plan, with CroweLM display fields."""
     plan_id = canonical_plan_id(key_info["plan_id"])
     rank = plan_rank(plan_id)
     available = [
-        {"model": m, "min_plan": p}
-        for m, p in MODEL_PLAN_ACCESS.items()
-        if plan_rank(p) <= rank
+        entry
+        for entry in _build_model_catalog()
+        if plan_rank(entry["min_plan"]) <= rank
     ]
     return {"plan": plan_id, "models": available}
