@@ -68,6 +68,16 @@ _BRAND_DIR = _Path(__file__).resolve().parent.parent / "landing" / "brand"
 if _BRAND_DIR.is_dir():
     app.mount("/brand", StaticFiles(directory=str(_BRAND_DIR)), name="brand")
 
+# Crowe Logic Code update server — VS Code clients poll this to discover
+# new builds. Without our own endpoint, Microsoft's update channel
+# overwrites the rebrand patches every release.
+try:
+    from .updates import router as _updates_router
+    app.include_router(_updates_router)
+except Exception as _e:
+    import logging as _logging
+    _logging.getLogger(__name__).warning("updates router not loaded: %s", _e)
+
 
 # ─── Models ──────────────────────────────────────────────────────────
 
@@ -545,6 +555,107 @@ async def ide_launch(auth: dict = Depends(_resolve_pat_or_jwt)):
 
 
 # ─── Auth endpoints ──────────────────────────────────────────────────
+
+class StartFreeRequest(BaseModel):
+    email: EmailStr
+    display_name: Optional[str] = None
+
+
+class StartFreeResponse(BaseModel):
+    user_id: str
+    email: str
+    workspace_id: str
+    api_key: str            # one-time return; not stored elsewhere
+    plan_id: str = "personal"
+    next_steps: list[str]
+
+
+@app.post("/api/auth/start-free", response_model=StartFreeResponse)
+async def start_free(req: StartFreeRequest, db: Database = Depends(get_db)):
+    """Single-call free-tier signup. Creates user + org + workspace + PAT
+    and returns the raw PAT exactly once. The "Start Free" path on the
+    landing page calls this; the landing page then displays the PAT and
+    a "Sign in with API Token" handoff to the VS Code extension.
+
+    Idempotency: if email already exists, we return 409 with a hint to
+    use the magic-link login flow instead. We don't silently issue a new
+    PAT to a known email because that would let a stranger steal access
+    to an existing workspace by guessing the address.
+    """
+    existing = await db.fetchrow("SELECT id FROM users WHERE email = $1", req.email)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "email_exists",
+                "message": "An account already exists for this email. Use the dashboard to mint a new API key.",
+                "next": "https://crowelogic.com/account",
+            },
+        )
+
+    user_id = secrets.token_hex(16)
+    placeholder_password = secrets.token_hex(32)  # unreachable; user resets via email
+    await db.execute(
+        """INSERT INTO users (id, email, display_name, password_hash)
+           VALUES ($1, $2, $3, $4)""",
+        user_id, req.email,
+        req.display_name or req.email.split("@")[0],
+        _hash_password(placeholder_password),
+    )
+
+    org_id = secrets.token_hex(16)
+    org_slug = req.email.split("@")[0].lower().replace(".", "-") + "-" + secrets.token_hex(3)
+    await db.execute(
+        """INSERT INTO organizations (id, name, slug, owner_id)
+           VALUES ($1, $2, $3, $4)""",
+        org_id, f"{(req.display_name or org_slug)}'s Org", org_slug, user_id,
+    )
+    await db.execute(
+        "INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'owner')",
+        org_id, user_id,
+    )
+
+    workspace_id = secrets.token_hex(16)
+    await db.execute(
+        """INSERT INTO workspaces (id, org_id, name, slug, plan_id)
+           VALUES ($1, $2, 'Default', 'default', 'personal')""",
+        workspace_id, org_id,
+    )
+
+    raw_key, key_prefix, key_hash = make_pat(workspace_id)
+    key_id = secrets.token_hex(16)
+    await db.execute(
+        """INSERT INTO api_keys
+               (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
+           VALUES ($1, $2, $3, $4, $5, 'Free tier (signup)', '["chat","vision","agents","ide"]')""",
+        key_id, workspace_id, user_id, key_hash, key_prefix,
+    )
+
+    # Seed the credit ledger with the personal-tier monthly allocation so
+    # the first chat turn doesn't 402 on a brand-new account.
+    allocation = TIER_ALLOCATIONS.get("personal", 750)
+    await db.execute(
+        """INSERT INTO workspace_credits
+               (workspace_id, tier_key, balance, allocation, active)
+           VALUES ($1, 'personal', $2, $2, TRUE)
+           ON CONFLICT (workspace_id) DO NOTHING""",
+        workspace_id, allocation,
+    )
+
+    return StartFreeResponse(
+        user_id=user_id,
+        email=req.email,
+        workspace_id=workspace_id,
+        api_key=raw_key,
+        plan_id="personal",
+        next_steps=[
+            "Copy the API key above — this is the only time we show it",
+            "Download Crowe Logic Code at https://crowelogic.com/download",
+            "Run `Crowe Logic: Sign In` from the command palette and paste the key",
+            "Open chat with Cmd+Shift+L and start asking",
+        ],
+    )
+
 
 @app.post("/api/auth/register", response_model=TokenResponse)
 async def register(req: RegisterRequest, db: Database = Depends(get_db)):

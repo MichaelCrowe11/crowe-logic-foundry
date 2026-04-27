@@ -80,6 +80,57 @@ def emit_error(message: str, kind: str = "runtime") -> None:
     emit("error", message=message, kind=kind)
 
 
+def _meter_turn(*, tokens: int, reasoning_tokens: int, model_label: str, elapsed_ms: int) -> None:
+    """POST a credit-consume request to the control plane.
+
+    Fire-and-forget. The PAT identifies which workspace to debit; if
+    `CROWE_LOGIC_PAT` is unset, we skip metering entirely (BYOK / dev /
+    free-tier with no signup yet). Cost is one credit per ~250 output
+    tokens, rounded up — the exact rate lives server-side, this is a
+    pre-flight estimate so the user sees their balance update fast.
+    """
+    pat = os.environ.get("CROWE_LOGIC_PAT", "").strip()
+    if not pat or not pat.startswith("crowe_pat_"):
+        return
+    base_url = os.environ.get(
+        "CROWE_LOGIC_API_URL", "https://api.crowelogic.com"
+    ).rstrip("/")
+    # Extract workspace id from the PAT format: crowe_pat_<workspace>_<secret>
+    body = pat[len("crowe_pat_"):]
+    parts = body.split("_", 1)
+    if len(parts) != 2:
+        return
+    workspace_id = parts[0]
+    # Coarse cost estimate: 1 credit per 250 tokens, minimum 1.
+    total_tokens = max(1, int(tokens) + int(reasoning_tokens))
+    amount = max(1, (total_tokens + 249) // 250)
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(
+            f"{base_url}/api/workspaces/{workspace_id}/credits/consume",
+            data=_json.dumps({
+                "amount": amount,
+                "reason": "turn",
+                "model_label": model_label,
+                "metadata": {
+                    "tokens": int(tokens),
+                    "reasoning_tokens": int(reasoning_tokens),
+                    "elapsed_ms": int(elapsed_ms),
+                },
+            }).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {pat}",
+            },
+            method="POST",
+        )
+        # 1.5s timeout; chat must not block on billing
+        urllib.request.urlopen(req, timeout=1.5)
+    except Exception:
+        # Never fail a chat turn over a metering hiccup
+        pass
+
+
 # ── Renderer ─────────────────────────────────────────────────────────────
 
 
@@ -152,13 +203,27 @@ class JsonStreamRenderer:
             int((self._t_first_token - self._t_start) * 1000)
             if self._t_first_token > 0 else 0
         )
+        elapsed_ms = int((self._t_end - self._t_start) * 1000)
         emit(
             "done",
             tokens=self._token_count,
             reasoning_tokens=self._reasoning_token_count,
-            elapsed_ms=int((self._t_end - self._t_start) * 1000),
+            elapsed_ms=elapsed_ms,
             ttft_ms=ttft_ms,
         )
+        # Best-effort credit metering. Fire-and-forget POST to the
+        # control plane so a single turn debits the workspace's
+        # ledger. Failures are silent — never block the chat on a
+        # billing service hiccup.
+        try:
+            _meter_turn(
+                tokens=self._token_count,
+                reasoning_tokens=self._reasoning_token_count,
+                model_label=self._model_label,
+                elapsed_ms=elapsed_ms,
+            )
+        except Exception:
+            pass
 
     @property
     def current_segment_text(self) -> str:

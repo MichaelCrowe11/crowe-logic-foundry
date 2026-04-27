@@ -48,21 +48,35 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
         }),
         vscode.commands.registerCommand(QUICK_PICK_COMMAND, async () => {
             const signedIn = !!(await getApiToken(ctx));
+            const cfg = vscode.workspace.getConfiguration('croweLogic');
+            const currentModel = cfg.get<string>('model') || 'auto';
             const items: (vscode.QuickPickItem & { id: string })[] = [
-                { id: 'chat', label: '$(comment-discussion) Open Crowe chat', description: '@crowe' },
-                { id: 'remote', label: '$(remote) Open in remote IDE', description: 'Hand off to ide.crowelogic.com' },
+                { id: 'chat', label: '$(comment-discussion) Open Crowe Logic chat', description: 'Sidebar' },
+                { id: 'panel', label: '$(window) Open chat in new tab', description: 'Editor area' },
+                { id: 'cli', label: '$(terminal) Start Crowe Logic CLI', description: 'Terminal' },
+                { id: 'pickModel', label: '$(symbol-event) Pick model', description: formatModelLabel(currentModel) },
+                { id: 'remote', label: '$(remote) Open in remote IDE', description: 'ide.crowelogic.com' },
                 signedIn
                     ? { id: 'signOut', label: '$(sign-out) Sign out' }
                     : { id: 'signIn', label: '$(sign-in) Sign in with API token' },
             ];
             const pick = await vscode.window.showQuickPick(items, {
                 title: 'Crowe Logic Workstation',
-                placeHolder: signedIn ? 'Signed in' : 'Not signed in',
+                placeHolder: signedIn ? `Signed in · ${formatModelLabel(currentModel)}` : 'Not signed in',
             });
             if (!pick) return;
             switch (pick.id) {
                 case 'chat':
                     await vscode.commands.executeCommand('crowe-logic.openChat');
+                    return;
+                case 'panel':
+                    await vscode.commands.executeCommand('crowe-logic.openChatPanel');
+                    return;
+                case 'cli':
+                    await vscode.commands.executeCommand('crowe-logic.openCli');
+                    return;
+                case 'pickModel':
+                    await vscode.commands.executeCommand('crowe-logic.pickModel');
                     return;
                 case 'remote':
                     await vscode.commands.executeCommand('crowe-logic.openInRemoteIde');
