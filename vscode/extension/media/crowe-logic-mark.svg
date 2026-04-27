@@ -1,16 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Crowe Logic">
   <title>Crowe Logic</title>
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#d8c089"/>
-      <stop offset="1" stop-color="#9c8451"/>
+    <linearGradient id="goldStroke" x1="0.1" y1="0.1" x2="0.9" y2="0.95">
+      <stop offset="0" stop-color="#F2D584"/>
+      <stop offset="0.55" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#8C6E1F"/>
     </linearGradient>
+    <linearGradient id="goldFill" x1="0.2" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#E9C872"/>
+      <stop offset="0.5" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#9A7A23"/>
+    </linearGradient>
+    <radialGradient id="innerSheen" cx="0.42" cy="0.35" r="0.65">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.7" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="256" height="256" rx="56" fill="#0b0b0c"/>
-  <g transform="translate(128 128)" stroke="url(#g)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M-58 0 L0 -58 L58 0 L0 58 Z"/>
-    <path d="M-30 0 L0 -30 L30 0 L0 30 Z" fill="url(#g)" fill-opacity="0.18"/>
-    <circle r="6" fill="url(#g)" stroke="none"/>
-    <path d="M-58 0 L58 0 M0 -58 L0 58" stroke-opacity="0.35"/>
+
+  <rect width="256" height="256" rx="60" fill="#0B0B0C"/>
+
+  <g transform="translate(128 128)">
+    <path d="M 0 -82 L 82 0 L 0 82 L -82 0 Z"
+          fill="none"
+          stroke="url(#goldStroke)"
+          stroke-width="5.5"
+          stroke-linejoin="round"/>
+
+    <path d="M 0 -44 L 44 0 L 0 44 L -44 0 Z"
+          fill="url(#goldFill)"/>
+
+    <path d="M 0 -44 L 44 0 L 0 44 L -44 0 Z"
+          fill="url(#innerSheen)"/>
+
+    <circle r="6" fill="#0B0B0C"/>
+    <circle r="2.5" fill="url(#goldFill)"/>
   </g>
 </svg>

@@ -27,15 +27,15 @@ MARK_SVG="${CROWE_BRAND_ICON:-$ASSET_DIR/crowe-logic-avatar.svg}"
 # shellcheck source=_lib_icons.sh
 source "$SCRIPT_DIR/_lib_icons.sh"
 
-NAME_SHORT="Crowe Logic"
-NAME_LONG="Crowe Logic Code"
-APP_NAME="crowe-logic"
-DATA_FOLDER=".crowe-logic"
-WIN32_APP_USER_MODEL_ID="CroweLogic.CroweLogicCode"
-WIN32_MUTEX_NAME="crowelogiccode"
-SERVER_APP_NAME="crowe-logic-server"
-URL_PROTOCOL="crowe-logic"
-DARWIN_BUNDLE_ID="io.crowelogic.code"
+NAME_SHORT="Crowe Code"
+NAME_LONG="Crowe Code"
+APP_NAME="crowe-code"
+DATA_FOLDER=".crowe-code"
+WIN32_APP_USER_MODEL_ID="CroweLogic.CroweCode"
+WIN32_MUTEX_NAME="crowecode"
+SERVER_APP_NAME="crowe-code-server"
+URL_PROTOCOL="crowe-code"
+DARWIN_BUNDLE_ID="com.crowelogic.crowecode"
 
 usage() { sed -n '2,16p' "$0"; exit 1; }
 
