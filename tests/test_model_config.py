@@ -53,6 +53,13 @@ def test_resolve_model_config_accepts_new_cloud_tier_aliases():
     assert eclipse["provider"] == "ollama"
 
 
+def test_resolve_model_config_accepts_legacy_synapse_alias():
+    """Legacy workstation settings still resolve after the Synapse rename."""
+    synapse = resolve_model_config("CroweLM Synapse")
+    assert synapse is not None
+    assert synapse["label"] == "CroweLM Reason"
+
+
 def test_build_system_instructions_includes_crowelm_tier_prompt():
     cfg = resolve_model_config("apex")
     instructions = build_system_instructions(cfg)

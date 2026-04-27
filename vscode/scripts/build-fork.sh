@@ -20,6 +20,9 @@ STAGED="$OVERLAY/resources"
 ASSETS="$REPO_ROOT/vscode/assets"
 BUILD_DIR="${CROWE_FORK_BUILD_DIR:-$REPO_ROOT/build/vscode-src}"
 VSCODE_TAG="${VSCODE_TAG:-1.95.0}"
+# Use the avatar (graphite disc + gold mark) as the dock icon source; override
+# with CROWE_BRAND_ICON to use the abstract mark or any other SVG.
+BRAND_ICON="${CROWE_BRAND_ICON:-$ASSETS/crowe-logic-avatar.svg}"
 
 # shellcheck source=_lib_icons.sh
 source "$SCRIPT_DIR/_lib_icons.sh"
@@ -40,9 +43,14 @@ base_path, overlay_path = sys.argv[1:3]
 base = json.loads(pathlib.Path(base_path).read_text())
 overlay = json.loads(pathlib.Path(overlay_path).read_text())
 overlay.pop("_comment", None)
+base.update(overlay)
+pathlib.Path(base_path).write_text(json.dumps(base, indent=2) + "\n")
+print(f"  ✓ merged {len(overlay)} keys → {base['nameLong']} ({base['applicationName']})")
+PY
+
 echo "▸ Replacing platform icons"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-MARK="$ASSETS/crowe-logic-mark.svg"
+MARK="$BRAND_ICON"
 
 place_icon() {
   local kind="$1" dest="$2"
@@ -86,18 +94,13 @@ if ! place_icon win32 "$BUILD_DIR/resources/win32/code.ico"; then
   fi
 fi
 
-# Letter-icons (file association badges) — replace with the Crowe mark.
+# Letter-icons (file association badges) — replace bundled .ico letters with the Crowe mark.
 if [[ -f "$BUILD_DIR/resources/win32/code.ico" ]]; then
   for f in "$BUILD_DIR/resources/win32/"*.ico; do
     [[ -e "$f" && "$f" != "$BUILD_DIR/resources/win32/code.ico" ]] || continue
     cp "$BUILD_DIR/resources/win32/code.ico" "$f"
   done
 fi
-# Letter-icons (file association badges) — replace the bundled .ico letters with the Crowe mark.
-for f in "$BUILD_DIR/resources/win32/"*.ico; do
-  [[ -e "$f" ]] || continue
-  cp "$BUILD_DIR/resources/win32/code.ico" "$f" 2>/dev/null || true
-done
 
 cd "$BUILD_DIR"
 echo "▸ Installing dependencies (this can take a while)"

@@ -1,5 +1,5 @@
 {
-  "_comment": "Drop-in product.json overlay applied on top of microsoft/vscode by build-fork.sh. Branding only — leaves all behavior keys (extensionsGallery, etc.) untouched. The build script merges this on top of the upstream product.json instead of replacing it.",
+  "_comment": "Drop-in product.json overlay applied on top of microsoft/vscode by build-fork.sh. Sets Crowe Logic branding and points the extensionsGallery at Open VSX so the build does not redistribute the Microsoft Marketplace under our brand (EULA). Swap in a different gallery later if needed.",
   "nameShort": "Crowe Logic",
   "nameLong": "Crowe Logic Code",
   "applicationName": "crowe-logic",
@@ -18,5 +18,15 @@
   "reportIssueUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/issues/new",
   "documentationUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry",
   "releaseNotesUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/releases",
-  "licenseUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/LICENSE"
+  "licenseUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/blob/main/LICENSE",
+  "extensionsGallery": {
+    "serviceUrl": "https://open-vsx.org/vscode/gallery",
+    "itemUrl": "https://open-vsx.org/vscode/item",
+    "cacheUrl": "https://open-vsx.org/vscode/gallery",
+    "resourceUrlTemplate": "https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}/{path}",
+    "controlUrl": "",
+    "recommendationsUrl": "",
+    "nlsBaseUrl": "",
+    "publisherUrl": ""
+  }
 }

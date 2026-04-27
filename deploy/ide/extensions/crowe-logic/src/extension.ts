@@ -21,7 +21,25 @@ import { CroweCodeActionProvider, CROWE_CODE_ACTION_KINDS } from './codeActions'
 import { registerStatusBar } from './statusBar';
 import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage, clearPathCache } from './resolvePaths';
 
-export function activate(context: vscode.ExtensionContext) {
+const BRAND_THEME_DARK = 'Crowe Logic Dark';
+const BRAND_THEME_LIGHT = 'Crowe Logic Light';
+const WELCOME_STATE_KEY = 'croweLogic.lastWelcomeVersion';
+const WELCOME_WALKTHROUGH_ID = 'crowe-logic.crowe-logic#crowe-logic.welcome';
+const LEGACY_MODEL_SELECTIONS: Record<string, string> = {
+    'CroweLM Oracle': 'CroweLM Titan',
+    'CroweLM Synapse': 'CroweLM Reason',
+    'CroweLM Monolith': 'CroweLM Dense',
+    'CroweLM Tendril': 'CroweLM Vector',
+    'CroweLM Filament': 'CroweLM Vector',
+    'CroweLM Strand': 'CroweLM Vector',
+    'CroweLM Capillary': 'CroweLM Vector',
+    'CroweLM Mote': 'CroweLM Vector',
+    'CroweLM Sieve': 'CroweLM Vector',
+    'CroweLM Tempo': 'CroweLM Pulse',
+    'CroweLM Cadence': 'CroweLM Pulse',
+};
+
+export async function activate(context: vscode.ExtensionContext) {
     const planView = new PlanViewProvider();
     const toolsView = new ToolsViewProvider();
 
@@ -78,6 +96,9 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     void registerStatusBar(context);
+    await normalizeLegacyModelSelection();
+    await applyConfiguredTheme();
+    await maybeShowWelcome(context);
 
     // Invalidate the resolver cache when the user edits pythonPath or foundryPath.
     context.subscriptions.push(
@@ -85,11 +106,65 @@ export function activate(context: vscode.ExtensionContext) {
             if (e.affectsConfiguration('croweLogic.pythonPath') || e.affectsConfiguration('croweLogic.foundryPath')) {
                 clearPathCache();
             }
+            if (e.affectsConfiguration('croweLogic.model')) {
+                void normalizeLegacyModelSelection();
+            }
+            if (e.affectsConfiguration('croweLogic.theme')) {
+                void applyConfiguredTheme();
+            }
         }),
     );
 }
 
 export function deactivate() { /* no-op */ }
+
+async function normalizeLegacyModelSelection(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('croweLogic');
+    const raw = (cfg.get<string>('model', 'auto') || 'auto').trim();
+    const mapped = LEGACY_MODEL_SELECTIONS[raw];
+    if (!mapped || mapped === raw) {
+        return;
+    }
+    await cfg.update('model', mapped, vscode.ConfigurationTarget.Global);
+    void vscode.window.showInformationMessage(
+        `Crowe Logic migrated deprecated model '${raw}' to '${mapped}'.`,
+    );
+}
+
+async function applyConfiguredTheme(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('croweLogic');
+    const preference = (cfg.get<string>('theme', 'auto') || 'auto').toLowerCase();
+    let desiredTheme = BRAND_THEME_DARK;
+    if (preference === 'light') {
+        desiredTheme = BRAND_THEME_LIGHT;
+    } else if (preference === 'auto') {
+        desiredTheme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Light
+            ? BRAND_THEME_LIGHT
+            : BRAND_THEME_DARK;
+    }
+
+    const workbench = vscode.workspace.getConfiguration();
+    if (workbench.get<string>('workbench.colorTheme') !== desiredTheme) {
+        await workbench.update('workbench.colorTheme', desiredTheme, vscode.ConfigurationTarget.Global);
+    }
+}
+
+async function maybeShowWelcome(context: vscode.ExtensionContext): Promise<void> {
+    const currentVersion = String(context.extension.packageJSON?.version || '');
+    if (!currentVersion) {
+        return;
+    }
+    const lastSeenVersion = context.globalState.get<string>(WELCOME_STATE_KEY, '');
+    if (lastSeenVersion === currentVersion) {
+        return;
+    }
+    await context.globalState.update(WELCOME_STATE_KEY, currentVersion);
+    await vscode.commands.executeCommand(
+        'workbench.action.openWalkthrough',
+        WELCOME_WALKTHROUGH_ID,
+        false,
+    );
+}
 
 /**
  * Single chat turn: convert VS Code's chat history into the

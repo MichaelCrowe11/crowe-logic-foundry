@@ -19,7 +19,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="$REPO_ROOT/vscode/scripts"
 ASSET_DIR="$REPO_ROOT/vscode/assets"
 STAGED_DIR="$REPO_ROOT/vscode/fork-overlay/resources"
-MARK_SVG="$ASSET_DIR/crowe-logic-mark.svg"
+# Avatar is the premium dock-icon asset (graphite disc, gold-gradient mark,
+# specular sheen). Override with CROWE_BRAND_ICON to use the abstract mark
+# instead, or any other SVG.
+MARK_SVG="${CROWE_BRAND_ICON:-$ASSET_DIR/crowe-logic-avatar.svg}"
 
 # shellcheck source=_lib_icons.sh
 source "$SCRIPT_DIR/_lib_icons.sh"
@@ -193,10 +196,48 @@ if [[ "$PLATFORM" == "darwin" && -f "$PLIST" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $NAME_LONG" "$PLIST" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $DARWIN_BUNDLE_ID" "$PLIST" 2>/dev/null || true
   echo "  ✓ updated Info.plist (CFBundleName, CFBundleDisplayName, CFBundleIdentifier)"
+
+  # Rename Electron helper apps to match the new CFBundleName. Electron's main
+  # process derives helper paths from the parent's CFBundleName at runtime
+  # ("$NAME_SHORT Helper.app", + (Renderer)/(GPU)/(Plugin) variants). Without
+  # this rename Electron crashes with "Unable to find helper app" which surfaces
+  # as EXC_BREAKPOINT in V8 startup.
+  HELPERS_DIR="$APP_ROOT/Contents/Frameworks"
+  for variant in "" " (Renderer)" " (GPU)" " (Plugin)"; do
+    OLD_NAME="Code Helper${variant}"
+    NEW_NAME="${NAME_SHORT} Helper${variant}"
+    OLD_BUNDLE="$HELPERS_DIR/${OLD_NAME}.app"
+    NEW_BUNDLE="$HELPERS_DIR/${NEW_NAME}.app"
+    [[ -d "$OLD_BUNDLE" ]] || continue
+    HELPER_PLIST="$OLD_BUNDLE/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName ${NEW_NAME}"        "$HELPER_PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${NEW_NAME}" "$HELPER_PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${NEW_NAME}"  "$HELPER_PLIST" 2>/dev/null || true
+    HELPER_OLD_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$HELPER_PLIST" 2>/dev/null || echo "")
+    HELPER_NEW_ID=$(echo "$HELPER_OLD_ID" | sed "s|com\.microsoft\.VSCode|${DARWIN_BUNDLE_ID}|")
+    if [[ -n "$HELPER_NEW_ID" && "$HELPER_NEW_ID" != "$HELPER_OLD_ID" ]]; then
+      /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${HELPER_NEW_ID}" "$HELPER_PLIST" 2>/dev/null || true
+    fi
+    [[ -f "$OLD_BUNDLE/Contents/MacOS/$OLD_NAME" ]] && mv "$OLD_BUNDLE/Contents/MacOS/$OLD_NAME" "$OLD_BUNDLE/Contents/MacOS/$NEW_NAME"
+    mv "$OLD_BUNDLE" "$NEW_BUNDLE"
+    echo "  ✓ renamed helper: ${OLD_NAME}.app → ${NEW_NAME}.app"
+  done
+
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_ROOT" 2>/dev/null || true
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP_ROOT" 2>/dev/null && echo "  ✓ re-signed bundle (ad-hoc)" || echo "  ! ad-hoc codesign failed — relaunch may show a Gatekeeper prompt." >&2
+    # Plain ad-hoc sign - no --entitlements, no --options runtime. On Apple
+    # Silicon, ad-hoc signed apps cannot claim privileged entitlements like
+    # com.apple.security.cs.allow-jit (the kernel only honors those for
+    # Apple-trusted certificates), so adding --entitlements is wasted effort.
+    # The fix is to NOT enable Hardened Runtime in the new signature, which
+    # removes the JIT enforcement check entirely. Removing the existing
+    # signature first guarantees we don't inherit CS_RUNTIME from upstream.
+    codesign --remove-signature "$APP_ROOT" 2>/dev/null || true
+    codesign --force --deep --sign - "$APP_ROOT" 2>/dev/null \
+      && echo "  ✓ re-signed bundle (ad-hoc, no Hardened Runtime)" \
+      || echo "  ! ad-hoc codesign failed — relaunch may show a Gatekeeper prompt." >&2
   fi
+  xattr -dr com.apple.quarantine "$APP_ROOT" 2>/dev/null || true
 fi
 
 cat <<EOF

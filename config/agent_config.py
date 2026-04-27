@@ -240,7 +240,7 @@ _BASE_MODEL_CHAIN = [
     {"name": "DeepSeek-R1",    "label": "CroweLM Reason",    "type": "reasoning",
      "provider": "watsonx", "backend_name": "meta-llama/llama-3-1-8b",
      "endpoint_env": "WATSONX_URL", "api_key_env": "WATSONX_APIKEY",
-     "aliases": ["reason", "crowelm-reason", "r1"],
+     "aliases": ["reason", "crowelm-reason", "r1", "crowelm-synapse", "CroweLM Synapse"],
      "prompt": (
           "You are CroweLM Reason, Crowe Logic's chain-of-thought specialist tier. "
           "Work through complex problems methodically before producing your final answer. "

@@ -2,6 +2,12 @@
 
 All notable changes to the Crowe Logic extension.
 
+## 0.2.14
+
+- Startup branding now lands on the Crowe Logic walkthrough again whenever the extension is first installed or upgraded, and the configured Crowe Logic dark/light theme is applied automatically on activation.
+- Deprecated workstation model selections now self-heal on activation. `CroweLM Synapse` maps to `CroweLM Reason`, and other retired non-chat labels migrate to current interactive tiers instead of crashing `@crowe`.
+- The settings UI no longer hardcodes a stale model dropdown. `croweLogic.model` is now a freeform CroweLM label/alias field so the extension can track the live model registry instead of drifting behind it.
+
 ## 0.2.11
 
 - Light theme polished to match the dark pass: borders, menus, notifications, scrollbars, and git decorations tuned deliberately. Added tokenColor rules for punctuation, attribute names, markup, and invalid scopes so syntax reads cleanly in daylight.
