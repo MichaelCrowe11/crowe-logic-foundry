@@ -1,8 +1,8 @@
 {
   "name": "crowe-logic",
-  "displayName": "Crowe Logic Workstation",
-  "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
-  "version": "0.2.29",
+  "displayName": "Crowe Code",
+  "description": "Crowe Code: the AI workstation. Chat with Crowe Logic, the agent powered by the CroweLM model chain.",
+  "version": "0.2.30",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {

@@ -74,5 +74,5 @@
     "markdown": true,
     "yaml": true
   },
-  "croweLogic.model": "CroweLM Titan"
+  "croweLogic.model": "auto"
 }

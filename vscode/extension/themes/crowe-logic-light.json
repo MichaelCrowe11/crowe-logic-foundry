@@ -1,5 +1,5 @@
 {
-  "name": "Crowe Logic Light",
+  "name": "Crowe Code Light",
   "type": "light",
   "colors": {
     "focusBorder": "#9c8451",
@@ -34,10 +34,193 @@
     "terminalCursor.foreground": "#9c8451"
   },
   "tokenColors": [
-    { "scope": ["comment"], "settings": { "foreground": "#a89a72", "fontStyle": "italic" } },
-    { "scope": ["string"], "settings": { "foreground": "#9c8451" } },
-    { "scope": ["keyword", "storage"], "settings": { "foreground": "#7a5f2c" } },
-    { "scope": ["entity.name.function"], "settings": { "foreground": "#3a3528", "fontStyle": "bold" } },
-    { "scope": ["entity.name.class", "entity.name.type"], "settings": { "foreground": "#3d6363" } }
-  ]
+    {
+      "name": "Comment",
+      "scope": [
+        "comment"
+      ],
+      "settings": {
+        "fontStyle": "italic",
+        "foreground": "#9c8451"
+      }
+    },
+    {
+      "name": "String",
+      "scope": [
+        "string"
+      ],
+      "settings": {
+        "foreground": "#9a7a23"
+      }
+    },
+    {
+      "name": "Number",
+      "scope": [
+        "constant.numeric"
+      ],
+      "settings": {
+        "foreground": "#5e8a3e"
+      }
+    },
+    {
+      "name": "Constant lang",
+      "scope": [
+        "constant.language"
+      ],
+      "settings": {
+        "foreground": "#9a7a23"
+      }
+    },
+    {
+      "name": "Keyword",
+      "scope": [
+        "keyword",
+        "storage.modifier"
+      ],
+      "settings": {
+        "foreground": "#7e3a99"
+      }
+    },
+    {
+      "name": "Storage",
+      "scope": [
+        "storage.type"
+      ],
+      "settings": {
+        "foreground": "#7e3a99",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "Type",
+      "scope": [
+        "entity.name.type",
+        "support.type"
+      ],
+      "settings": {
+        "foreground": "#3a7a7a"
+      }
+    },
+    {
+      "name": "Class",
+      "scope": [
+        "entity.name.class"
+      ],
+      "settings": {
+        "foreground": "#b48a2a"
+      }
+    },
+    {
+      "name": "Function",
+      "scope": [
+        "entity.name.function",
+        "support.function"
+      ],
+      "settings": {
+        "foreground": "#3a5a8a"
+      }
+    },
+    {
+      "name": "Parameter",
+      "scope": [
+        "variable.parameter"
+      ],
+      "settings": {
+        "foreground": "#5a5340"
+      }
+    },
+    {
+      "name": "Variable",
+      "scope": [
+        "variable"
+      ],
+      "settings": {
+        "foreground": "#0b0b0c"
+      }
+    },
+    {
+      "name": "Punctuation",
+      "scope": [
+        "punctuation"
+      ],
+      "settings": {
+        "foreground": "#7a7158"
+      }
+    },
+    {
+      "name": "Operator",
+      "scope": [
+        "keyword.operator"
+      ],
+      "settings": {
+        "foreground": "#9c8451"
+      }
+    },
+    {
+      "name": "Tag",
+      "scope": [
+        "entity.name.tag"
+      ],
+      "settings": {
+        "foreground": "#3a5a8a"
+      }
+    },
+    {
+      "name": "Attribute",
+      "scope": [
+        "entity.other.attribute-name"
+      ],
+      "settings": {
+        "foreground": "#7e3a99",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "JSON key",
+      "scope": [
+        "support.type.property-name"
+      ],
+      "settings": {
+        "foreground": "#7e3a99"
+      }
+    },
+    {
+      "name": "Heading",
+      "scope": [
+        "markup.heading"
+      ],
+      "settings": {
+        "foreground": "#9a7a23",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Bold",
+      "scope": [
+        "markup.bold"
+      ],
+      "settings": {
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Italic",
+      "scope": [
+        "markup.italic"
+      ],
+      "settings": {
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "Invalid",
+      "scope": [
+        "invalid"
+      ],
+      "settings": {
+        "foreground": "#a04a4a"
+      }
+    }
+  ],
+  "semanticHighlighting": true
 }

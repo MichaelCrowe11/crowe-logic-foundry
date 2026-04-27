@@ -1,8 +1,8 @@
 {
   "name": "crowe-logic-vscode",
-  "displayName": "Crowe Logic",
-  "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona with the actual Crowe Logic avatar.",
-  "version": "0.1.7",
+  "displayName": "Crowe Code",
+  "description": "Re-skins VS Code as Crowe Code: themes, product icons, walkthrough, and the Crowe Logic AI chat persona.",
+  "version": "0.1.8",
   "publisher": "crowe-logic",
   "engines": {
     "vscode": "^1.90.0"
@@ -27,12 +27,12 @@
   "contributes": {
     "themes": [
       {
-        "label": "Crowe Logic Dark",
+        "label": "Crowe Code Dark",
         "uiTheme": "vs-dark",
         "path": "./themes/crowe-logic-dark.json"
       },
       {
-        "label": "Crowe Logic Light",
+        "label": "Crowe Code Light",
         "uiTheme": "vs",
         "path": "./themes/crowe-logic-light.json"
       }
@@ -40,14 +40,14 @@
     "productIconThemes": [
       {
         "id": "crowe-logic-icons",
-        "label": "Crowe Logic Icons",
+        "label": "Crowe Code Icons",
         "path": "./product-icons/crowe-logic-icons.json"
       }
     ],
     "walkthroughs": [
       {
         "id": "crowe-logic.getting-started",
-        "title": "Welcome to Crowe Logic Code",
+        "title": "Welcome to Crowe Code",
         "description": "A premium AI workstation built on the CroweLM stack.",
         "steps": [
           {

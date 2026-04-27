@@ -23,7 +23,7 @@ identifies itself as Crowe Logic, never as Copilot.
 ## Want full app rebranding?
 
 The themes here re-skin stock VS Code. To rename the application itself
-(*"Crowe Logic Code"* in the Dock, About box, and window title bar), run:
+(*"Crowe Code"* in the Dock, About box, and window title bar), run:
 
 ```bash
 sudo vscode/scripts/patch-local-install.sh

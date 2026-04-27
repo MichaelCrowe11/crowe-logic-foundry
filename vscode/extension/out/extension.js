@@ -104,30 +104,19 @@ function registerChatParticipant(ctx) {
                 return {};
             }
             catch (err) {
-                // Surface the error and fall through to Copilot fallback if
-                // available. Network blips shouldn't leave the user unable to
-                // ask anything at all.
                 const msg = err instanceof Error ? err.message : String(err);
-                stream.markdown(`\n\n_Foundry unavailable (${msg}); falling back._\n\n`);
-            }
-        }
-        // Copilot fallback so the participant is still useful when not
-        // signed in or when the foundry is unreachable.
-        const lm = vscode.lm;
-        if (lm?.selectChatModels) {
-            const models = await lm.selectChatModels({ vendor: 'copilot' });
-            if (models?.length) {
-                await runCopilotTurn({ model: models[0], request, stream, token });
-                if (!pat) {
-                    stream.markdown('\n\n---\n_Tip: run **Crowe Logic: Sign In** to route through your CroweLM stack._\n');
-                }
+                stream.markdown(`\n\n**Crowe Logic foundry is unreachable.** _(${msg})_\n\n` +
+                    'Check your network and the `croweLogic.foundryBaseURL` setting, then try again. ' +
+                    'Crowe Logic does not fall back to third-party model providers.\n');
                 return {};
             }
         }
-        // Last resort: tell the user how to sign in.
+        // Not signed in. Crowe Logic is a first-party agent — there is no
+        // Copilot fallback. Direct the user to sign in.
         stream.markdown('**Crowe Logic is not signed in.**\n\n' +
             'Run `Crowe Logic: Sign In` from the command palette and paste a PAT minted at ' +
-            'https://api.crowelogic.com/account.\n');
+            'https://crowelogic.com/account. ' +
+            'New here? **`Crowe Logic: Start Free`** issues a Personal-tier key in 30 seconds.\n');
         return {};
     });
     participant.iconPath = {
@@ -272,18 +261,6 @@ function handleFoundryEvent(event, stream) {
         case 'done':
         default:
             return;
-    }
-}
-// ── Copilot fallback (preserves existing behavior) ───────────────
-async function runCopilotTurn(opts) {
-    const { model, request, stream, token } = opts;
-    const messages = [
-        vscode.LanguageModelChatMessage.User(SYSTEM_PROMPT),
-        vscode.LanguageModelChatMessage.User(String(request?.prompt ?? '')),
-    ];
-    const response = await model.sendRequest(messages, {}, token);
-    for await (const fragment of response.text) {
-        stream.markdown(fragment);
     }
 }
 //# sourceMappingURL=extension.js.map
