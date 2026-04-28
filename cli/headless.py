@@ -529,7 +529,25 @@ def main() -> int:
     if not isinstance(messages, list) or not messages:
         emit_error("Input must include a non-empty 'messages' array", kind="input")
         return 2
-    if not isinstance(messages[-1], dict) or messages[-1].get("role") != "user":
+
+    # Defensively drop any prior turns whose content is empty / whitespace.
+    # Anthropic 400s with "messages.0: user messages must have non-empty
+    # content" when the wire payload has a role:user/content:"" entry, and
+    # the chat webview's history occasionally contains one of these from
+    # a previously-aborted turn (the assistant text never accumulated, so
+    # only the user message landed in history). Filtering here covers
+    # every caller that talks to this script, not just the IDE.
+    messages = [
+        m for m in messages
+        if isinstance(m, dict)
+        and m.get("role") in ("user", "assistant")
+        and isinstance(m.get("content"), str)
+        and m["content"].strip()
+    ]
+    if not messages:
+        emit_error("All input messages had empty content after filtering", kind="input")
+        return 2
+    if messages[-1].get("role") != "user":
         emit_error("Input messages must end with a user turn", kind="input")
         return 2
 
