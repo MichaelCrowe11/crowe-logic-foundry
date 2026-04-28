@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic Workstation",
   "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
-  "version": "0.2.33",
+  "version": "0.2.34",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -20,7 +20,11 @@
   ],
   "icon": "media/avatar-dark.png",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onLanguageModelChat:crowe-logic"
+  ],
+  "enabledApiProposals": [
+    "chatProvider"
   ],
   "main": "./out/extension.js",
   "contributes": {

@@ -144,8 +144,24 @@ data.update({
     "documentationUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry",
     "releaseNotesUrl": "https://github.com/MichaelCrowe11/crowe-logic-foundry/releases",
 })
+# Whitelist Crowe Logic extensions to use VS Code proposed APIs. The
+# chatProvider proposal is required for our LanguageModelChatProvider
+# (see deploy/ide/extensions/crowe-logic/src/lmProvider.ts) so that
+# @crowe works without a Copilot LM. Without this entry VS Code 1.117
+# silently rejects registerLanguageModelChatProvider for unknown
+# publishers, leaving "Language model unavailable" on every chat turn.
+allow = data.setdefault("extensionEnabledApiProposals", {})
+def _ensure(pubname, proposals):
+    existing = list(allow.get(pubname, []))
+    for proposal in proposals:
+        if proposal not in existing:
+            existing.append(proposal)
+    allow[pubname] = existing
+_ensure("crowe-logic.crowe-logic", ["chatProvider"])
+_ensure("crowe-logic.crowe-logic-vscode", ["chatProvider"])
 p.write_text(json.dumps(data, indent=2))
-print(f"  ✓ patched product.json → {name_long}")
+print(f"  ✓ patched product.json -> {name_long}")
+print(f"  ✓ allowed crowe-logic extensions to use chatProvider proposed API")
 PY
 
 TMP_DIR="$(mktemp -d)"; trap 'rm -rf "$TMP_DIR"' EXIT
