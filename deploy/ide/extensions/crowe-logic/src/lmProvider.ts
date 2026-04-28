@@ -21,17 +21,18 @@ import * as vscode from 'vscode';
 import { runFoundryTurn, FoundryMessage, FoundryEvent } from './agent';
 import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage } from './resolvePaths';
 
-// Why vendor "copilot" inside a Crowe Logic-only fork: VS Code 1.117's
-// getDefaultLanguageModel() is hardcoded to match metadata.vendor === "copilot"
-// AND metadata.isDefaultForLocation.panel === true. There is no public hook
-// to register a different vendor as the workspace default; the resolver in
-// extensionHostProcess.js will only ever pick a copilot-vendor model. Since
-// this fork ships with the real GitHub Copilot Chat extension explicitly
-// disabled (github.copilot-chat-*.disabled-by-crowe-logic), claiming the
-// "copilot" vendor here is unambiguous: nothing else owns it. The model id
-// and family still say crowelm so users can disambiguate, and any future
-// provider can register under a different vendor without colliding.
-const VENDOR = 'copilot';
+// VS Code 1.117 hardcodes its default-LM resolver to vendor === "copilot",
+// which means our provider can never become the workspace default. We
+// previously tried claiming the copilot vendor; that satisfied the resolver
+// but triggered VS Code's "You need to set up GitHub Copilot and be signed
+// in to use Chat" UI, which is wired to the real Copilot extension and
+// cannot be turned off from product.json alone. So we register under our
+// own vendor and rely on the user (or our auto-select on activation)
+// picking CroweLM in the chat model picker, which sets userSelectedModelId
+// and bypasses the default lookup entirely. The dedicated Crowe Logic chat
+// webview at views/chatView.ts skips VS Code's chat infrastructure
+// altogether and works regardless of this gating.
+const VENDOR = 'crowe-logic';
 
 interface CroweLogicModelInfo extends vscode.LanguageModelChatInformation {
     foundryModel: string;
