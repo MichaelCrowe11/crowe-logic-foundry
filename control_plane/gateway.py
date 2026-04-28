@@ -36,6 +36,8 @@ MODEL_PLAN_ACCESS = {
     "gpt-5.4-nano": "personal",
     "Llama-3-3-70B": "personal",
     "FW-GLM-5": "personal",
+    "crowelm-kernel": "personal",
+    "crowelm-grower": "personal",
     # Pro tier
     "Kimi-K2.5": "pro",
     "DeepSeek-R1": "pro",
@@ -112,6 +114,14 @@ MODEL_DISPLAY = {
     "claude-opus-4-5": {
         "name": "CroweLM Classic",
         "description": "Mature analytical model. Reliable for deep document review.",
+    },
+    "crowelm-kernel": {
+        "name": "CroweLM Kernel",
+        "description": "Crowe Logic's cultivation-tuned fast tier. Operational guidance with specific numbers and ratios.",
+    },
+    "crowelm-grower": {
+        "name": "CroweLM Grower",
+        "description": "Cultivation operations specialist. Domain-tuned for commercial mycology, substrate prep, sterilization, and yield analysis.",
     },
 }
 
