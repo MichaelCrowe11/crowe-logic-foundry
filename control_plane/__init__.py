@@ -1353,10 +1353,175 @@ async def refill_credits(
 
 
 # ─── Stripe webhooks ─────────────────────────────────────────────────
+#
+# Single source of truth for Stripe event handling. The router defined in
+# control_plane/billing.py used to register a competing /api/billing/webhook
+# but FastAPI route resolution preferred this app-level one, so the router
+# version was dead code and has been removed. All webhook reconciliation
+# logic lives here, with per-event-type work split into _handle_* helpers
+# that are pure functions of (db, event_object) for direct unit testing.
+
+
+async def _record_event_or_skip(db, event_id: str, event_type: str, payload: str) -> bool:
+    """Insert a billing_events row keyed by stripe_event_id.
+
+    Returns True if the row was newly inserted (caller should run handlers).
+    Returns False if Stripe is replaying a previously-processed event
+    (caller should short-circuit). The UNIQUE constraint on stripe_event_id
+    plus RETURNING gives us atomic idempotency without a separate read.
+    """
+    row = await db.fetchrow(
+        """INSERT INTO billing_events (stripe_event_id, event_type, payload)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (stripe_event_id) DO NOTHING
+           RETURNING id""",
+        event_id, event_type, payload,
+    )
+    return row is not None
+
+
+async def _mark_event_processed(db, event_id: str) -> None:
+    await db.execute(
+        "UPDATE billing_events SET processed = TRUE WHERE stripe_event_id = $1",
+        event_id,
+    )
+
+
+async def _handle_subscription_created(db, sub: dict) -> None:
+    """Persist a subscription row when Stripe reports a new sub.
+
+    Fires when a sub is created outside the checkout flow (manual API,
+    dashboard, migration). No credit grant here. invoice.paid is the
+    cue to refill, since the customer hasn't paid yet at create time.
+    """
+    sub_id = sub["id"]
+    workspace_id = (sub.get("metadata") or {}).get("workspace_id")
+    if not workspace_id:
+        return
+    plan_id = canonical_plan_id((sub.get("metadata") or {}).get("plan_id") or "personal")
+
+    await db.execute(
+        """INSERT INTO subscriptions
+               (workspace_id, plan_id, stripe_subscription_id, status,
+                current_period_start, current_period_end)
+           VALUES ($1, $2, $3, $4, to_timestamp($5), to_timestamp($6))
+           ON CONFLICT (workspace_id) DO UPDATE SET
+               plan_id = EXCLUDED.plan_id,
+               stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+               status = EXCLUDED.status,
+               current_period_start = EXCLUDED.current_period_start,
+               current_period_end = EXCLUDED.current_period_end,
+               updated_at = now()""",
+        workspace_id, plan_id, sub_id, sub.get("status", "incomplete"),
+        sub.get("current_period_start") or 0,
+        sub.get("current_period_end") or 0,
+    )
+
+    await db.execute(
+        "UPDATE workspaces SET stripe_subscription_id = $1 WHERE id = $2",
+        sub_id, workspace_id,
+    )
+
+
+async def _handle_subscription_updated(db, sub: dict) -> None:
+    await db.execute(
+        """UPDATE subscriptions
+              SET status = $1,
+                  current_period_start = to_timestamp($2),
+                  current_period_end = to_timestamp($3),
+                  updated_at = now()
+            WHERE stripe_subscription_id = $4""",
+        sub["status"], sub["current_period_start"],
+        sub["current_period_end"], sub["id"],
+    )
+    # Plan changes (upgrade/downgrade) come through this event. Refill
+    # to the new tier's allocation so the upgrade takes effect
+    # immediately rather than waiting for the next invoice.paid.
+    if sub["status"] == "active":
+        await _refill_credits_for_subscription(db, sub["id"])
+
+
+async def _handle_subscription_deleted(db, sub: dict) -> None:
+    sub_id = sub["id"]
+    await db.execute(
+        """UPDATE subscriptions SET status = 'cancelled', updated_at = now()
+           WHERE stripe_subscription_id = $1""",
+        sub_id,
+    )
+    await db.execute(
+        "UPDATE workspaces SET status = 'suspended' WHERE stripe_subscription_id = $1",
+        sub_id,
+    )
+    # Cancellation zeroes the allocation and deactivates consumption.
+    await db.execute(
+        """UPDATE workspace_credits
+              SET active = FALSE, allocation = 0, updated_at = now()
+            WHERE workspace_id IN (
+                SELECT id FROM workspaces
+                 WHERE stripe_subscription_id = $1
+            )""",
+        sub_id,
+    )
+
+
+async def _handle_invoice_paid(db, invoice: dict) -> None:
+    sub_id = invoice.get("subscription")
+    if not sub_id:
+        return
+    await db.execute(
+        """UPDATE subscriptions SET status = 'active', updated_at = now()
+           WHERE stripe_subscription_id = $1""",
+        sub_id,
+    )
+    # Refill credits for the workspace bound to this subscription. The
+    # event-level idempotency check above ensures this only runs once
+    # per Stripe event delivery, so a replayed invoice.paid will not
+    # double-grant credits to the workspace.
+    await _refill_credits_for_subscription(db, sub_id)
+
+
+async def _handle_invoice_payment_failed(db, invoice: dict) -> None:
+    sub_id = invoice.get("subscription")
+    if not sub_id:
+        return
+    # Pause credit consumption until payment is resolved. Don't zero
+    # the balance: the user keeps whatever was unspent in case payment
+    # recovers within the grace window.
+    await db.execute(
+        """UPDATE workspace_credits
+              SET active = FALSE, updated_at = now()
+            WHERE workspace_id IN (
+                SELECT id FROM workspaces
+                 WHERE stripe_subscription_id = $1
+            )""",
+        sub_id,
+    )
+
+
+_WEBHOOK_HANDLERS = {
+    "customer.subscription.created":  _handle_subscription_created,
+    "customer.subscription.updated":  _handle_subscription_updated,
+    "customer.subscription.deleted":  _handle_subscription_deleted,
+    "invoice.paid":                   _handle_invoice_paid,
+    "invoice.payment_failed":         _handle_invoice_payment_failed,
+}
+
 
 @app.post("/api/billing/webhook")
 async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
-    """Handle Stripe webhook events."""
+    """Handle Stripe webhook events.
+
+    Flow:
+    1. Verify signature (400 on failure).
+    2. Atomic idempotency check: insert into billing_events keyed by
+       stripe_event_id. If the row already existed, treat as a replay
+       and return 200 without running handlers.
+    3. Dispatch to per-event-type handler.
+    4. Mark event processed.
+
+    The reconciliation logic itself lives in module-level _handle_*
+    helpers so unit tests can drive them directly.
+    """
     if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="Billing not configured")
 
@@ -1370,84 +1535,25 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
     except (ValueError, stripe.error.SignatureVerificationError):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # Log every event
-    await db.execute(
-        """INSERT INTO billing_events (stripe_event_id, event_type, payload)
-           VALUES ($1, $2, $3) ON CONFLICT (stripe_event_id) DO NOTHING""",
-        event["id"], event["type"], payload.decode(),
+    # Atomic idempotency. INSERT ... ON CONFLICT ... RETURNING is the
+    # whole correctness story: a Stripe replay for the same event_id
+    # gets DO NOTHING, RETURNING is empty, and we bail before mutating
+    # any state. No race window between "have we seen this?" and
+    # "process it" because the SQL statement is atomic.
+    is_new = await _record_event_or_skip(
+        db, event["id"], event["type"], payload.decode(),
     )
+    if not is_new:
+        return {"received": True, "duplicate": True}
 
     if event["type"] == "checkout.session.completed":
         await _provision_from_checkout(db, event["data"]["object"])
+    else:
+        handler = _WEBHOOK_HANDLERS.get(event["type"])
+        if handler is not None:
+            await handler(db, event["data"]["object"])
 
-    elif event["type"] == "invoice.paid":
-        sub_id = event["data"]["object"].get("subscription")
-        if sub_id:
-            await db.execute(
-                """UPDATE subscriptions SET status = 'active', updated_at = now()
-                   WHERE stripe_subscription_id = $1""",
-                sub_id,
-            )
-            # Refill credits for the workspace bound to this subscription.
-            await _refill_credits_for_subscription(db, sub_id)
-
-    elif event["type"] == "customer.subscription.updated":
-        sub = event["data"]["object"]
-        await db.execute(
-            """UPDATE subscriptions
-               SET status = $1,
-                   current_period_start = to_timestamp($2),
-                   current_period_end = to_timestamp($3),
-                   updated_at = now()
-               WHERE stripe_subscription_id = $4""",
-            sub["status"], sub["current_period_start"],
-            sub["current_period_end"], sub["id"],
-        )
-        # Plan changes (upgrade/downgrade) come through this event. Refill
-        # to the new tier's allocation so the upgrade takes effect
-        # immediately rather than waiting for the next invoice.paid.
-        if sub["status"] == "active":
-            await _refill_credits_for_subscription(db, sub["id"])
-
-    elif event["type"] == "invoice.payment_failed":
-        sub_id = event["data"]["object"].get("subscription")
-        if sub_id:
-            # Pause credit consumption until payment is resolved. Don't
-            # zero the balance - the user keeps whatever was unspent in
-            # case payment recovers within the grace window.
-            await db.execute(
-                """UPDATE workspace_credits
-                      SET active = FALSE, updated_at = now()
-                    WHERE workspace_id IN (
-                        SELECT id FROM workspaces
-                         WHERE stripe_subscription_id = $1
-                    )""",
-                sub_id,
-            )
-
-    elif event["type"] == "customer.subscription.deleted":
-        sub_id = event["data"]["object"]["id"]
-        await db.execute(
-            """UPDATE subscriptions SET status = 'cancelled', updated_at = now()
-               WHERE stripe_subscription_id = $1""",
-            sub_id,
-        )
-        await db.execute(
-            """UPDATE workspaces SET status = 'suspended'
-               WHERE stripe_subscription_id = $1""",
-            sub_id,
-        )
-        # Cancellation zeroes the allocation and deactivates consumption.
-        await db.execute(
-            """UPDATE workspace_credits
-                  SET active = FALSE, allocation = 0, updated_at = now()
-                WHERE workspace_id IN (
-                    SELECT id FROM workspaces
-                     WHERE stripe_subscription_id = $1
-                )""",
-            sub_id,
-        )
-
+    await _mark_event_processed(db, event["id"])
     return {"received": True}
 
 
