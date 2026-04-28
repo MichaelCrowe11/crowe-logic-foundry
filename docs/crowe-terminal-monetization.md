@@ -128,6 +128,41 @@ in email. Specifically:
 - Team / Enterprise admin features (audit log, cost dashboard, SSO).
 - Bundled IDE access at the Supreme tier.
 
+## Convergence with crowe-portfolio
+
+A separate effort is building a unified knowledge plane (registry +
+agent catalog + dataset catalog + code KB) across all 242 repos at
+`~/Projects/crowe-portfolio`. It exposes an HTTP server with bearer
+auth and a `search_code` endpoint backed by Azure embeddings + Neon
+pgvector.
+
+The terminal already supports the wiring: when the Electron main
+process spawns the Foundry bridge, it now passes through
+`CROWE_PORTFOLIO_URL` and `CROWE_PORTFOLIO_TOKEN` env vars. Once
+the portfolio HTTP server is deployed (Railway service or a tunnel
+from the user's laptop), users set:
+
+```bash
+export CROWE_PORTFOLIO_URL=https://crowe-portfolio.up.railway.app
+export CROWE_PORTFOLIO_TOKEN=<bearer>
+```
+
+…and the Foundry agent inside the terminal can call portfolio-wide
+search alongside its native tool kit. This is what turns the terminal
+from "a chat that knows the open file" into "a chat that knows your
+entire codebase." Pricing-tier impact:
+
+| Tier | Portfolio access |
+|---|---|
+| BYOK | User runs their own portfolio server locally (free) |
+| Personal+ | Hosted portfolio search included; we run the bridge |
+| Team | Pooled portfolio across teammates' repos |
+| Enterprise | Self-hosted bridge + SSO + audit log |
+
+This is also why the terminal is the right acquisition surface: the
+portfolio becomes meaningful only when users live in it daily, and a
+terminal is the daily surface developers actually live in.
+
 ## Decision points still open
 
 1. **Notarization timing.** Notarized build requires a $99 Apple
