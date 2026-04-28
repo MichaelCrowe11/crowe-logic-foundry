@@ -137,6 +137,8 @@ function formatModelLabel(model: string): string {
     if (m.includes('titan')) return 'Titan';
     if (m.includes('oracle')) return 'Oracle';
     if (m.includes('sovereign')) return 'Sovereign';
+    if (m.includes('grower') || m.includes('field')) return 'Grower';
+    if (m.includes('kernel')) return 'Kernel';
     if (m.includes('talon')) return 'Talon';
     if (m.includes('classic')) return 'Classic';
     // Anything else is mapped to "CroweLM" so we never leak a backend name.

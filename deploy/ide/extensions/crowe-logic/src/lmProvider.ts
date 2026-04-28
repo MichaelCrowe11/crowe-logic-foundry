@@ -112,6 +112,32 @@ const MODELS: CroweLogicModelInfo[] = ([
         capabilities: { toolCalling: true },
         isUserSelectable: true,
     },
+    {
+        id: 'crowelm-kernel',
+        name: 'CroweLM Kernel',
+        family: 'crowelm',
+        version: '1.0',
+        tooltip: 'CroweLM Kernel. Cultivation-tuned fast tier — Lions Mane SOPs, mycology research, grow-room operational data.',
+        detail: 'Cultivation fast',
+        maxInputTokens: 64_000,
+        maxOutputTokens: 4_000,
+        foundryModel: 'crowelm-kernel',
+        capabilities: { toolCalling: true },
+        isUserSelectable: true,
+    },
+    {
+        id: 'crowelm-grower',
+        name: 'CroweLM Grower',
+        family: 'crowelm',
+        version: '1.0',
+        tooltip: 'CroweLM Grower. Commercial mycology operations specialist — substrate prep, sterilization, contamination triage, yield analysis.',
+        detail: 'Cultivation specialist',
+        maxInputTokens: 64_000,
+        maxOutputTokens: 4_000,
+        foundryModel: 'crowelm-grower',
+        capabilities: { toolCalling: true },
+        isUserSelectable: true,
+    },
 ] as any) as CroweLogicModelInfo[];
 
 /**
