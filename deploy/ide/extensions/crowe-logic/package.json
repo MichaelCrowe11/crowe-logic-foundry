@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic Workstation",
   "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
-  "version": "0.2.36",
+  "version": "0.2.37",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -249,6 +249,17 @@
     "configuration": {
       "title": "Crowe Logic",
       "properties": {
+        "croweLogic.chatPersona": {
+          "type": "string",
+          "enum": ["face", "mark"],
+          "enumDescriptions": [
+            "Show the Crowe Logic face avatar next to every assistant message. Personality-forward.",
+            "Show the diamond emblem next to every assistant message. Brand-forward, quieter."
+          ],
+          "default": "face",
+          "description": "Which avatar appears next to each Crowe Logic response in the chat. Reload window after changing.",
+          "order": 0
+        },
         "croweLogic.pythonPath": {
           "type": "string",
           "default": "",

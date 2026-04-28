@@ -244,12 +244,28 @@ export class CroweChatViewProvider implements vscode.WebviewViewProvider {
  * can reuse the exact same renderer the sidebar view uses.
  */
 export function renderChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+        // Two distinct asset roles, modelled on how GitHub does Copilot's
+        // mark + Copilot's character avatar:
+        //
+        //   diamond mark (mark.svg, 1.4 KB vector)
+        //     - Participant icon in the chat panel header
+        //     - Activity-bar glyph
+        //     - Anywhere a small, monochromatic brand identity is needed
+        //
+        //   face avatar (face-dark.png / face-light.png, 256x256 portrait)
+        //     - The Crowe Logic AI character avatar shown next to every
+        //       assistant message bubble in the chat webview
+        //     - Read-large surfaces where personality matters
+        //
+        // The croweLogic.chatPersona setting lets users force either one
+        // for the chat bubble. Default is 'face' so personality shows by
+        // default; users who want a quieter UI can pick 'mark'.
+        const persona = vscode.workspace.getConfiguration('croweLogic')
+            .get<string>('chatPersona', 'face');
+        const bubbleAsset = persona === 'mark' ? 'avatar-dark.png' : 'face-dark.png';
         const avatarUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(extensionUri, 'media', 'avatar-dark.png'),
+            vscode.Uri.joinPath(extensionUri, 'media', bubbleAsset),
         );
-        // Titlebar uses the vector mark for crisp scaling at any size.
-        // The previous 'avatar-titlebar.png' filename did not exist in
-        // the bundled media dir, which rendered as a broken-image icon.
         const titlebarUri = webview.asWebviewUri(
             vscode.Uri.joinPath(extensionUri, 'media', 'mark.svg'),
         );
