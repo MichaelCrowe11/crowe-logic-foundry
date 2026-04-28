@@ -166,11 +166,16 @@ export class CroweChatViewProvider implements vscode.WebviewViewProvider {
         this.cancellation = new vscode.CancellationTokenSource();
 
         try {
+            // Active workspace folder is the cwd for the agent's tools,
+            // so filesystem/shell/git operate on the user's open project,
+            // not on the Foundry checkout itself.
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const events = runFoundryTurn(
                 { messages: this.history, model, session: sessionId },
                 {
                     pythonPath,
                     foundryPath,
+                    workspaceFolder,
                     cancellation: this.cancellation.token,
                 },
             );

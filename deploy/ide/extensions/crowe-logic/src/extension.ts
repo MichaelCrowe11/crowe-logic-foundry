@@ -272,9 +272,14 @@ async function handleChat(
     };
 
     try {
+        // Use the active workspace folder as cwd so the agent's filesystem
+        // / shell / git tools operate on the user's project, not on the
+        // Foundry checkout. Fall back to foundryPath only when no
+        // workspace is open.
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const events = runFoundryTurn(
             { messages, model, session: sessionId },
-            { pythonPath, foundryPath, cancellation: token }
+            { pythonPath, foundryPath, workspaceFolder, cancellation: token }
         );
 
         for await (const evt of events) {

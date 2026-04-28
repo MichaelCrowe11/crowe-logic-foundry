@@ -44,6 +44,16 @@ export type FoundryEvent =
 export interface AgentOptions {
     pythonPath: string;
     foundryPath: string;
+    /**
+     * Working directory for the spawned headless process. Should be the
+     * user's currently-open workspace, NOT the Foundry checkout, so the
+     * agent's filesystem/shell/git tools operate on the user's project.
+     * Falls back to foundryPath only when no workspace is open (e.g. the
+     * user is using the chat from the welcome view with nothing loaded).
+     * PYTHONPATH stays pinned to foundryPath so cli.headless can be
+     * imported regardless of cwd.
+     */
+    workspaceFolder?: string;
     cancellation?: { isCancellationRequested: boolean; onCancellationRequested: (cb: () => void) => void };
 }
 
@@ -59,12 +69,20 @@ export async function* runFoundryTurn(
     request: AgentRequest,
     options: AgentOptions
 ): AsyncGenerator<FoundryEvent, void, void> {
+    const cwd = options.workspaceFolder || options.foundryPath;
     const child = spawn(
         options.pythonPath,
         ['-m', 'cli.headless'],
         {
-            cwd: options.foundryPath,
-            env: { ...process.env, PYTHONPATH: options.foundryPath },
+            cwd,
+            env: {
+                ...process.env,
+                PYTHONPATH: options.foundryPath,
+                // Surface foundry path to headless tools that need to find
+                // training data, agent profiles, etc. without binding cwd.
+                CROWE_FOUNDRY_PATH: options.foundryPath,
+                CROWE_WORKSPACE_PATH: cwd,
+            },
             stdio: ['pipe', 'pipe', 'pipe'],
         }
     );
