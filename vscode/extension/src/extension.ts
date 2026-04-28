@@ -24,8 +24,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         false,
       ),
     ),
-    vscode.commands.registerCommand('crowe-logic.signIn', () => signIn(ctx)),
-    vscode.commands.registerCommand('crowe-logic.signOut', () => signOut(ctx)),
+    // crowe-logic.signIn / signOut are owned by the chat extension
+    // (deploy/ide/extensions/crowe-logic/src/extension.ts). Both
+    // extensions registering the same command made the chat extension
+    // claim it first (onStartupFinished activates faster than this
+    // walkthrough-driven extension), and we threw with
+    // "command 'crowe-logic.signIn' already exists" on activate, which
+    // killed theme + walkthrough loading entirely.
   );
 
   applyTitleBar();

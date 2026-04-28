@@ -2,7 +2,7 @@
   "name": "crowe-logic-vscode",
   "displayName": "Crowe Logic",
   "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona with the actual Crowe Logic avatar.",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "publisher": "crowe-logic",
   "engines": {
     "vscode": "^1.90.0"
@@ -142,16 +142,6 @@
       {
         "command": "crowe-logic.showWelcome",
         "title": "Crowe Logic: Show Welcome",
-        "category": "Crowe Logic"
-      },
-      {
-        "command": "crowe-logic.signIn",
-        "title": "Crowe Logic: Sign In",
-        "category": "Crowe Logic"
-      },
-      {
-        "command": "crowe-logic.signOut",
-        "title": "Crowe Logic: Sign Out",
         "category": "Crowe Logic"
       }
     ],
