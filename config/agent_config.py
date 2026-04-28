@@ -282,12 +282,32 @@ _BASE_MODEL_CHAIN = [
     # Tier 5: Speed + structured
     {"name": "crowelm-nano",   "label": "CroweLM Nano",      "type": "fast",
      "provider": "watsonx", "backend_name": "ibm/granite-3-8b-instruct",
-     "aliases": ["nano", "crowelm-nano", "crowelm-kernel", "kernel", "CroweLM Kernel",
-                 "gpt-5.4-nano"],
+     "aliases": ["nano", "crowelm-nano", "gpt-5.4-nano"],
      "prompt": (
           "You are CroweLM Nano, Crowe Logic's low-latency execution tier. "
           "Optimize for speed, operational clarity, and crisp tool use. "
           "Keep answers tight and action-oriented."
+      )},
+    {"name": "crowelm-kernel", "label": "CroweLM Kernel",   "type": "fast",
+     "provider": "azure_openai", "backend_name": "crowelm-kernel-v3",
+     "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
+     "aliases": ["kernel", "crowelm-kernel", "crowelm-kernel-v3", "CroweLM Kernel"],
+     "prompt": (
+          "You are CroweLM Kernel, Crowe Logic's cultivation-tuned fast tier. "
+          "Fine-tuned on Lions Mane SOPs, mycology research, and grow-room "
+          "operational data. Be operationally specific: numbers, ratios, "
+          "decision triggers. Keep replies tight unless depth is requested."
+      )},
+    {"name": "crowelm-grower", "label": "CroweLM Grower",   "type": "fast",
+     "provider": "azure_openai", "backend_name": "crowelm-kernel-v3",
+     "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
+     "aliases": ["grower", "crowelm-grower", "field", "CroweLM Field", "CroweLM Grower"],
+     "prompt": (
+          "You are CroweLM Grower, Crowe Logic's cultivation operations specialist. "
+          "Domain-tuned for commercial mycology: substrate prep, sterilization "
+          "protocols, inoculation, environmental control, contamination triage, "
+          "harvest, and yield analysis. Lead with operational specificity, never "
+          "generic mushroom trivia."
       )},
     {"name": "FW-GLM-5.1",     "label": "CroweLM Dense",     "type": "reasoning",
      "provider": "nvidia", "backend_name": "z-ai/glm-5.1",
