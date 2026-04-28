@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Crowe Logic">
+  <title>Crowe Logic</title>
+  <defs>
+    <linearGradient id="goldFill" x1="0.2" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#F2D584"/>
+      <stop offset="0.55" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#8C6E1F"/>
+    </linearGradient>
+    <linearGradient id="goldStroke" x1="0.1" y1="0.1" x2="0.9" y2="0.95">
+      <stop offset="0" stop-color="#E9C872"/>
+      <stop offset="0.5" stop-color="#D4AF37"/>
+      <stop offset="1" stop-color="#9A7A23"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Graphite rounded background. rx=4 on 24-unit grid keeps the
+       silhouette clearly square at very small sizes (16/24/32 px) -->
+  <rect width="24" height="24" rx="4" fill="#0B0B0C"/>
+
+  <!-- Outer diamond outline. 9.5 from center = 19 wide on 24 canvas =
+       ~80% of the icon. Wide enough to read at 16 px. -->
+  <path d="M 12 2.5 L 21.5 12 L 12 21.5 L 2.5 12 Z"
+        fill="none"
+        stroke="url(#goldStroke)"
+        stroke-width="1.4"
+        stroke-linejoin="round"/>
+
+  <!-- Inner filled diamond. 5 from center = 10 wide. Solid fill so the
+       icon reads as a confident, hierarchical mark even when downscaled
+       past the point where the outline stroke would alias away. -->
+  <path d="M 12 7 L 17 12 L 12 17 L 7 12 Z"
+        fill="url(#goldFill)"/>
+</svg>

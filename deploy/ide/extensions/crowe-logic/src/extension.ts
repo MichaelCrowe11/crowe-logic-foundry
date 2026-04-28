@@ -67,13 +67,15 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    // Avatar in the chat surface — this is the part that displaces
-    // the default Copilot icon. Both light and dark variants point at
-    // the same asset for now; swap to dedicated variants if a darker
-    // mark is added later.
+    // Avatar in the chat surface, where Copilot's face would normally
+    // appear. The Crowe Logic face avatar is the AI character art and
+    // belongs here for personality (analogous to GitHub's Copilot
+    // character). The diamond mark stays reserved for small-icon
+    // surfaces (activity bar, terminal profile) where a portrait
+    // does not read.
     participant.iconPath = {
-        light: vscode.Uri.file(path.join(context.extensionPath, 'media', 'avatar-light.png')),
-        dark: vscode.Uri.file(path.join(context.extensionPath, 'media', 'avatar-dark.png')),
+        light: vscode.Uri.file(path.join(context.extensionPath, 'media', 'face-light.png')),
+        dark: vscode.Uri.file(path.join(context.extensionPath, 'media', 'face-dark.png')),
     };
 
     participant.followupProvider = {
