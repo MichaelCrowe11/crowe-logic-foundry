@@ -2,7 +2,7 @@
   "name": "crowe-logic-vscode",
   "displayName": "Crowe Logic",
   "description": "Re-skins VS Code as a Crowe Logic-facing product: themes, product icons, walkthrough, and a Crowe Logic chat persona with the actual Crowe Logic avatar.",
-  "version": "0.1.7",
+  "version": "0.1.9",
   "publisher": "crowe-logic",
   "engines": {
     "vscode": "^1.90.0"
@@ -53,7 +53,7 @@
           {
             "id": "open-chat",
             "title": "Open the Crowe Logic chat",
-            "description": "Click the gold mark in the activity bar to reveal the dedicated Crowe Logic chat panel — your face avatar, model selector, real-time tool calls, no Microsoft chrome.\n[Open Chat](command:crowe-logic.openChat)",
+            "description": "Click the gold mark in the activity bar to reveal the dedicated Crowe Logic chat panel: your face avatar, model selector, and real-time tool calls.\n[Open Chat](command:crowe-logic.openChat)",
             "media": {
               "image": "media/walkthrough-banner.png",
               "altText": "Crowe Logic Code"
@@ -89,7 +89,7 @@
           {
             "id": "sign-in",
             "title": "Sign in with your API key",
-            "description": "Don't have an account? [Start free at crowelogic.com](https://crowelogic.com/start-free) — 750 credits, no card. Then run **Sign In** and paste your `crowe_pat_…` token.\n[Sign In](command:crowe-logic.signIn)",
+            "description": "Don't have an account? [Start free at crowelogic.com](https://crowelogic.com/start-free). 750 credits, no card. Then run **Sign In** and paste your `crowe_pat_...` token.\n[Sign In](command:crowe-logic.signIn)",
             "media": {
               "image": "media/walkthrough-banner.png",
               "altText": "Sign in"
@@ -165,7 +165,7 @@
         },
         "croweLogic.titleBarText": {
           "type": "string",
-          "default": "Crowe Logic — ${rootName}${separator}${activeEditorShort}",
+          "default": "Crowe Logic | ${rootName}${separator}${activeEditorShort}",
           "description": "Override window.title with a Crowe Logic-branded format."
         },
         "croweLogic.foundryBaseURL": {

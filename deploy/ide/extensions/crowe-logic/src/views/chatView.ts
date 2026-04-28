@@ -247,8 +247,11 @@ export function renderChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri
         const avatarUri = webview.asWebviewUri(
             vscode.Uri.joinPath(extensionUri, 'media', 'avatar-dark.png'),
         );
+        // Titlebar uses the vector mark for crisp scaling at any size.
+        // The previous 'avatar-titlebar.png' filename did not exist in
+        // the bundled media dir, which rendered as a broken-image icon.
         const titlebarUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(extensionUri, 'media', 'avatar-titlebar.png'),
+            vscode.Uri.joinPath(extensionUri, 'media', 'mark.svg'),
         );
         const nonce = Math.random().toString(36).slice(2);
 

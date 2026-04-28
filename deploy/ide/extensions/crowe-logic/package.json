@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic Workstation",
   "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
-  "version": "0.2.29",
+  "version": "0.2.32",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -29,7 +29,7 @@
         "id": "crowe-logic.foundry",
         "fullName": "Crowe Logic",
         "name": "crowe",
-        "description": "Ask Crowe Logic — your Foundry agent.",
+        "description": "Ask Crowe Logic, your Foundry agent.",
         "isSticky": true,
         "iconPath": "media/avatar-dark.png",
         "commands": [
@@ -236,18 +236,6 @@
         }
       ]
     },
-    "themes": [
-      {
-        "label": "Crowe Logic Dark",
-        "uiTheme": "vs-dark",
-        "path": "./themes/crowe-logic-dark-color-theme.json"
-      },
-      {
-        "label": "Crowe Logic Light",
-        "uiTheme": "vs",
-        "path": "./themes/crowe-logic-light-color-theme.json"
-      }
-    ],
     "configuration": {
       "title": "Crowe Logic",
       "properties": {
