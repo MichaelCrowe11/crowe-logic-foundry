@@ -22,16 +22,21 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
         const cfg = vscode.workspace.getConfiguration('croweLogic');
         const model = cfg.get<string>('model') || 'auto';
         const modelLabel = formatModelLabel(model);
+        const bridgeIcon = await probeBridgeIcon();
         if (token) {
-            // CLI parity: "MODEL · session" reads like the boxed CLI session header.
-            item.text = `$(sparkle) Crowe Logic · ${modelLabel}`;
-            item.tooltip = `Crowe Logic Workstation\nModel: ${modelLabel}\nSigned in. Click for actions.`;
+            item.text = `$(sparkle) Crowe Logic · ${modelLabel}${bridgeIcon}`;
+            item.tooltip = `Crowe Logic Workstation\nModel: CroweLM ${modelLabel}\nSigned in. Click for actions.`;
         } else {
-            item.text = '$(account) Crowe Logic · sign in';
+            item.text = `$(account) Crowe Logic · sign in${bridgeIcon}`;
             item.tooltip = 'Crowe Logic Workstation — not signed in. Click to sign in.';
         }
         item.show();
     };
+
+    const refreshInterval = setInterval(() => {
+        void refresh();
+    }, 30_000);
+    ctx.subscriptions.push({ dispose: () => clearInterval(refreshInterval) });
 
     // Re-render when the user changes the active model from the chat picker
     // or settings UI so the status bar always reflects what they'll talk to.
@@ -95,19 +100,45 @@ export async function registerStatusBar(ctx: vscode.ExtensionContext): Promise<v
 }
 
 /**
- * Map an internal model id ("CroweLM Talon", "gpt-5.4-pro-managed", "auto")
- * to a short display label suitable for a status bar entry.
+ * Probe the local foundry bridge once per status-bar refresh.
+ *
+ * Returns a small icon to append to the status text:
+ *   - empty string when bridge is healthy
+ *   - "$(warning)" when bridge isn't reachable on 127.0.0.1:8011
+ * Times out fast (1s) to avoid blocking the status bar.
+ */
+async function probeBridgeIcon(): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+    try {
+        const res = await fetch('http://127.0.0.1:8011/healthz', { signal: controller.signal });
+        if (res.ok) return '';
+    } catch {
+        // bridge unreachable; fall through
+    } finally {
+        clearTimeout(timeout);
+    }
+    return ' $(warning)';
+}
+
+/**
+ * Map an internal model id to a short Crowe Logic tier label.
+ *
+ * Only CroweLM tier names are surfaced; upstream provider/model brand
+ * names are deliberately not exposed in user-visible UI.
  */
 function formatModelLabel(model: string): string {
-    if (!model || model === 'auto') return 'auto';
-    // Drop "CroweLM " prefix; "CroweLM Talon" → "Talon".
-    if (model.startsWith('CroweLM ')) return model.slice('CroweLM '.length);
-    // Map common backend names to short forms.
-    if (model.includes('gpt-5.4-pro')) return 'gpt-5.4 pro';
-    if (model.includes('gpt-5.4')) return 'gpt-5.4';
-    if (model.includes('gpt-4o')) return 'gpt-4o';
-    if (model.includes('claude')) return 'claude';
-    if (model.includes('kimi')) return 'kimi';
-    if (model.includes('deepseek')) return 'deepseek';
-    return model;
+    if (!model || model === 'auto' || model.toLowerCase().includes('auto')) {
+        return 'Auto';
+    }
+    const m = model.toLowerCase();
+    if (m.includes('supreme')) return 'Supreme';
+    if (m.includes('apex')) return 'Apex';
+    if (m.includes('titan')) return 'Titan';
+    if (m.includes('oracle')) return 'Oracle';
+    if (m.includes('sovereign')) return 'Sovereign';
+    if (m.includes('talon')) return 'Talon';
+    if (m.includes('classic')) return 'Classic';
+    // Anything else is mapped to "CroweLM" so we never leak a backend name.
+    return 'CroweLM';
 }
