@@ -24,6 +24,7 @@ import { CroweCodeActionProvider, CROWE_CODE_ACTION_KINDS } from './codeActions'
 import { registerStatusBar } from './statusBar';
 import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage, clearPathCache } from './resolvePaths';
 import { CroweChatViewProvider } from './views/chatView';
+import { registerCroweLogicLanguageModel } from './lmProvider';
 
 const BRAND_THEME_DARK = 'Crowe Logic Dark';
 const BRAND_THEME_LIGHT = 'Crowe Logic Light';
@@ -108,6 +109,15 @@ export async function activate(context: vscode.ExtensionContext) {
             { providedCodeActionKinds: CROWE_CODE_ACTION_KINDS },
         ),
     );
+
+    // Register Crowe Logic as a vscode.lm.* language model provider.
+    // VS Code 1.117 made an LM provider a hard prerequisite for chat
+    // participants: getDefaultLanguageModel() throws "Language model
+    // unavailable" before the @crowe handler even runs. Registering
+    // this provider satisfies that precondition AND lets any caller of
+    // vscode.lm.selectChatModels() use Crowe Logic models without
+    // depending on Copilot.
+    registerCroweLogicLanguageModel(context);
 
     void registerStatusBar(context);
     await normalizeLegacyModelSelection();
@@ -223,9 +233,22 @@ async function handleChat(
     }
     // Slash commands (e.g. /plan) are surfaced as request.command;
     // include them in the prompt so the agent sees the user intent.
-    const prompt = request.command
-        ? `/${request.command} ${request.prompt}`.trim()
-        : request.prompt;
+    const prompt = (request.command
+        ? `/${request.command} ${request.prompt ?? ''}`.trim()
+        : (request.prompt ?? '')).trim();
+
+    // Empty prompts (user typed just "@crowe" with no body) used to
+    // hit Anthropic with role:user content:"" and 400 with a confusing
+    // provider error. Render a friendly hint instead.
+    if (!prompt) {
+        stream.markdown(
+            '_Type a question after `@crowe`. Try one of:_\n' +
+            '- `@crowe explain this codebase`\n' +
+            '- `@crowe write tests for the open file`\n' +
+            '- `@crowe find and fix a bug`\n'
+        );
+        return { metadata: { sessionId: resolveSessionId(request, chatContext) } };
+    }
     messages.push({ role: 'user', content: prompt });
     const sessionId = resolveSessionId(request, chatContext);
 
