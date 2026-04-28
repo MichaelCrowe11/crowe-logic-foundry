@@ -21,13 +21,30 @@ import * as vscode from 'vscode';
 import { runFoundryTurn, FoundryMessage, FoundryEvent } from './agent';
 import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage } from './resolvePaths';
 
-const VENDOR = 'crowe-logic';
+// Why vendor "copilot" inside a Crowe Logic-only fork: VS Code 1.117's
+// getDefaultLanguageModel() is hardcoded to match metadata.vendor === "copilot"
+// AND metadata.isDefaultForLocation.panel === true. There is no public hook
+// to register a different vendor as the workspace default; the resolver in
+// extensionHostProcess.js will only ever pick a copilot-vendor model. Since
+// this fork ships with the real GitHub Copilot Chat extension explicitly
+// disabled (github.copilot-chat-*.disabled-by-crowe-logic), claiming the
+// "copilot" vendor here is unambiguous: nothing else owns it. The model id
+// and family still say crowelm so users can disambiguate, and any future
+// provider can register under a different vendor without colliding.
+const VENDOR = 'copilot';
 
 interface CroweLogicModelInfo extends vscode.LanguageModelChatInformation {
     foundryModel: string;
+    // Proposed-API metadata (chatProvider proposal). Not on the public type
+    // surface, but the underlying API accepts it: VS Code uses
+    // isDefaultForLocation.panel to pick the default model in the chat panel.
+    // We declare the cast inline below rather than augmenting global types.
 }
 
-const MODELS: CroweLogicModelInfo[] = [
+// Cast helper: the extra fields below are part of the chatProvider proposed
+// API but not exposed on @types/vscode's public interface. Using `as any`
+// keeps the runtime payload correct without requiring a parallel proposed.d.ts.
+const MODELS: CroweLogicModelInfo[] = ([
     {
         id: 'crowelm-supreme',
         name: 'CroweLM Supreme',
@@ -39,6 +56,8 @@ const MODELS: CroweLogicModelInfo[] = [
         maxOutputTokens: 16_000,
         foundryModel: 'auto',
         capabilities: { toolCalling: true },
+        isDefaultForLocation: { panel: true },
+        isUserSelectable: true,
     },
     {
         id: 'crowelm-prime',
@@ -51,8 +70,9 @@ const MODELS: CroweLogicModelInfo[] = [
         maxOutputTokens: 8_000,
         foundryModel: 'crowelm-prime',
         capabilities: { toolCalling: true },
+        isUserSelectable: true,
     },
-];
+] as any) as CroweLogicModelInfo[];
 
 /**
  * Extract the plain-text payload from a VS Code chat-request message.
