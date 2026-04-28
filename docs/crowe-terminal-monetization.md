@@ -78,9 +78,9 @@ in email. Specifically:
   save ~$40 on tokens this month with Personal. [Sign up]"
 - When a Personal user hits the 200-turn burst cap → modal: "Burst cap
   reached. Upgrade to Pro for unmetered dual mode."
-- When a Pro user runs Supreme via BYOK with their own Anthropic key →
+- When a Pro user runs Supreme via BYOK on their own provider keys →
   toast: "CroweLM Supreme is included free in our IDE bundle ($499/mo).
-  Save $X/mo over your current Anthropic spend."
+  Save $X/mo over your current API spend."
 
 ## Acquisition tactics specific to the terminal
 
@@ -100,9 +100,9 @@ in email. Specifically:
    warmest leads. Email blast: "If you live in `crowe` on the CLI, you
    want this terminal — same agent, no context switch."
 
-4. **Content angle.** "Why I built a terminal that has Claude Opus 4.7
-   built into it" → blog post → cross-post to Dev.to + Medium. Embed
-   asciinema demo of dual-mode in action.
+4. **Content angle.** "Why I built a terminal with a flagship reasoning
+   model wired in by default" → blog post → cross-post to Dev.to + Medium.
+   Embed asciinema demo of dual-mode in action.
 
 5. **Pricing page lift.** Add Crowe Terminal as a row to the
    crowelogic.com pricing matrix: "Included: AI Terminal, AI IDE
@@ -113,15 +113,15 @@ in email. Specifically:
 
 - The terminal binary and source (legal requirement under Apache 2.0).
 - The bridge code (`cli/openai_bridge.py`, `emain-foundry-bridge.ts`).
-- BYOK mode — bring your own Anthropic / OpenAI key, run the bridge
-  locally, get full agent capabilities. This is the "developer
-  goodwill" tier; we do not chase users who run BYOK forever.
+- BYOK mode — bring your own provider key, run the bridge locally,
+  get full agent capabilities. This is the "developer goodwill" tier;
+  we do not chase users who run BYOK forever.
 - The terminal-only feature set (split panes, themes, browser block,
   etc.) — these are upstream Wave features and stay open.
 
 ## What's behind the paywall
 
-- Hosted CroweLM Supreme/Sovereign access (we eat the Anthropic cost).
+- Hosted CroweLM Supreme/Sovereign access (we eat the upstream provider cost).
 - Cross-machine session memory and history sync.
 - Hosted tools that need a server: web search rate-limited by us,
   Crowe Vision RAG, Foundry Studio routing.
