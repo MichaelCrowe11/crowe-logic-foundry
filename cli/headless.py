@@ -390,6 +390,11 @@ def _build_provider(model_id: str, *, session_id: str = ""):
                 + ", ".join(m["name"] for m in chain[:10])
                 + ("..." if len(chain) > 10 else "")
             )
+        # The router entry (e.g. crowelm-auto) is a meta-model with
+        # provider="auto"; resolve it the same way as the literal "auto"
+        # by picking the first credentialed concrete tier.
+        if cfg.get("provider") == "auto":
+            cfg = _pick_auto_model(chain)
 
     provider_kind = cfg.get("provider", "openrouter")
     label = cfg.get("label", "CroweLM")
