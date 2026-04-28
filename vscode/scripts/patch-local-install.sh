@@ -52,8 +52,11 @@ detect_app_root() {
   case "$1" in
     darwin)
       for p in \
+        "/Applications/Crowe Code.app" \
+        "/Applications/Crowe Logic Code.app" \
         "/Applications/Visual Studio Code.app" \
         "/Applications/Visual Studio Code - Insiders.app" \
+        "$HOME/Applications/Crowe Code.app" \
         "$HOME/Applications/Visual Studio Code.app"; do
         [[ -d "$p" ]] && { echo "$p"; return; }
       done ;;
@@ -194,7 +197,7 @@ esac
 if [[ "$PLATFORM" == "darwin" && -f "$PLIST" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleName $NAME_SHORT" "$PLIST" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $NAME_LONG" "$PLIST" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $DARWIN_BUNDLE_ID" "$PLIST" 2>/dev/null || true
+  #   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $DARWIN_BUNDLE_ID" "$PLIST" 2>/dev/null || true   # disabled — changing CFBundleIdentifier breaks code-signed launch on Sequoia
   echo "  ✓ updated Info.plist (CFBundleName, CFBundleDisplayName, CFBundleIdentifier)"
 
   # Rename Electron helper apps to match the new CFBundleName. Electron's main
@@ -204,11 +207,29 @@ if [[ "$PLATFORM" == "darwin" && -f "$PLIST" ]]; then
   # as EXC_BREAKPOINT in V8 startup.
   HELPERS_DIR="$APP_ROOT/Contents/Frameworks"
   for variant in "" " (Renderer)" " (GPU)" " (Plugin)"; do
-    OLD_NAME="Code Helper${variant}"
     NEW_NAME="${NAME_SHORT} Helper${variant}"
-    OLD_BUNDLE="$HELPERS_DIR/${OLD_NAME}.app"
     NEW_BUNDLE="$HELPERS_DIR/${NEW_NAME}.app"
-    [[ -d "$OLD_BUNDLE" ]] || continue
+
+    # Already correctly named (re-run on a fully-rebranded install).
+    [[ -d "$NEW_BUNDLE" ]] && continue
+
+    # Find the existing helper bundle for this variant. Could be the vanilla
+    # "Code Helper${variant}.app" on first run, or a previously-rebranded
+    # name like "Crowe Code Helper${variant}.app" on a re-rebrand. Match any
+    # *.app whose basename ends with "Helper${variant}". Prior versions of
+    # this script only matched the vanilla name and silently skipped on a
+    # re-rebrand, leaving stale helper directories that crashed Electron
+    # with EXC_BREAKPOINT in V8 startup.
+    OLD_BUNDLE=""
+    shopt -s nullglob
+    for cand in "$HELPERS_DIR"/*"Helper${variant}.app"; do
+      OLD_BUNDLE="$cand"
+      break
+    done
+    shopt -u nullglob
+    [[ -z "$OLD_BUNDLE" ]] && { echo "  ! no helper bundle found for variant '${variant:- (main)}'; skipping" >&2; continue; }
+
+    OLD_NAME="$(basename "$OLD_BUNDLE" .app)"
     HELPER_PLIST="$OLD_BUNDLE/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleName ${NEW_NAME}"        "$HELPER_PLIST" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${NEW_NAME}" "$HELPER_PLIST" 2>/dev/null || true
@@ -220,7 +241,7 @@ if [[ "$PLATFORM" == "darwin" && -f "$PLIST" ]]; then
     fi
     [[ -f "$OLD_BUNDLE/Contents/MacOS/$OLD_NAME" ]] && mv "$OLD_BUNDLE/Contents/MacOS/$OLD_NAME" "$OLD_BUNDLE/Contents/MacOS/$NEW_NAME"
     mv "$OLD_BUNDLE" "$NEW_BUNDLE"
-    echo "  ✓ renamed helper: ${OLD_NAME}.app → ${NEW_NAME}.app"
+    echo "  ✓ renamed helper: ${OLD_NAME}.app -> ${NEW_NAME}.app"
   done
 
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_ROOT" 2>/dev/null || true
