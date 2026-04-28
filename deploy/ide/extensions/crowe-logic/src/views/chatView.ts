@@ -897,7 +897,7 @@ export function renderChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri
     <div class="empty">
       <img src="${avatarUri}" alt="" />
       <h2>How can Crowe Logic help?</h2>
-      <p>A precision AI workstation. Ask anything — write code, plan a refactor, explain an error, design a system.</p>
+      <p>A precision AI workstation. Ask anything: write code, plan a refactor, explain an error, design a system.</p>
       <div class="examples">
         <button class="example-card" data-prompt="Explain what this codebase does at a high level. Read the package.json, README, and the main entry point.">
           <div class="ec-eyebrow">Understand</div>

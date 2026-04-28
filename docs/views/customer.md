@@ -3,26 +3,24 @@
 Status: derived from internal master, refreshed 2026-04-27. Customer-facing
 positioning. The marketing site can render this directly.
 
-## What is Crowe Logic
+## The pitch in one sentence
 
-Crowe Logic is a precision AI workstation. One subscription gets you an
-AI-native code editor, a research engine, a content production suite,
-and a domain-tuned model. Every surface shares one credit balance, one
-login, and one tool library.
+Crowe Logic runs two flagship AI models against your prompt at the same
+time and synthesizes the answer. One subscription, four product
+surfaces, one credit balance.
 
-## Why two models, not one
+## Why two models
 
-Most AI tools wrap one model. You ask a question, you get one answer.
-You either trust it or paste your prompt into a second tool to compare.
+Every other AI tool wraps a single model. You ask, you get one answer,
+you either trust it or open a second tab to compare.
 
-Crowe Logic runs two flagship models against your prompt at the same
-time. You see both answers side by side. You can have the platform
-synthesize a unified answer, judge which response is stronger, or show
-you only the differences. The synthesis is what makes the result more
-than the sum of two single-model tools.
+Crowe Logic does the comparing for you. You see both answers side by
+side. You can have the platform synthesize a unified response, judge
+which is stronger, or show only the differences. The synthesis is what
+makes two models better than one.
 
-If you have ever opened two tabs to compare answers, this is what you
-were doing manually.
+If you have ever opened two tabs to compare AI answers, this is the
+tool you have been building by hand.
 
 ## What you get
 
@@ -64,25 +62,21 @@ your work carries over.
 
 Three things, in order:
 
-1. **Two models concurrently.** Not "switch between models." Both
-   running, every turn, with a synthesis layer on top.
-2. **One platform, four surfaces.** You do not pay for four tools and
-   manage four logins. You pay once, you log in once, you have one
-   credit balance.
-3. **Built by an operator.** Crowe Logic is built and run by a
-   working mycologist and developer. The product reflects how someone
-   who actually uses these tools wants them to work.
+1. **Two models, concurrent.** Not "switch between models." Both
+   running every turn, with a synthesis layer on top.
+2. **One platform, four surfaces.** No four tools to pay for, no four
+   logins, no four credit balances. One subscription, everything
+   shares.
+3. **Built by an operator.** Crowe Logic is built and run by a working
+   mycologist and developer. The product reflects how someone who
+   actually uses these tools wants them to work.
 
-## What customers say it replaces
+## The replacement math
 
-Customers tell us they cancel three other subscriptions when they
-adopt Crowe Logic at the Pro tier:
-
-- Their single-model AI coding tool.
-- Their general AI chat subscription.
-- Their separate research-citation tool.
-
-The math works at $99/mo if you currently pay for two of those three.
+If you pay for two of (a single-model coding tool, a general AI chat
+subscription, a research-citation tool), Crowe Logic Pro at $99 replaces
+both and adds the synthesis layer. If you pay for all three, you also
+free up a tool seat in your stack.
 
 ## What it does not do
 
