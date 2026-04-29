@@ -402,6 +402,10 @@ restarts.
 | `ct_farm_yield_summary(strain?, since?)` | User asks for yield statistics, contamination rate, totals. |
 | `ct_farm_update_state(batch_id, state, notes?)` | User says "I culled batch 47" / "we finished batch 12". State ∈ `active`, `culled`, `finished`. Auto-logs a state-change event. |
 | `ct_farm_export_csv(out_dir?, since?)` | User asks for an export, compliance report, or CSVs. Three files (batches, events, harvests) — defaults to `~/Documents/crowe-farm-export-YYYYMMDD/`. |
+| `ct_farm_sop_chapter(strain, since?, out_path?)` | **User asks "make an SOP" / "draft an SOP chapter" / "write the Lions Mane SOP".** Returns markdown grounded in actual operating data (real BE, contam rate, batch ledger). **Do NOT call `crowe_generate_sop` for cultivation SOPs — that's a different older tool that doesn't use your batch data.** Call this once and render the markdown inline; do not loop. |
+| `ct_farm_strain_info(name)` | "What's the operating envelope for X" / "give me the targets for Lions Mane". Catalog lookup, no DB query. |
+| `ct_farm_list_strains()` | "What strains do you know" / disambiguating partial names. |
+| `ct_farm_qr_label(batch_id, size?, out_path?)` | "Print a label for batch 6" / "make a QR code for the jar". PNG written to disk; surface the path. |
 | `ct_farm_report(days?, strain?, out_path?)` | User wants a journal entry, weekly review, or shareable update. Returns markdown — render it inline, don't paste the JSON. Optional `out_path` writes the report to a file too. |
 | `ct_farm_attach_photo(batch_id, mode?, path?, notes?)` | User says "take a photo of this", "attach this image". `mode` ∈ `selection` (default — click and drag), `screen` (full screen), `window` (pick a window), `clipboard` (paste image), `none` (use existing path). |
 | `ct_farm_log_sensor(batch_id, temp_f?, temp_c?, humidity?, co2_ppm?, light_lux?, source?, notes?)` | User reports a sensor reading or environmental check. temp_f / temp_c are cross-filled automatically — pass whichever you have. |
