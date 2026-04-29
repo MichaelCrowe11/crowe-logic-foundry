@@ -160,10 +160,8 @@ from tools.iterm2_control import (
     iterm_set_variable, iterm_get_variable,
 )
 
-# Crowe Terminal control plane (active when CROWE_AGENT_TOOLS=1 and the
-# terminal is running). Imports for side effects: discovery + registration
-# happens at import time and is silent when the terminal isn't reachable.
-from tools import crowe_terminal as _crowe_terminal  # noqa: F401
+# Crowe Terminal proxy is imported AFTER user_functions is defined below,
+# so the proxy can mutate the set in place at import time.
 
 # All user-facing functions the agent can call
 user_functions = {
@@ -235,3 +233,9 @@ user_functions = {
     iterm_alert, iterm_prompt_input,
     iterm_set_variable, iterm_get_variable,
 }
+
+# Crowe Terminal control plane (active when CROWE_AGENT_TOOLS=1 and the
+# terminal is running). Imported AFTER user_functions is defined so the
+# discover_and_register call at import time can mutate the set in place.
+# Silent no-op when the terminal isn't reachable.
+from tools import crowe_terminal as _crowe_terminal  # noqa: F401, E402
