@@ -187,6 +187,18 @@ def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_
         if dataset_context:
             parts.append("## CroweLM Dataset Context\n" + dataset_context)
 
+    # Crowe Terminal agent tools (browser.in_window.*, terminal.*, system.*,
+    # AppleScript, allowlist management). The addendum is empty unless the
+    # proxy successfully discovered + registered tools, so we don't promise
+    # tools that aren't actually callable.
+    try:
+        from tools.crowe_terminal import system_prompt as crowe_terminal_prompt
+        addendum = crowe_terminal_prompt()
+        if addendum:
+            parts.append(addendum)
+    except Exception:
+        pass
+
     return "\n\n".join(part for part in parts if part and part.strip())
 
 
