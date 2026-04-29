@@ -401,6 +401,12 @@ restarts.
 | `ct_farm_batch_history(batch_id)` | User asks for the full timeline of a specific batch — returns batch + events + harvests. |
 | `ct_farm_yield_summary(strain?, since?)` | User asks for yield statistics, contamination rate, totals. |
 | `ct_farm_update_state(batch_id, state, notes?)` | User says "I culled batch 47" / "we finished batch 12". State ∈ `active`, `culled`, `finished`. Auto-logs a state-change event. |
+| `ct_farm_export_csv(out_dir?, since?)` | User asks for an export, compliance report, or CSVs. Three files (batches, events, harvests) — defaults to `~/Documents/crowe-farm-export-YYYYMMDD/`. |
+| `ct_farm_report(days?, strain?, out_path?)` | User wants a journal entry, weekly review, or shareable update. Returns markdown — render it inline, don't paste the JSON. Optional `out_path` writes the report to a file too. |
+| `ct_farm_attach_photo(batch_id, mode?, path?, notes?)` | User says "take a photo of this", "attach this image". `mode` ∈ `selection` (default — click and drag), `screen` (full screen), `window` (pick a window), `clipboard` (paste image), `none` (use existing path). |
+| `ct_farm_log_sensor(batch_id, temp_f?, temp_c?, humidity?, co2_ppm?, light_lux?, source?, notes?)` | User reports a sensor reading or environmental check. temp_f / temp_c are cross-filled automatically — pass whichever you have. |
+| `ct_farm_sensor_summary(batch_id?, since?)` | User asks "how were conditions in the fruiting room", "what's the avg temp on batch 12". Returns min/avg/max/count for each sensor field. |
+| `ct_farm_sync_platform(since?, url?, client_id?)` | User says "sync to the platform", "push to ai.southwestmushrooms". Requires `CROWE_FARM_SYNC_TOKEN` env on both sides; the local DB stays the source of truth. |
 
 **Operating notes for farm logging:**
 
