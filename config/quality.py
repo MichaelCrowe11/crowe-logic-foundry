@@ -1,11 +1,11 @@
 """
-Crowe Logic Foundry — Response-Quality Heuristics
+Crowe Logic Foundry - Response-Quality Heuristics
 
 Cheap, deterministic checks for "did the model actually answer?". Used by
 the Synapse Router to:
 - log shallow-response signals to telemetry,
 - gate adaptive promotion (auto-retry on a higher tier when a fast-tier
-  response looks weak — currently logged-only, opt-in execution behind a
+  response looks weak - currently logged-only, opt-in execution behind a
   future env flag),
 - power CI guards against silent quality regressions.
 
@@ -75,13 +75,13 @@ def assess_response(text: str, prompt: str | None = None, *, min_length: int = 2
     (response that echoes the user's question without answering it).
 
     Heuristics:
-    1. **Empty / whitespace-only** — clearly shallow.
-    2. **Below `min_length`** — too short to be a substantive answer.
-    3. **Refusal phrase** — model declined.
-    4. **Hedge-only** — message is just "Great question!" with nothing else.
-    5. **Echoed-question** — short message that ends with "?" and looks
+    1. **Empty / whitespace-only** - clearly shallow.
+    2. **Below `min_length`** - too short to be a substantive answer.
+    3. **Refusal phrase** - model declined.
+    4. **Hedge-only** - message is just "Great question!" with nothing else.
+    5. **Echoed-question** - short message that ends with "?" and looks
        like the model bouncing the question back.
-    6. **Tautology** — response substring matches >70% of the prompt
+    6. **Tautology** - response substring matches >70% of the prompt
        (the model rephrased the question instead of answering).
     """
     reasons: list[str] = []

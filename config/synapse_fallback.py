@@ -1,10 +1,10 @@
 """
-Synapse Phase 2 — DeepParallel low-confidence fallback classifier.
+Synapse Phase 2 - DeepParallel low-confidence fallback classifier.
 
 When the heuristic router classifies a prompt with confidence below
-LOW_CONFIDENCE_THRESHOLD, optionally escalate to DeepParallel — a
+LOW_CONFIDENCE_THRESHOLD, optionally escalate to DeepParallel - a
 locally-hosted multi-chain reasoning model (default
-`Mcrowe1210/DeepParallel:v2.2` on Ollama) — for a second-opinion
+`Mcrowe1210/DeepParallel:v2.2` on Ollama) - for a second-opinion
 routing decision. Marginal cost is essentially zero (local Ollama
 inference); the upside is correctly routing genuinely ambiguous
 prompts.
@@ -37,7 +37,7 @@ import os
 import re
 from typing import Optional
 
-# Valid intent labels — must match config/router.py classifier outputs.
+# Valid intent labels - must match config/router.py classifier outputs.
 _VALID_INTENTS: tuple[str, ...] = (
     "arithmetic", "trivial", "vision", "code", "capability_question",
     "domain", "deep", "general", "ambiguous",
@@ -94,7 +94,7 @@ def _timeout_s() -> float:
 def classify_with_deepparallel(text: str) -> Optional[tuple[str, float]]:
     """Return (intent, confidence) from DeepParallel, or None on failure.
 
-    Synchronous and short — DeepParallel runs locally and we cap the
+    Synchronous and short - DeepParallel runs locally and we cap the
     request at `_timeout_s()` seconds. Failures (timeout, parse error,
     unknown intent) return None and log to telemetry; the caller keeps
     its heuristic decision.

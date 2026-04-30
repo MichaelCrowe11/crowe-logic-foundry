@@ -3,7 +3,7 @@
 All notable changes to Crowe Logic Foundry are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] — 2026-04-30
+## [0.3.0] - 2026-04-30
 
 The Synapse release. Adds a confidence-gated routing layer in front of
 the multi-tier model chain, rewrites the workflow-discipline rules that
@@ -74,7 +74,7 @@ interpretation, and ships an inspection CLI for live debugging.
 - **Workflow-discipline rules in `SYSTEM_INSTRUCTIONS`** rewritten as
   short positive bullets with no internal contradictions. Removed
   "never narrate intent" and "any prose must describe what you JUST
-  did" — the two rules whose unsatisfiable intersection caused
+  did" - the two rules whose unsatisfiable intersection caused
   reasoning models to spend the majority of every turn re-deriving the
   same hypothesis tree. Added explicit "Cap internal deliberation to
   ~200 tokens. Never re-derive the same hypothesis tree twice" rule.
@@ -86,7 +86,7 @@ interpretation, and ships an inspection CLI for live debugging.
 - **`BaseOpenAIProvider.__init__`** gains an optional `model_cfg`
   attribute. Provider factories assign it after construction so
   tier_runtime_params apply automatically.
-- **`_apply_provider_instructions`** centralized — both cache-hit and
+- **`_apply_provider_instructions`** centralized - both cache-hit and
   fresh-construction paths flow through it, ensuring `model_cfg` and
   system instructions attach reliably either way.
 

@@ -1,5 +1,5 @@
 """
-Crowe Logic Foundry — Complexity Router
+Crowe Logic Foundry - Complexity Router
 
 Classifies user prompts and routes them to the right CroweLM tier.
 
