@@ -192,3 +192,9 @@ All three modules are additive in their first incarnation:
 - `cli/session_runtime.py` adds two state fields and four helpers; the helpers are unused by any existing call site. The fields are filtered out by the existing `update_session_runtime` allowlist if removed from `_default_session_state`. Net behavior: rolling these back is a one-commit revert with no production impact.
 
 The branch name `router-and-parallel` matches the spec name. Suggested merge form: squash to a single commit titled `Add routing and parallel-dispatch layer (sibling to Quality Stack)` with this spec referenced in the commit body.
+
+---
+
+## 9. Wire-in status
+
+2026-05-14: Cortex Phase 7.1 still pending; wire-in deferred. Next check: 2 weeks.
