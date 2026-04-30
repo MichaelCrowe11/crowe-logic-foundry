@@ -48,6 +48,7 @@ from cli.session_runtime import (
     load_session_runtime,
 )
 from config.agent_config import AGENT_VERSION, MODEL_CHAIN
+from config.telemetry import telemetry
 from iterm import iterm_set_var, install_iterm, uninstall_iterm, iterm_status
 
 console = Console()
@@ -92,6 +93,62 @@ def _reset_model_chain():
     _model_state["anthropic_provider"] = None
 
 
+# ─── Synapse Router: per-turn auto-routing ──────────────────────────
+
+def _auto_route_enabled() -> bool:
+    """Return True when CROWE_LOGIC_AUTO_ROUTE selects per-turn routing."""
+    val = os.environ.get("CROWE_LOGIC_AUTO_ROUTE", "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def _apply_route_decision(decision, session_state: dict) -> bool:
+    """Switch the active chain index to the routed tier when it differs.
+
+    Returns True when a tier swap actually occurred. Logs every decision
+    to telemetry — including no-op routes — so operators can audit the
+    classifier's behavior against real traffic.
+    """
+    from config.agent_config import resolve_model_config
+    from config.telemetry import telemetry
+
+    telemetry.log_event("synapse_route", decision.to_dict())
+
+    routed_cfg = resolve_model_config(decision.selected_label) or \
+                 resolve_model_config(decision.selected_name)
+    if routed_cfg is None:
+        return False
+
+    # Find this cfg's position in MODEL_CHAIN.
+    target_idx = next(
+        (i for i, m in enumerate(MODEL_CHAIN) if m is routed_cfg),
+        None,
+    )
+    if target_idx is None:
+        return False
+
+    if target_idx == _model_state["chain_index"]:
+        return False  # already on the right tier
+
+    _model_state["chain_index"] = target_idx
+    # Bust cached providers so the next call rebuilds with the routed cfg.
+    for key in ("nvidia_provider", "openrouter_provider", "ollama_provider",
+                "azure_openai_provider", "hosted_openai_provider",
+                "anthropic_provider"):
+        _model_state[key] = None
+    session_state["active_model"] = routed_cfg["label"]
+    return True
+
+
+def _render_route_badge(console, decision) -> None:
+    """Print a one-line badge for a Synapse route decision."""
+    color = "#bfa669" if not decision.low_confidence else "#d97706"
+    flag = " [LOW-CONF]" if decision.low_confidence else ""
+    console.print(
+        f"  [dim {color}]→ Synapse: {decision.intent} → "
+        f"{decision.selected_label} (conf={decision.confidence:.2f}){flag}[/dim {color}]"
+    )
+
+
 def _sync_session_runtime(state: dict) -> None:
     """Refresh in-memory session state from the persisted runtime store."""
     session_id = state.get("session_id", "")
@@ -114,10 +171,16 @@ def _runtime_system_instructions(model_cfg: dict, state: dict) -> str:
     )
 
 
-def _apply_provider_instructions(provider, system_instructions: str):
-    """Update system instructions on cached providers before each turn."""
+def _apply_provider_instructions(provider, system_instructions: str, model_cfg: dict | None = None):
+    """Refresh per-turn provider state: system instructions and the
+    MODEL_CHAIN entry that drives tier_runtime_params (temperature,
+    max_tokens, etc.). Used on both cache-hit and fresh-construction
+    paths so tier params attach reliably either way.
+    """
     if hasattr(provider, "set_system_instructions"):
         provider.set_system_instructions(system_instructions)
+    if model_cfg is not None and hasattr(provider, "model_cfg"):
+        provider.model_cfg = model_cfg
     return provider
 
 
@@ -131,7 +194,7 @@ def _get_openrouter_provider(model_cfg: dict, *, system_instructions: str | None
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("openrouter_provider")
     if current and current.model == model_name:
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
             f"OpenRouter model '{label}' is missing credentials — "
@@ -146,7 +209,7 @@ def _get_openrouter_provider(model_cfg: dict, *, system_instructions: str | None
         label=label,
     )
     _model_state["openrouter_provider"] = provider
-    return provider
+    return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
 def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = None):
@@ -159,7 +222,7 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("ollama_provider")
     if current and current.model == model_name:
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
 
     provider = OllamaProvider(
         model=model_name,
@@ -168,7 +231,7 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
         label=label,
     )
     _model_state["ollama_provider"] = provider
-    return provider
+    return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
 def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = None):
@@ -181,7 +244,7 @@ def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = N
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
     if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
         raise RuntimeError(
             f"NVIDIA model '{label}' is missing credentials — "
@@ -196,7 +259,7 @@ def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = N
         label=label,
     )
     _model_state["nvidia_provider"] = provider
-    return provider
+    return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
 def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
@@ -222,7 +285,7 @@ def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | N
     current = _model_state.get("hosted_openai_provider")
     if (current and current.model == model_name
             and current.endpoint == endpoint):
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
 
     provider = HostedOpenAIProvider(
         model=model_name,
@@ -232,7 +295,7 @@ def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | N
         label=label,
     )
     _model_state["hosted_openai_provider"] = provider
-    return provider
+    return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
 def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
@@ -266,7 +329,7 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
     current = _model_state.get("azure_openai_provider")
     if (current and current.model == model_name
             and current.endpoint == endpoint):
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
 
     provider_cls = AzureResponsesProvider if model_cfg.get("surface") == "responses" else AzureOpenAIProvider
     provider = provider_cls(
@@ -277,7 +340,7 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
         label=label,
     )
     _model_state["azure_openai_provider"] = provider
-    return provider
+    return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
 def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None = None):
@@ -309,7 +372,7 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
     current = _model_state.get("anthropic_provider")
     if (current and current.model == model_name
             and current.endpoint == endpoint):
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
 
     provider = AnthropicProvider(
         model=model_name,
@@ -319,7 +382,7 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
         label=label,
     )
     _model_state["anthropic_provider"] = provider
-    return provider
+    return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
 def _is_model_error(error_str: str) -> bool:
@@ -771,6 +834,11 @@ def chat():
     session_state["active_model"] = _current_model()["label"]
 
     show_welcome(AGENT_VERSION)
+    telemetry.log_event("session_start", {
+        "model": _current_model().get("label", "unknown"),
+        "session_id": synthetic_thread_id,
+        "version": AGENT_VERSION,
+    })
 
     history_file = os.path.join(PROJECT_ROOT, ".chat_history")
     kb = create_chat_keybindings(console=console, state=session_state)
@@ -844,6 +912,19 @@ def chat():
                 target = parts[1].strip().strip("<>").strip("'\"").strip()
                 _switch_model(azure_state, target)
             continue
+
+        # ── Synapse Router: per-turn auto-routing ──
+        # Opt-in via CROWE_LOGIC_AUTO_ROUTE=1. When enabled, every user
+        # turn classifies the prompt and silently switches tiers if a
+        # different one is the better fit. Slash commands above are
+        # excluded; we only route real prompts to models.
+        if _auto_route_enabled():
+            from config.router import route_prompt
+            from config.quality import assess_response
+            decision = route_prompt(user_input)
+            swapped = _apply_route_decision(decision, session_state)
+            if swapped or decision.low_confidence:
+                _render_route_badge(console, decision)
 
         try:
             _sync_session_runtime(session_state)
@@ -1011,6 +1092,35 @@ def chat():
                     except Exception as deploy_err:
                         console.print(f"  [dim red]Fallback deploy failed: {_rich_escape(str(deploy_err))}[/dim red]")
                         continue
+
+            # ── Synapse: post-response quality signal ──
+            # Assess every response (regardless of auto-route flag) so the
+            # telemetry stream carries an always-on quality signal. Used
+            # to drive future adaptive-promotion logic; today it's
+            # observe-only.
+            try:
+                if 'provider' in locals() and getattr(provider, "messages", None):
+                    last = provider.messages[-1]
+                    if last.get("role") == "assistant":
+                        from config.quality import assess_response
+                        from config.telemetry import telemetry
+                        signal = assess_response(
+                            last.get("content") or "",
+                            prompt=user_input,
+                        )
+                        if signal.shallow:
+                            telemetry.log_event(
+                                "synapse_shallow_response",
+                                {
+                                    "model": model_cfg.get("label", ""),
+                                    "tier": model_cfg.get("type", ""),
+                                    "reasons": list(signal.reasons),
+                                    "length": signal.length,
+                                },
+                            )
+            except Exception:
+                # Quality signal must never break the chat loop.
+                pass
 
             console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
         except Exception as e:
@@ -1377,6 +1487,47 @@ def _show_help():
     console.print()
 
 
+@main.command(name="route")
+@click.argument("prompt")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON instead of a table.")
+def route(prompt: str, as_json: bool):
+    """Show which CroweLM tier the router would pick for PROMPT.
+
+    Pure inspection — no model is invoked. Useful for verifying that
+    routing rules behave as expected before wiring the router into
+    the main chat loop.
+    """
+    from config.router import route_prompt
+    from config.agent_config import tier_runtime_params
+
+    decision = route_prompt(prompt)
+    runtime = tier_runtime_params({"type": decision.selected_type})
+
+    if as_json:
+        import json as _json
+        payload = decision.to_dict()
+        payload["runtime_params"] = runtime
+        click.echo(_json.dumps(payload, indent=2))
+        return
+
+    table = Table(title="CroweLM Router Decision", show_header=False, box=None)
+    table.add_column("Field", style="bold")
+    table.add_column("Value")
+    table.add_row("Prompt", prompt[:200] + ("..." if len(prompt) > 200 else ""))
+    table.add_row("Intent", decision.intent)
+    conf_marker = "[red]LOW[/red]" if decision.low_confidence else "[green]ok[/green]"
+    table.add_row("Confidence", f"{decision.confidence:.2f} ({conf_marker})")
+    table.add_row("Selected", f"{decision.selected_label} ({decision.selected_name})")
+    table.add_row("Tier type", decision.selected_type or "(none)")
+    if runtime:
+        rp = ", ".join(f"{k}={v}" for k, v in runtime.items())
+        table.add_row("Runtime params", rp)
+    table.add_row("Reason", decision.reason)
+    console.print()
+    console.print(table)
+    console.print()
+
+
 @main.command()
 @click.argument("prompt")
 def run(prompt: str):
@@ -1386,7 +1537,6 @@ def run(prompt: str):
     # the legacy "azure" provider.
     reset_session_state()
     _reset_model_chain()
-    model_cfg = _current_model()
     favicon = get_favicon()
     session_state["favicon"] = favicon
     orch = _get_orchestrator()
@@ -1394,10 +1544,21 @@ def run(prompt: str):
     synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
     session_state["session_id"] = synthetic_thread_id
     _sync_session_runtime(session_state)
-    session_state["active_model"] = model_cfg["label"]
     orch.start_session(thread_id=synthetic_thread_id)
     if _handle_local_runtime_command(prompt, session_state):
         return
+
+    # Synapse auto-routing for the single-prompt path. Same opt-in flag
+    # as chat(); when enabled the router picks the best tier before any
+    # model gets instantiated.
+    if _auto_route_enabled():
+        from config.router import route_prompt
+        decision = route_prompt(prompt)
+        _apply_route_decision(decision, session_state)
+        _render_route_badge(console, decision)
+
+    model_cfg = _current_model()
+    session_state["active_model"] = model_cfg["label"]
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
