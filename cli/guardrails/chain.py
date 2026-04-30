@@ -20,8 +20,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from cli.guardrails.narration import (
+    NarrationReport,
+    ReasoningNarrationDetector,
+)
 from cli.guardrails.paths import PathPolicy, PathDecision
-from cli.guardrails.scope import ScopeBudget, BudgetDecision
+from cli.guardrails.scope import (
+    BudgetDecision,
+    ScopeBudget,
+    ScopeBudgetExceeded,
+)
 from cli.guardrails.secrets import SecretScrubber, StreamScrubber, SecretHit
 from cli.guardrails.style import StyleEnforcer, StyleIssue
 
@@ -54,11 +62,13 @@ class GuardrailChain:
         style: StyleEnforcer | None = None,
         paths: PathPolicy | None = None,
         budget: ScopeBudget | None = None,
+        narration: ReasoningNarrationDetector | None = None,
     ):
         self._secrets = secrets or SecretScrubber()
         self._style = style or StyleEnforcer()
         self._paths = paths or PathPolicy()
         self._budget = budget or ScopeBudget()
+        self._narration = narration or ReasoningNarrationDetector()
         self._stream = StreamScrubber(block_scrubber=self._secrets)
         self.events: list[GuardrailEvent] = []
 
@@ -120,10 +130,47 @@ class GuardrailChain:
             )
         return decision
 
+    # ---- reasoning narration ---------------------------------------------
+
+    def scan_reasoning(
+        self, reasoning_text: str, threshold_per_1k: float = 5.0
+    ) -> NarrationReport:
+        """Scan a block of reasoning text for narration density.
+
+        Records a `reasoning-narration-detected` event when density exceeds
+        the threshold. Default threshold (5.0 hits per 1k chars) corresponds
+        to roughly the Talon transcript's reasoning density.
+        """
+        report = self._narration.scan(reasoning_text)
+        if report.hits_per_1k_chars >= threshold_per_1k:
+            self.events.append(
+                GuardrailEvent(
+                    code="reasoning-narration-detected",
+                    severity="warn",
+                    message=(
+                        f"reasoning stream contains {report.total_hits} "
+                        f"narration phrases ({report.hits_per_1k_chars:.1f} per 1k chars); "
+                        f"variant is thinking out loud instead of acting"
+                    ),
+                    detail={
+                        "total_hits": report.total_hits,
+                        "by_label": report.by_label,
+                        "samples": report.samples[:3],
+                        "threshold": threshold_per_1k,
+                    },
+                )
+            )
+        return report
+
     # ---- scope budget ----------------------------------------------------
 
-    def check_budget(self, reasoning_tokens: int, output_tokens: int) -> BudgetDecision:
-        decision = self._budget.evaluate(reasoning_tokens, output_tokens)
+    def check_budget(
+        self, reasoning_tokens: int, output_tokens: int, raise_on_interrupt: bool = False
+    ) -> BudgetDecision:
+        if raise_on_interrupt:
+            decision = self._budget.evaluate_or_raise(reasoning_tokens, output_tokens)
+        else:
+            decision = self._budget.evaluate(reasoning_tokens, output_tokens)
         if decision.verdict == "WARN":
             self.events.append(
                 GuardrailEvent(

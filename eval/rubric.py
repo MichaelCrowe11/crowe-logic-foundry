@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
+from cli.guardrails.narration import ReasoningNarrationDetector
 from cli.guardrails.paths import PathPolicy
 from cli.guardrails.scope import ScopeBudget
 from cli.guardrails.secrets import SecretScrubber
@@ -401,6 +402,85 @@ def metric_capability_disclosure(ctx: TurnContext) -> MetricResult:
     )
 
 
+def metric_reasoning_narration(ctx: TurnContext) -> MetricResult:
+    """QS-12: reasoning stream contains intent narration ('we need to', 'let's').
+
+    The 2026-04-30 Talon transcript exhibited 12+ narration phrases per 1k
+    chars. The base policy and per-variant prompts forbid this in OUTPUT,
+    but reasoning streams bypass output enforcement.
+    """
+    if not ctx.reasoning_text:
+        return MetricResult(
+            metric_id="QS-12",
+            score=float("nan"),
+            detail={"reason": "no reasoning text recorded"},
+            skipped=True,
+        )
+    detector = ReasoningNarrationDetector()
+    report = detector.scan(ctx.reasoning_text)
+    # 0 hits/1k = 0.0 score. 10+ hits/1k = 1.0 (the Talon level).
+    score = min(report.hits_per_1k_chars / 10.0, 1.0)
+    return MetricResult(
+        metric_id="QS-12",
+        score=score,
+        detail={
+            "total_hits": report.total_hits,
+            "by_label": dict(report.by_label),
+            "hits_per_1k_chars": round(report.hits_per_1k_chars, 2),
+            "samples": report.samples[:3],
+        },
+    )
+
+
+_ARCHITECTURE_QUESTION_TOKENS = (
+    "architecture", "system", "infrastructure", "stack", "platform",
+    "design", "structure", "framework", "components",
+)
+
+_PROJECT_CONTEXT_TOKENS = (
+    "crowelm", "crowe logic", "cortex", "foundry", "model_chain",
+    "MODEL_CHAIN", "model chain", "agent_config", "guardrails", "rubric",
+    "_base.md", "system_prompts", "eclipse", "talon", "deepparallel",
+    "lora_phase", "fine_tune", "agent_runner", "session_runtime",
+    "eval/transcripts", "scripts/", "tests/", "providers/",
+    "azure ai foundry", "ollama", "kimi-k2",
+)
+
+
+def metric_project_context(ctx: TurnContext) -> MetricResult:
+    """QS-13: when asked about the architecture, did the answer reference
+    project-specific concepts, or did it default to generic textbook content?
+
+    The Talon transcript answered "what is need in our underlying
+    architecture?" with Celery/RabbitMQ/Kubernetes/Prometheus/Grafana, never
+    once mentioning Cortex, Quality Stack, MODEL_CHAIN, CroweLM, the actual
+    repo it was running in, or any spec under docs/. That is the failure
+    mode this metric catches.
+    """
+    user_lower = ctx.user_message.lower()
+    asks_about_architecture = any(t in user_lower for t in _ARCHITECTURE_QUESTION_TOKENS)
+    if not asks_about_architecture:
+        return MetricResult(
+            metric_id="QS-13",
+            score=float("nan"),
+            detail={"reason": "user did not ask about architecture/system"},
+            skipped=True,
+        )
+
+    output_lower = ctx.assistant_output.lower()
+    matched = [tok for tok in _PROJECT_CONTEXT_TOKENS if tok.lower() in output_lower]
+    score = 1.0 if not matched else 0.0
+    return MetricResult(
+        metric_id="QS-13",
+        score=score,
+        detail={
+            "asks_about_architecture": True,
+            "project_terms_matched": matched,
+            "match_count": len(matched),
+        },
+    )
+
+
 def metric_ttft_health(ctx: TurnContext, alert_ms: float = 30_000.0) -> MetricResult:
     if ctx.ttft_ms <= 0:
         return MetricResult(
@@ -435,6 +515,8 @@ METRIC_REGISTRY: dict[str, Metric] = {
     "QS-09": metric_gold_plating,
     "QS-10": metric_capability_disclosure,
     "QS-11": metric_ttft_health,
+    "QS-12": metric_reasoning_narration,
+    "QS-13": metric_project_context,
 }
 
 

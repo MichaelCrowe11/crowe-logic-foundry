@@ -267,6 +267,31 @@ class StreamRenderer:
         self._full_reasoning_chunks.append(token)
         self._reasoning_token_count += 1
 
+        # Quality Stack: every 100 reasoning tokens, scan the accumulated
+        # reasoning for narration density and check the scope budget. This
+        # is the mid-stream interrupt that catches a runaway Eclipse-style
+        # 5800-token reasoning binge while it is still happening, not at
+        # finish() time when the damage is done.
+        if (
+            self._guardrail_chain is not None
+            and self._reasoning_token_count % 100 == 0
+        ):
+            try:
+                self._guardrail_chain.scan_reasoning(
+                    "".join(self._full_reasoning_chunks)
+                )
+                # raise_on_interrupt is opt-in to avoid leaving Live widgets
+                # in a weird state; the chain still records the event for
+                # the agent loop to act on between turns.
+                self._guardrail_chain.check_budget(
+                    reasoning_tokens=self._reasoning_token_count,
+                    output_tokens=self._token_count,
+                    raise_on_interrupt=False,
+                )
+            except Exception:
+                # Never break the rendering path on a guardrail bug.
+                pass
+
         if self._reasoning_live is not None:
             now = time.monotonic()
             if now - self._last_reason_update >= (1.0 / _REASONING_FPS):

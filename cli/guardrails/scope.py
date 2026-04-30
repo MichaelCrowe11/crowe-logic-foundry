@@ -11,10 +11,28 @@ Decisions:
     OK         - within budget, continue.
     WARN       - approaching budget, recommend wrap-up.
     INTERRUPT  - over budget; session runtime should inject a course-correct.
+
+Mid-stream interrupt:
+    `ScopeBudgetExceeded` exception is raised by `evaluate_or_raise` when the
+    INTERRUPT verdict fires. The renderer's feed_reasoning() can call this
+    periodically to cap runaway reasoning before finish() is reached.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+class ScopeBudgetExceeded(Exception):
+    """Raised mid-stream when the reasoning-to-output ratio exceeds budget.
+
+    The agent loop should catch this, surface the interrupt prompt to the
+    model as a system message, and re-prompt the variant for a concise
+    summary-and-act response.
+    """
+
+    def __init__(self, decision: "BudgetDecision"):
+        self.decision = decision
+        super().__init__(decision.reason)
 
 
 @dataclass(frozen=True)
@@ -107,3 +125,19 @@ class ScopeBudget:
             "then take the single most useful action that addresses the user's "
             "original request. Do not start a new line of investigation."
         )
+
+    def evaluate_or_raise(
+        self, reasoning_tokens: int, output_tokens: int
+    ) -> BudgetDecision:
+        """Evaluate the budget; raise ScopeBudgetExceeded on INTERRUPT.
+
+        Use this in the renderer's feed_reasoning() (with a debounce so it
+        doesn't run on every token) to short-circuit runaway reasoning
+        streams before finish() time. The renderer or agent loop catches
+        the exception, drops further reasoning tokens, and surfaces the
+        interrupt prompt to the model on the next turn.
+        """
+        decision = self.evaluate(reasoning_tokens, output_tokens)
+        if decision.verdict == "INTERRUPT":
+            raise ScopeBudgetExceeded(decision)
+        return decision

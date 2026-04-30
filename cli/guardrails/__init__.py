@@ -13,17 +13,30 @@ Public surface:
     GuardrailEvent  - structured signal emitted when a guardrail fires
 """
 from cli.guardrails.chain import GuardrailChain, GuardrailEvent
+from cli.guardrails.narration import (
+    NarrationHit,
+    NarrationReport,
+    ReasoningNarrationDetector,
+)
 from cli.guardrails.paths import PathPolicy, PathDecision
-from cli.guardrails.scope import ScopeBudget, BudgetDecision
+from cli.guardrails.scope import (
+    BudgetDecision,
+    ScopeBudget,
+    ScopeBudgetExceeded,
+)
 from cli.guardrails.secrets import SecretScrubber, SecretHit
 from cli.guardrails.style import StyleEnforcer, StyleIssue
 
 __all__ = [
     "GuardrailChain",
     "GuardrailEvent",
+    "NarrationHit",
+    "NarrationReport",
     "PathPolicy",
     "PathDecision",
+    "ReasoningNarrationDetector",
     "ScopeBudget",
+    "ScopeBudgetExceeded",
     "BudgetDecision",
     "SecretScrubber",
     "SecretHit",
