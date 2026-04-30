@@ -785,7 +785,12 @@ def resolve_model_config(selector: str) -> dict | None:
 
 
 def build_system_instructions(model_cfg: dict | None = None) -> str:
-    """Compose the base system prompt with a model-specific CroweLM persona."""
+    """Compose the base system prompt with a model-specific CroweLM persona.
+
+    Quality Stack integration: prefer per-variant prompt files at
+    config/system_prompts/<slug>.md when present. Falls back to the inline
+    `prompt` field on model_cfg for variants that don't yet have a file.
+    """
     prompt_parts = [SYSTEM_INSTRUCTIONS.strip()]
     if not model_cfg:
         return "\n\n".join(prompt_parts)
@@ -796,6 +801,20 @@ def build_system_instructions(model_cfg: dict | None = None) -> str:
         f"You are currently operating as {label}. Present this model as first-party Crowe Logic infrastructure. "
         "Do not volunteer vendor identity or underlying foundation-model branding unless the user explicitly asks."
     )
+
+    # Try the file-based per-variant loader first. The loader prepends the
+    # shared base policy (no em-dashes, scope discipline, secret hygiene,
+    # home-dir safety) automatically. If no file exists, fall through to the
+    # legacy inline prompt path.
+    try:
+        from config.prompt_loader import system_prompt_for, base_policy
+        file_prompt = system_prompt_for(model_cfg).strip()
+        base_only = base_policy().strip()
+        if file_prompt and file_prompt != base_only:
+            prompt_parts.append("## Tier Guidance\n" + file_prompt)
+            return "\n\n".join(prompt_parts)
+    except ImportError:
+        pass  # prompt_loader unavailable; use legacy path below
 
     model_prompt = (model_cfg.get("prompt") or model_cfg.get("system_prompt") or "").strip()
     if model_prompt:

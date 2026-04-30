@@ -9,6 +9,7 @@ High-fidelity terminal rendering with real-time telemetry:
   - Reasoning block display for thinking models (Kimi K2.5)
 """
 
+import os
 import sys
 import time
 import re
@@ -119,6 +120,18 @@ class StreamRenderer:
         self._t_first_token = 0.0
         self._t_end = 0.0
 
+        # Quality Stack guardrail chain. Created on demand only when
+        # CROWELM_GUARDRAILS=on is set in the environment, so existing
+        # behavior is unchanged unless explicitly opted in.
+        self._guardrail_chain = None
+        self._guardrail_telemetry: dict | None = None
+        if os.environ.get("CROWELM_GUARDRAILS", "").lower() in {"on", "1", "true", "yes"}:
+            try:
+                from cli.guardrail_pipeline import pipeline_for_session
+                self._guardrail_chain = pipeline_for_session()
+            except ImportError:
+                pass  # guardrail module not available; behave as before
+
     def _show_header(self):
         """Print the avatar + model label header (once per response).
 
@@ -186,7 +199,7 @@ class StreamRenderer:
     def feed(self, token: str):
         """Append a content token to the live stream.
 
-        The Markdown re-parse is throttled to _STREAM_FPS — see the
+        The Markdown re-parse is throttled to _STREAM_FPS - see the
         comment on _STREAM_FPS for why this matters. The unthrottled
         token is always appended to _text_chunks; _stop_md_live does
         a final flush so nothing is lost between the last throttled
@@ -196,6 +209,16 @@ class StreamRenderer:
             self.begin_stream()
         if self._t_first_token == 0.0:
             self._t_first_token = time.monotonic()
+
+        # Quality Stack: run the token through the guardrail chain before
+        # it touches the live widget. The chain holds back a tail buffer
+        # so partial credentials at chunk boundaries cannot leak. The
+        # final flush in finish() drains the buffer.
+        if self._guardrail_chain is not None:
+            token = self._guardrail_chain.stream(token)
+            if not token:
+                return
+
         self._text_chunks.append(token)
         self._full_text_chunks.append(token)
         self._token_count += 1
@@ -280,6 +303,35 @@ class StreamRenderer:
     def finish(self, session_state=None):
         """Finalize the stream and render telemetry footer."""
         self._t_end = time.monotonic()
+
+        # Quality Stack: drain the scrubber's hold-back buffer. Anything
+        # remaining is safe to emit because no more tokens are coming.
+        # Then capture per-turn guardrail telemetry for downstream consumers.
+        if self._guardrail_chain is not None:
+            tail = self._guardrail_chain.flush_stream()
+            if tail:
+                self._text_chunks.append(tail)
+                self._full_text_chunks.append(tail)
+            # Run the final accumulated output through block-level scrub as a
+            # belt-and-suspenders safety net for anything the streaming buffer
+            # missed (e.g. very short outputs that fit entirely in hold-back).
+            full_text = "".join(self._text_chunks)
+            cleaned = self._guardrail_chain.scrub_output(full_text)
+            if cleaned != full_text:
+                self._text_chunks = [cleaned]
+                self._full_text_chunks = [cleaned]
+            # Scope budget check at end of turn. WARN/INTERRUPT events are
+            # recorded on the chain; downstream consumers can act on them.
+            self._guardrail_chain.check_budget(
+                reasoning_tokens=self._reasoning_token_count,
+                output_tokens=self._token_count,
+            )
+            try:
+                from cli.guardrail_pipeline import telemetry_summary
+                self._guardrail_telemetry = telemetry_summary(self._guardrail_chain)
+            except ImportError:
+                self._guardrail_telemetry = None
+
         # end_segment() handles md_live, reasoning_live, and flushes any
         # tail-end reasoning that arrived after content but was never shown
         # in a live panel.
