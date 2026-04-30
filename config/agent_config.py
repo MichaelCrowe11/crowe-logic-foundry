@@ -619,17 +619,15 @@ MCP servers are spawned on-demand — you don't need to install anything.
 Available categories: databases, cloud providers, CRMs, payment systems,
 communication (Slack, email), analytics, DevOps, AI/ML, and more.
 
-## Execution discipline (strict)
-These rules override every other instinct. Violate them and the turn is wasted.
-
-1. Never narrate intent. Do not write "Let me…", "I'll now…", "Next, I'll…", "Starting with…", "I'm going to…". If you need a tool, call it in this same assistant message. If you don't need a tool, produce the final answer.
-2. Never end an assistant message with a colon, ellipsis, or a sentence that describes what you are about to do. A message that ends with "Let me take a snapshot:" with no tool_call attached is a bug.
-3. Tool calls and prose go together. If you emit tool_calls, any accompanying prose must describe what you *just did* or what the user should know — not what you're about to do next.
-4. Do not enumerate your capabilities when the user asked you to do the work. If they asked you to edit the page, edit it — do not list what you could edit.
-5. Multiple independent tool calls in one round are preferred. If you need a screenshot, a snapshot, and page content, emit all three tool_calls in the same message instead of three sequential rounds.
-6. If a tool returned incomplete or empty data, call it again with different parameters or try a different tool — do not give up and ask the user.
-7. After a write/click/navigate, verify. Take a screenshot or re-read state before reporting success.
-8. When the user says "continue", "go", "do it", or "all of the above", treat it as permission to run autonomously until the goal is met or a tool fails. Do not stop and ask for more confirmation.
+## Execution discipline
+- **Reasoning budget.** Cap internal deliberation to ~200 tokens. If you cannot decide what to do in that budget, ask one short clarifying question instead of reasoning further. Never re-derive the same hypothesis tree twice in one turn.
+- **Act, don't announce.** When you need a tool, emit the tool call in this same message. A short framing sentence is fine; do not produce a paragraph describing the call you are about to make.
+- **Parallel tool calls.** If you need several independent reads (screenshot + snapshot + page content), emit all of them in one message rather than across rounds.
+- **Verify after writes.** After a write/click/navigate/commit, read state back before reporting success.
+- **Retry on empty results.** If a tool returns empty or incomplete data, vary parameters or try a different tool before asking the user.
+- **No capability menus.** If the user asked you to do the work, do it. Do not enumerate what you could do.
+- **Autonomy keywords.** "continue", "go", "do it", "all of the above" = run until the goal is met or a tool fails. Do not stop to re-confirm.
+- **Surface failures.** When a tool fails (FAILED, error, non-2xx), say so plainly. Do not silently fall back to a different tool without telling the user the first one failed.
 
 ## How to work
 1. Understand what's being asked — clarify if ambiguous
@@ -669,8 +667,91 @@ def resolve_model_config(selector: str) -> dict | None:
     return None
 
 
+# Tier-specific runtime parameters. Applied to chat-completions create_kwargs
+# in BaseOpenAIProvider so each tier gets API-level tuning matching its job.
+# Conservative defaults — providers may override per-call if they need to.
+_TIER_RUNTIME_PARAMS: dict[str, dict] = {
+    "fast": {
+        # Latency tier. Short outputs, low temperature, deterministic.
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_tokens": 768,
+    },
+    "reasoning": {
+        # Default reasoning tier. Balanced; the system-prompt overlay
+        # already caps internal deliberation, so don't double-restrict.
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_tokens": 4096,
+    },
+    "vision": {
+        # Multimodal grounding. Slightly cooler than reasoning to keep
+        # the model anchored to what it observes.
+        "temperature": 0.4,
+        "top_p": 0.9,
+        "max_tokens": 2048,
+    },
+    "code": {
+        # Code synthesis. Low temperature for syntactic correctness;
+        # generous max_tokens for full files.
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "max_tokens": 6144,
+    },
+}
+
+
+def tier_runtime_params(model_cfg: dict | None) -> dict:
+    """Return API params (temperature, top_p, max_tokens) for a model's tier.
+
+    Returns an empty dict if the cfg is None or the type has no tier
+    profile defined — providers should treat that as "use defaults".
+    """
+    if not model_cfg:
+        return {}
+    return dict(_TIER_RUNTIME_PARAMS.get(model_cfg.get("type", ""), {}))
+
+
+def tier_runtime_params_for_model(selector: str) -> dict:
+    """Convenience: resolve a model selector and return its tier params."""
+    cfg = resolve_model_config(selector)
+    return tier_runtime_params(cfg)
+
+
+# Tier-specific behavior overlays. Applied on top of the per-model `prompt`
+# so each tier has runtime characteristics matching its job, not just its
+# brand voice. Keyed by the `type` field on a MODEL_CHAIN entry.
+_TIER_OVERLAYS: dict[str, str] = {
+    "fast": (
+        "## Tier behavior: fast\n"
+        "Optimize for latency. Cap internal reasoning at ~100 tokens. "
+        "Prefer single-shot answers and tool dispatch over multi-step deliberation. "
+        "If a question is ambiguous, ask one short clarifier rather than enumerating possibilities."
+    ),
+    "reasoning": (
+        "## Tier behavior: reasoning\n"
+        "You may use extended deliberation when the problem benefits from it. "
+        "Cap internal reasoning at ~600 tokens per turn. "
+        "Do not re-derive the same hypothesis twice; if you find yourself debating an interpretation, "
+        "pick the most likely one and proceed, or ask one clarifying question."
+    ),
+    "vision": (
+        "## Tier behavior: vision\n"
+        "Ground every claim in what is actually visible in the supplied image. "
+        "If the image is missing, blurry, or ambiguous, say so explicitly rather than inferring. "
+        "Cap internal reasoning at ~300 tokens; favor concrete observation over speculation."
+    ),
+    "code": (
+        "## Tier behavior: code\n"
+        "Lead with the code; explanation comes after, only if non-obvious. "
+        "Match the surrounding file's style and conventions. "
+        "Do not add comments unless the code does something a careful reader would not predict."
+    ),
+}
+
+
 def build_system_instructions(model_cfg: dict | None = None) -> str:
-    """Compose the base system prompt with a model-specific CroweLM persona."""
+    """Compose the base system prompt with model-specific persona + tier overlay."""
     prompt_parts = [SYSTEM_INSTRUCTIONS.strip()]
     if not model_cfg:
         return "\n\n".join(prompt_parts)
@@ -685,5 +766,9 @@ def build_system_instructions(model_cfg: dict | None = None) -> str:
     model_prompt = (model_cfg.get("prompt") or "").strip()
     if model_prompt:
         prompt_parts.append("## Tier Guidance\n" + model_prompt)
+
+    tier_overlay = _TIER_OVERLAYS.get(model_cfg.get("type", ""))
+    if tier_overlay:
+        prompt_parts.append(tier_overlay)
 
     return "\n\n".join(prompt_parts)
