@@ -197,4 +197,4 @@ The branch name `router-and-parallel` matches the spec name. Suggested merge for
 
 ## 9. Wire-in status
 
-2026-05-14: Cortex Phase 7.1 still pending; wire-in deferred. Next check: 2 weeks.
+2026-04-30: Cortex Phase 7.1 still pending; wire-in deferred. Next check: 2026-05-14 via `trig_01H9nbXroTmgQXziMeyYAYLG`.
