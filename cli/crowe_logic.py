@@ -101,17 +101,23 @@ def _auto_route_enabled() -> bool:
     return val in ("1", "true", "yes", "on")
 
 
-def _apply_route_decision(decision, session_state: dict) -> bool:
+def _apply_route_decision(decision, session_state: dict, prompt: str = "") -> bool:
     """Switch the active chain index to the routed tier when it differs.
 
     Returns True when a tier swap actually occurred. Logs every decision
     to telemetry — including no-op routes — so operators can audit the
-    classifier's behavior against real traffic.
+    classifier's behavior against real traffic. The prompt is truncated
+    to 200 characters before logging; that's enough to re-classify it
+    later (replay harness) without bloating the telemetry stream.
     """
     from config.agent_config import resolve_model_config
     from config.telemetry import telemetry
 
-    telemetry.log_event("synapse_route", decision.to_dict())
+    payload = decision.to_dict()
+    if prompt:
+        payload["prompt_preview"] = prompt[:200]
+        payload["prompt_length"] = len(prompt)
+    telemetry.log_event("synapse_route", payload)
 
     routed_cfg = resolve_model_config(decision.selected_label) or \
                  resolve_model_config(decision.selected_name)
@@ -922,7 +928,7 @@ def chat():
             from config.router import route_prompt
             from config.quality import assess_response
             decision = route_prompt(user_input)
-            swapped = _apply_route_decision(decision, session_state)
+            swapped = _apply_route_decision(decision, session_state, user_input)
             if swapped or decision.low_confidence:
                 _render_route_badge(console, decision)
 
@@ -1528,6 +1534,176 @@ def route(prompt: str, as_json: bool):
     console.print()
 
 
+@main.command(name="synapse-doctor")
+@click.option("--telemetry-tail", "tail_n", default=200, show_default=True,
+              help="How many trailing telemetry records to scan for the summary section.")
+def synapse_doctor(tail_n: int):
+    """Inspect the live Synapse Router configuration and recent telemetry.
+
+    Prints:
+    - Active env flags (auto-route, fallback)
+    - Confidence ceiling per intent
+    - Tier preferences (which models each intent prefers)
+    - Tier runtime params (temperature/max_tokens per type)
+    - DeepParallel fallback config (model, base URL, timeout)
+    - Summary of recent synapse_route + synapse_shallow_response events
+      from telemetry.jsonl
+
+    Pure inspection. No model invoked. Safe to run anywhere.
+    """
+    from config.router import (
+        LOW_CONFIDENCE_THRESHOLD,
+        _INTENT_CONFIDENCE,
+        _INTENT_PREFERENCES,
+    )
+    from config.agent_config import _TIER_RUNTIME_PARAMS
+    from config import synapse_fallback as sf
+
+    section = lambda title: console.print(f"\n[bold {GOLD_HEX}]{title}[/]")
+
+    # Helpers — defer the GOLD_HEX import to avoid yet another top-level
+    # change; reuse the route table style.
+    from cli.branding import GOLD_HEX
+
+    section("Synapse Router — Live Configuration")
+    flags = Table(show_header=False, box=None, padding=(0, 2))
+    flags.add_column("Flag", style="bold")
+    flags.add_column("Value")
+    flags.add_row("CROWE_LOGIC_AUTO_ROUTE", "on" if _auto_route_enabled() else "off")
+    flags.add_row("CROWE_LOGIC_SYNAPSE_FALLBACK", "on" if sf.fallback_enabled() else "off")
+    flags.add_row("LOW_CONFIDENCE_THRESHOLD", f"{LOW_CONFIDENCE_THRESHOLD:.2f}")
+    flags.add_row("Fallback model", sf._model_name())
+    flags.add_row("Fallback base URL", sf._base_url())
+    flags.add_row("Fallback timeout", f"{sf._timeout_s():.1f}s")
+    console.print(flags)
+
+    section("Confidence ceiling by intent")
+    conf_table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    conf_table.add_column("Intent")
+    conf_table.add_column("Confidence")
+    conf_table.add_column("Below threshold?")
+    for intent, conf in sorted(_INTENT_CONFIDENCE.items(), key=lambda kv: -kv[1]):
+        flag = "[red]LOW[/red]" if conf < LOW_CONFIDENCE_THRESHOLD else "[green]ok[/green]"
+        conf_table.add_row(intent, f"{conf:.2f}", flag)
+    console.print(conf_table)
+
+    section("Tier preferences (first match wins)")
+    pref_table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    pref_table.add_column("Intent")
+    pref_table.add_column("Preferred selectors (in order)")
+    for intent, selectors in _INTENT_PREFERENCES.items():
+        pref_table.add_row(intent, " → ".join(selectors[:4]))
+    console.print(pref_table)
+
+    section("Tier runtime params")
+    rt_table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    rt_table.add_column("Tier type")
+    rt_table.add_column("temperature")
+    rt_table.add_column("top_p")
+    rt_table.add_column("max_tokens")
+    for tier_type, params in _TIER_RUNTIME_PARAMS.items():
+        rt_table.add_row(
+            tier_type,
+            f"{params.get('temperature', '-'):.2f}",
+            f"{params.get('top_p', '-'):.2f}",
+            str(params.get("max_tokens", "-")),
+        )
+    console.print(rt_table)
+
+    section(f"Recent telemetry — last {tail_n} synapse events")
+    summary = _summarize_synapse_telemetry(tail_n)
+    if summary is None:
+        console.print("[dim]No telemetry file found at ~/.crowe-logic/runtime/telemetry.jsonl[/dim]")
+    elif summary["routes"] == 0 and summary["shallow"] == 0:
+        console.print("[dim]No synapse_route or synapse_shallow_response events yet.[/dim]")
+        console.print("[dim]Run a chat session with CROWE_LOGIC_AUTO_ROUTE=1 to populate.[/dim]")
+    else:
+        s_table = Table(show_header=False, box=None, padding=(0, 2))
+        s_table.add_column("Metric", style="bold")
+        s_table.add_column("Value")
+        s_table.add_row("Total route decisions", str(summary["routes"]))
+        s_table.add_row("Low-confidence routes", str(summary["low_conf"]))
+        s_table.add_row("Fallback overrides", str(summary["fallback_used"]))
+        s_table.add_row("Shallow responses", str(summary["shallow"]))
+        if summary["intents"]:
+            top = ", ".join(f"{k}={v}" for k, v in summary["intents"].items())
+            s_table.add_row("Intent distribution", top)
+        if summary["tiers"]:
+            top = ", ".join(f"{k}={v}" for k, v in summary["tiers"].items())
+            s_table.add_row("Tier distribution", top)
+        console.print(s_table)
+    console.print()
+
+
+def _summarize_synapse_telemetry(tail_n: int) -> dict | None:
+    """Read the last `tail_n` telemetry records and summarize Synapse events.
+
+    Returns None when the telemetry file does not exist. Otherwise returns
+    a dict with counts and basic distributions. Tolerant of malformed lines.
+    """
+    from pathlib import Path
+    import json as _json
+    from collections import Counter
+
+    path = Path.home() / ".crowe-logic" / "runtime" / "telemetry.jsonl"
+    if not path.exists():
+        return None
+
+    routes = 0
+    low_conf = 0
+    fallback_used = 0
+    shallow = 0
+    intent_counter: Counter = Counter()
+    tier_counter: Counter = Counter()
+
+    try:
+        # Read tail efficiently for large files: grab last ~64KB then split.
+        size = path.stat().st_size
+        with path.open("rb") as f:
+            if size > 65_536:
+                f.seek(-65_536, 2)
+                _ = f.readline()  # discard partial line
+            lines = f.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+
+    for line in lines[-tail_n:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = _json.loads(line)
+        except _json.JSONDecodeError:
+            continue
+        if rec.get("type") != "event":
+            continue
+        cat = rec.get("category", "")
+        data = rec.get("data") or {}
+        if cat == "synapse_route":
+            routes += 1
+            if data.get("confidence", 1.0) < 0.60:
+                low_conf += 1
+            if "DeepParallel" in (data.get("reason") or ""):
+                fallback_used += 1
+            intent = data.get("intent")
+            if intent:
+                intent_counter[intent] += 1
+            label = data.get("selected_label")
+            if label:
+                tier_counter[label] += 1
+        elif cat == "synapse_shallow_response":
+            shallow += 1
+
+    return {
+        "routes": routes,
+        "low_conf": low_conf,
+        "fallback_used": fallback_used,
+        "shallow": shallow,
+        "intents": dict(intent_counter.most_common(6)),
+        "tiers": dict(tier_counter.most_common(6)),
+    }
+
+
 @main.command()
 @click.argument("prompt")
 def run(prompt: str):
@@ -1554,7 +1730,7 @@ def run(prompt: str):
     if _auto_route_enabled():
         from config.router import route_prompt
         decision = route_prompt(prompt)
-        _apply_route_decision(decision, session_state)
+        _apply_route_decision(decision, session_state, prompt)
         _render_route_badge(console, decision)
 
     model_cfg = _current_model()
