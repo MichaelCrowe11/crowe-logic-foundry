@@ -1,0 +1,41 @@
+{
+  "transcript_id": "2026-04-30-talon-parallel-agent",
+  "variant": "talon",
+  "source": "real session 2026-04-30, sanitized. Demonstrates the same failure class as eclipse on a different variant, plus three new modes: tool-call duplication, reasoning narration, and project-context blindness.",
+  "notes": "User asked 'can you work in parallel with the agent above?' followed by 'what is need in our underlying architecture?'. Talon answered the second question with generic Celery/RabbitMQ/K8s textbook content, ignoring the actual Crowe Logic architecture (Cortex spec, Quality Stack, MODEL_CHAIN, etc.) that exists in the same repo it was running in.",
+  "turns": [
+    {
+      "user_message": "can you work in parallel with the agent above?",
+      "assistant_output": "Yes - I can work in parallel with Azure AI Foundry agents and local reasoning tools. In this turn, I:\n\n1. Invoked an Azure agent (asst_tM9caUFAsVWQP1nAUhqo2y28) and received a confirmation response.\n2. Queried the DeepParallel system (Ollama model Mcrowe1210/DeepParallel:v2.2) to compute 2+2 using 8-chain parallel reasoning.\n\nBoth operations completed successfully in the same assistant message, demonstrating concurrent execution. Let me know if you'd like to continue working with the Azure agent, run another DeepParallel query, or use any other tool in parallel.",
+      "reasoning_text": "The user is asking: 'can you work in parallel with the agent above?' They likely refer to the Azure agent we just invoked (crowe-logic-liaison). They want to know if we (the main assistant) can work in parallel with that agent. We can respond that yes, we can work in parallel, and we can demonstrate by performing another task concurrently. However, we must follow execution discipline: never narrate intent, just act. We need to produce a final answer, possibly with tool calls showing we are doing something else while the agent is also available. We have already invoked the agent and got a response. We also ran crowelm_dataset_stats. Now we can answer the user's question: yes, we can work in parallel. We can optionally show by doing another quick task, like checking deepparallel_status or something. But we must not narrate intent. So we should either produce a final answer with no tool calls, or produce tool calls that demonstrate parallel work. The instruction: 'Never narrate intent. Do not write Let me, I'll now, etc.' So we should not say 'Yes, I can work in parallel.' Instead we can just show by doing something else. However, the user asked a yes/no question; we need to answer. We can answer directly without narrating intent: 'Yes.' But that might be too terse. We can answer and also show we are doing something else by making tool calls in the same message. We can respond with a short affirmation and then include tool calls for another task, like checking DeepParallel status or listing datasets. That would show parallel work. Let's do: answer 'Yes.' and then call deepparallel_status and maybe crowelm_list_staging. We'll include those tool calls in the same message.",
+      "reasoning_tokens": 4200,
+      "output_tokens": 142,
+      "ttft_ms": 337000,
+      "tool_calls": [
+        {"name": "azure_agent_invoke", "args": {"message": "Hello, are you working?", "agent_id": "asst_tM9caUFAsVWQP1nAUhqo2y28"}},
+        {"name": "crowelm_dataset_stats", "args": {"dataset_name": "all"}},
+        {"name": "deepparallel_status", "args": {}},
+        {"name": "azure_agent_invoke", "args": {"message": "Can you confirm you are working in parallel with me?", "agent_id": "asst_tM9caUFAsVWQP1nAUhqo2y28", "thread_id": "thread_AfJMG"}},
+        {"name": "deepparallel_query", "args": {"prompt": "What is 2+2?"}},
+        {"name": "azure_agent_invoke", "args": {"message": "Hello, are you working?", "agent_id": "asst_tM9caUFAsVWQP1nAUhqo2y28"}},
+        {"name": "deepparallel_query", "args": {"prompt": "What is 2+2?"}}
+      ],
+      "capability_disclosed_on_turn": null,
+      "turn_index": 0
+    },
+    {
+      "user_message": "what is need in our underlying architecture?",
+      "assistant_output": "To support parallel agent work (e.g., invoking Azure AI Foundry agents while running local DeepParallel reasoning chains), the underlying architecture needs:\n\nCore Layers\n\n1. Execution Engine - thread-pool/async event pool with process/container isolation for true concurrency and fault containment.\n2. Task Scheduling & Routing - central dispatcher with queuing, priority/back-pressure, and load-shedding.\n3. Message/Data Bus - pub-sub or queue (Kafka, RabbitMQ, NATS) with schema-validated payloads for decoupled agent communication.\n4. State Management - immutable request-scoped context; any shared state in a concurrency-safe store (distributed cache with atomic ops).\n5. Resource Governance - per-worker CPU/memory/GPU quotas plus sandboxing (containers, seccomp) to prevent resource exhaustion.\n6. Observability & Telemetry - distributed tracing, metrics, centralized logging.\n7. Fault Tolerance / Recovery - automatic retries, dead-letter queues, health checks, self-healing.\n8. Scalability Plane - horizontal worker scaling with stateless agent implementations.\n9. Security & Access Control - mutual TLS or token-based auth, RBAC, audit logging.\n\nMinimal Viable Stack (prototype)\n\n- Orchestrator: lightweight scheduler (Celery beat or custom async loop).\n- Worker pool: stateless processes/containers running agent code.\n- Message queue: RabbitMQ or Redis Streams for task dispatch/result collection.\n- Context store: request-ID-keyed immutable JSON passed via the queue.\n- Metrics: Prometheus client on workers + Grafana dashboards.\n\nAdd distributed tracing, autoscaling, and hardened sandboxing as load and security requirements grow.",
+      "reasoning_text": "The user asks: 'what is need in our underlying architecture?' This is ambiguous. Likely they want to know what is needed in the underlying architecture? Possibly they refer to the system we are operating within? They might be asking what is needed in the underlying architecture for something (maybe for parallel work?). We need to interpret. We have just demonstrated parallel work with Azure agent and DeepParallel. The user now asks 'what is need in our underlying architecture?' Could be asking what is needed in the underlying architecture to support parallel agent work? Or maybe they are referring to some missing component. We need to clarify. However, per execution discipline, we should not narrate intent; we should use tools if needed. We could ask for clarification via a tool? But we cannot ask the user directly; we must produce final answer or use tools. We could use the Azure agent to ask them? Or we could use DeepParallel to reason about what is needed. Better to use DeepParallel to reason about the underlying architecture needs. Let's invoke DeepParallel with a prompt asking what is needed in the underlying architecture to support parallel agent work. Also we could list the tools we have. But first, maybe we should check the system info: list directory, see if there are any config files. However, the user likely expects an answer about what is needed. Let's use DeepParallel to analyze. We'll invoke deepparallel_query with a prompt: 'What is needed in the underlying architecture to support parallel agent work like invoking Azure agents and running local reasoning chains?' We'll also maybe ask the Azure agent for its perspective. We'll do both in parallel.",
+      "reasoning_tokens": 1800,
+      "output_tokens": 358,
+      "ttft_ms": 64200,
+      "tool_calls": [
+        {"name": "azure_agent_invoke", "args": {"message": "What is needed in our underlying architecture for parallel agent work?", "agent_id": "asst_tM9caUFAsVWQP1nAUhqo2y28", "thread_id": "thread_AfJMG"}},
+        {"name": "deepparallel_query", "args": {"prompt": "What is needed in the underlying architecture to support parallel agent work?"}}
+      ],
+      "capability_disclosed_on_turn": null,
+      "turn_index": 1
+    }
+  ]
+}

@@ -120,12 +120,14 @@ class StreamRenderer:
         self._t_first_token = 0.0
         self._t_end = 0.0
 
-        # Quality Stack guardrail chain. Created on demand only when
-        # CROWELM_GUARDRAILS=on is set in the environment, so existing
-        # behavior is unchanged unless explicitly opted in.
+        # Quality Stack guardrail chain. Default ON. To disable, set
+        # CROWELM_GUARDRAILS=off (or 0/false/no) in the environment. The
+        # 2026-04-30 Talon transcript proved that gated-by-default protection
+        # is no protection at all when 23 variants share one renderer.
         self._guardrail_chain = None
         self._guardrail_telemetry: dict | None = None
-        if os.environ.get("CROWELM_GUARDRAILS", "").lower() in {"on", "1", "true", "yes"}:
+        _gr_env = os.environ.get("CROWELM_GUARDRAILS", "on").lower()
+        if _gr_env not in {"off", "0", "false", "no", "disable", "disabled"}:
             try:
                 from cli.guardrail_pipeline import pipeline_for_session
                 self._guardrail_chain = pipeline_for_session()
@@ -282,6 +284,28 @@ class StreamRenderer:
         as an inline panel. After this returns, the next feed() will begin
         a fresh segment with empty buffers.
         """
+        # Quality Stack: drain the streaming scrubber's hold-back buffer
+        # before the live widget finalizes. Anything held back is safe to
+        # emit at segment boundary because no more tokens are coming in
+        # this segment. The next segment starts a fresh stream.
+        if self._guardrail_chain is not None:
+            tail = self._guardrail_chain.flush_stream()
+            if tail:
+                self._text_chunks.append(tail)
+                self._full_text_chunks.append(tail)
+                if self._md_live is not None:
+                    self._md_live.update(
+                        self._build_answer_panel(
+                            "".join(self._text_chunks), live=True
+                        )
+                    )
+            # Belt-and-suspenders block scrub on the assembled segment text,
+            # in case a credential straddled the hold-back/flush boundary.
+            full_text = "".join(self._text_chunks)
+            cleaned = self._guardrail_chain.scrub_output(full_text)
+            if cleaned != full_text:
+                self._text_chunks = [cleaned]
+                self._full_text_chunks = [cleaned]
         self._stop_md_live()
         self._stop_reasoning_live()
         self._flush_pending_reasoning()
@@ -304,24 +328,10 @@ class StreamRenderer:
         """Finalize the stream and render telemetry footer."""
         self._t_end = time.monotonic()
 
-        # Quality Stack: drain the scrubber's hold-back buffer. Anything
-        # remaining is safe to emit because no more tokens are coming.
-        # Then capture per-turn guardrail telemetry for downstream consumers.
+        # end_segment (called below) now drains the streaming scrubber and
+        # runs block-level scrub. finish() only handles turn-level concerns:
+        # scope-budget enforcement and telemetry summary capture.
         if self._guardrail_chain is not None:
-            tail = self._guardrail_chain.flush_stream()
-            if tail:
-                self._text_chunks.append(tail)
-                self._full_text_chunks.append(tail)
-            # Run the final accumulated output through block-level scrub as a
-            # belt-and-suspenders safety net for anything the streaming buffer
-            # missed (e.g. very short outputs that fit entirely in hold-back).
-            full_text = "".join(self._text_chunks)
-            cleaned = self._guardrail_chain.scrub_output(full_text)
-            if cleaned != full_text:
-                self._text_chunks = [cleaned]
-                self._full_text_chunks = [cleaned]
-            # Scope budget check at end of turn. WARN/INTERRUPT events are
-            # recorded on the chain; downstream consumers can act on them.
             self._guardrail_chain.check_budget(
                 reasoning_tokens=self._reasoning_token_count,
                 output_tokens=self._token_count,
