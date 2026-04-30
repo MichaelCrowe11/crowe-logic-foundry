@@ -259,9 +259,29 @@ def route_prompt(text: str, chain: list[dict] | None = None) -> RouteDecision:
 
     Falls back to the first model in the chain if no preference resolves
     (e.g., a stripped-down deployment that has only one tier configured).
+
+    When CROWE_LOGIC_SYNAPSE_FALLBACK=1 and the heuristic confidence is
+    below LOW_CONFIDENCE_THRESHOLD, the prompt is re-classified by
+    DeepParallel (a local multi-chain reasoning model on Ollama). The
+    fallback never raises; on any failure the heuristic decision is
+    kept.
     """
     chain = chain if chain is not None else MODEL_CHAIN
     intent, confidence = classify_with_confidence(text)
+    fallback_used = False
+
+    if confidence < LOW_CONFIDENCE_THRESHOLD:
+        from config.synapse_fallback import classify_with_deepparallel, fallback_enabled
+        if fallback_enabled():
+            second_opinion = classify_with_deepparallel(text)
+            if second_opinion is not None:
+                dp_intent, dp_conf = second_opinion
+                # Only override when the fallback returns higher confidence
+                # AND a recognized intent. This prevents a low-quality
+                # second opinion from making routing worse.
+                if dp_intent in _INTENT_PREFERENCES and dp_conf > confidence:
+                    intent, confidence = dp_intent, dp_conf
+                    fallback_used = True
 
     selectors = _INTENT_PREFERENCES.get(intent, ()) + (
         # Backstop: any reasoning tier, then the first chain entry.
@@ -269,16 +289,17 @@ def route_prompt(text: str, chain: list[dict] | None = None) -> RouteDecision:
     )
 
     chosen = _first_resolvable(selectors, chain)
+    fallback_tag = " [via DeepParallel]" if fallback_used else ""
     if chosen is None:
         chosen = chain[0]
         reason = (
-            f"intent={intent} (conf={confidence:.2f}); no preferred selector "
-            f"resolved in chain; falling back to first entry."
+            f"intent={intent} (conf={confidence:.2f}){fallback_tag}; "
+            f"no preferred selector resolved in chain; falling back to first entry."
         )
     else:
         reason = (
-            f"intent={intent} (conf={confidence:.2f}); matched preference list to "
-            f"{chosen.get('label', chosen.get('name', '?'))}."
+            f"intent={intent} (conf={confidence:.2f}){fallback_tag}; matched "
+            f"preference list to {chosen.get('label', chosen.get('name', '?'))}."
         )
 
     return RouteDecision(
