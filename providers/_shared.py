@@ -13,6 +13,8 @@ import json
 import time
 import inspect
 
+from config.telemetry import telemetry
+
 
 def _coerce_tool_args(func, args: dict) -> dict:
     """Coerce tool-call arguments to the types declared in function annotations.
@@ -294,12 +296,26 @@ def looks_like_stalled_announcement(text: str) -> bool:
 
 # Synthetic nudge appended to message history when auto-continuing. Kept short
 # so it doesn't bias the model's next output, and framed as a system reminder
-# rather than a user turn so the transcript reads cleanly.
+# rather than a user turn so the transcript reads cleanly. Avoids echoing
+# litigation triggers like "do not narrate intent" — the model otherwise
+# spends the next turn re-reasoning over that exact phrase.
 AUTO_CONTINUE_NUDGE = (
-    "(auto-continue) Execute the action you just described. "
-    "Call the tool now, or if no tool is needed, produce the final answer. "
-    "Do not narrate intent again."
+    "(auto-continue) Issue the tool call now, or produce the final answer."
 )
+
+
+def _canonical_tool_call_key(name: str, args_json: str) -> str:
+    """Stable hash for a tool call, used for in-session deduplication.
+
+    Args are normalized through json so semantically-equal payloads with
+    different whitespace or key order collapse to the same key.
+    """
+    try:
+        parsed = json.loads(args_json) if args_json else {}
+    except (json.JSONDecodeError, TypeError):
+        parsed = args_json
+    canonical = json.dumps(parsed, sort_keys=True, default=str, separators=(",", ":"))
+    return f"{name}::{canonical}"
 
 
 class BaseOpenAIProvider:
@@ -323,8 +339,22 @@ class BaseOpenAIProvider:
         self.system_instructions = system_instructions
         self.messages = [{"role": "system", "content": system_instructions}]
         self._tool_call_seq = 0
+        # Maps canonical tool-call key -> cached result string. Populated as
+        # tools execute; consulted on every new call so the same action is
+        # never run twice in one session unless the user explicitly retries.
+        self._recent_tool_results: dict[str, str] = {}
+        # Optional MODEL_CHAIN entry. When set, stream_response merges
+        # tier_runtime_params (temperature, top_p, max_tokens) into the
+        # chat-completions request so each tier runs at its tuned profile.
+        # Provider factories assign this after construction.
+        self.model_cfg: dict | None = None
 
     def add_user_message(self, content: str):
+        # Each new user turn resets the in-session tool-call dedupe cache:
+        # repeating a tool call within a single user turn is almost always
+        # a model loop, but the user may legitimately ask for the same
+        # action again on a subsequent turn.
+        self._recent_tool_results.clear()
         self.messages.append({"role": "user", "content": content})
 
     def set_system_instructions(self, system_instructions: str) -> None:
@@ -444,10 +474,15 @@ class BaseOpenAIProvider:
         full_response = ""
         budget_warning_sent = False
         auto_continues_used = 0
-        MAX_AUTO_CONTINUES = 2
+        # One auto-continue is enough to recover from a stalled announcement.
+        # Two creates a redundant-tool-call loop when the model keeps re-issuing
+        # the same call after each nudge.
+        MAX_AUTO_CONTINUES = 1
+        _session_start = time.monotonic()
 
         for _round in range(self.MAX_ROUNDS):
             tool_calls_accumulator: dict[int, dict] = {}
+            _round_start = time.monotonic()
 
             try:
                 if _round == 0:
@@ -462,6 +497,15 @@ class BaseOpenAIProvider:
                 }
                 if tool_schemas:
                     create_kwargs["tools"] = tool_schemas
+
+                # Apply tier-specific runtime params (temperature, max_tokens, etc.)
+                # when the provider factory has attached a model_cfg. Per-call
+                # values already in create_kwargs win, so providers can still
+                # override on a per-request basis if they need to.
+                if self.model_cfg is not None:
+                    from config.agent_config import tier_runtime_params
+                    for k, v in tier_runtime_params(self.model_cfg).items():
+                        create_kwargs.setdefault(k, v)
 
                 stream = self.client.chat.completions.create(**create_kwargs)
 
@@ -535,10 +579,6 @@ class BaseOpenAIProvider:
                     auto_continues_used < MAX_AUTO_CONTINUES
                     and looks_like_stalled_announcement(response_text)
                 ):
-                    # The model announced a next action but never emitted a
-                    # tool_call — silently re-invoke instead of handing control
-                    # back to the user. The announcement still counts as an
-                    # assistant turn so the model can see its own statement.
                     self.messages.append({"role": "assistant", "content": response_text})
                     self.messages.append({"role": "user", "content": AUTO_CONTINUE_NUDGE})
                     auto_continues_used += 1
@@ -546,6 +586,21 @@ class BaseOpenAIProvider:
                     renderer.stop_spinner()
                     continue
 
+                _total_ms = int((time.monotonic() - _session_start) * 1000)
+                telemetry.log_model_call(
+                    model=self.model,
+                    provider=self.label,
+                    tokens_in=0,   # exact counts require usage response parsing
+                    tokens_out=0,
+                    duration_ms=_total_ms,
+                )
+                telemetry.log_event("stream_complete", {
+                    "model": self.model,
+                    "rounds": _round + 1,
+                    "tool_calls": session_state.get("tool_count", 0),
+                    "auto_continues": auto_continues_used,
+                    "duration_ms": _total_ms,
+                })
                 renderer.finish(session_state=session_state)
                 self.messages.append({"role": "assistant", "content": response_text})
                 break
@@ -585,7 +640,25 @@ class BaseOpenAIProvider:
 
                 func = tool_map.get(name)
                 failed = False
-                if not raw_name:
+                cache_hit = False
+                cache_key: str | None = None
+                if raw_name:
+                    cache_key = _canonical_tool_call_key(raw_name, args_json or "")
+                    cached = self._recent_tool_results.get(cache_key)
+                    if cached is not None:
+                        # Same call already executed in this session. Return
+                        # the cached result with a note so the model knows
+                        # not to retry, and surface it visibly to the user.
+                        result_str = json.dumps({
+                            "cached": True,
+                            "note": "Same tool+args already executed this session; returning prior result. Do not re-issue this call.",
+                            "previous_result": cached[:8000],
+                        })
+                        cache_hit = True
+
+                if cache_hit:
+                    pass  # result_str already set
+                elif not raw_name:
                     result_str = json.dumps({
                         "error": "Model emitted a tool call without a function name.",
                         "raw_arguments": args_json[:2000],
@@ -609,8 +682,19 @@ class BaseOpenAIProvider:
                     result_str = json.dumps({"error": f"Unknown tool: {name}"})
                     failed = True
 
+                if cache_key and not failed and not cache_hit:
+                    self._recent_tool_results[cache_key] = result_str
+
                 duration_ms = int((time.monotonic() - _tool_start) * 1000)
                 renderer.stop_spinner()
+
+                telemetry.log_tool_call(
+                    name=name,
+                    args=args_json,
+                    duration_ms=duration_ms,
+                    success=not failed,
+                    error=result_str[:500] if failed else None,
+                )
 
                 render_tool_card(
                     console, name, args_json,
