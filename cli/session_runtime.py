@@ -15,6 +15,7 @@ _PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 _RUNTIME_DIR = Path.home() / ".crowe-logic" / "runtime"
 _DATASET_MANIFEST_PATH = Path(_PROJECT_ROOT) / "data" / "crowelm-unified" / "DATASET_MANIFEST.json"
 _DEFAULT_DATASET_SELECTION = "all"
+_TRACE_LIMIT = 25  # bound `external_traces` to the most recent N entries
 
 
 def _session_path(session_id: str) -> Path:
@@ -32,6 +33,9 @@ def _default_session_state() -> dict:
         "last_reasoning_text": "",
         "last_model": "",
         "updated_at": 0.0,
+        # Cross-provider continuity (router-and-parallel branch).
+        "agent_threads": {},   # {agent_id: thread_id} for Azure Foundry agents
+        "external_traces": [], # bounded log of non-primary provider calls
     }
 
 
@@ -187,6 +191,18 @@ def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_
         if dataset_context:
             parts.append("## CroweLM Dataset Context\n" + dataset_context)
 
+    # Crowe Terminal agent tools (browser.in_window.*, terminal.*, system.*,
+    # AppleScript, allowlist management). The addendum is empty unless the
+    # proxy successfully discovered + registered tools, so we don't promise
+    # tools that aren't actually callable.
+    try:
+        from tools.crowe_terminal import system_prompt as crowe_terminal_prompt
+        addendum = crowe_terminal_prompt()
+        if addendum:
+            parts.append(addendum)
+    except Exception:
+        pass
+
     return "\n\n".join(part for part in parts if part and part.strip())
 
 
@@ -268,3 +284,62 @@ def handle_local_control_command(command_text: str, *, session_id: str) -> str |
         return f"Using dataset-focused context for this session: {resolved}"
 
     return None
+
+
+# ── Cross-provider continuity helpers (router-and-parallel branch) ────
+
+
+def remember_agent_thread(session_id: str, agent_id: str, thread_id: str) -> None:
+    """Persist the (agent_id → thread_id) mapping for cross-turn continuity.
+
+    Use this after every successful Azure Foundry agent call so the next turn
+    can resume the same thread without the user passing thread_id explicitly.
+    """
+    state = load_session_runtime(session_id)
+    threads = dict(state.get("agent_threads") or {})
+    threads[str(agent_id)] = str(thread_id)
+    update_session_runtime(session_id, agent_threads=threads)
+
+
+def recall_agent_thread(session_id: str, agent_id: str) -> str | None:
+    """Return the previously-known thread_id for ``agent_id``, or ``None``."""
+    state = load_session_runtime(session_id)
+    threads = state.get("agent_threads") or {}
+    value = threads.get(str(agent_id))
+    return str(value) if value else None
+
+
+def record_external_trace(
+    session_id: str,
+    *,
+    provider: str,
+    model: str,
+    prompt_hash: str = "",
+    summary: str = "",
+) -> None:
+    """Append a one-line trace of a non-primary provider call.
+
+    Bounded to the most recent ``_TRACE_LIMIT`` entries so the session file
+    does not grow unbounded over a long-running interactive session.
+    """
+    state = load_session_runtime(session_id)
+    traces = list(state.get("external_traces") or [])
+    traces.append({
+        "provider": provider,
+        "model": model,
+        "ts": time.time(),
+        "prompt_hash": prompt_hash,
+        "summary": summary[:240],  # truncate so the state file stays small
+    })
+    if len(traces) > _TRACE_LIMIT:
+        traces = traces[-_TRACE_LIMIT:]
+    update_session_runtime(session_id, external_traces=traces)
+
+
+def recent_external_traces(session_id: str, *, limit: int = 5) -> list[dict]:
+    """Return the most recent ``limit`` external-trace entries (newest last)."""
+    state = load_session_runtime(session_id)
+    traces = list(state.get("external_traces") or [])
+    if limit <= 0:
+        return []
+    return traces[-limit:]

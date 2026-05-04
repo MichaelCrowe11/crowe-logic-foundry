@@ -134,6 +134,21 @@ from tools.azure_agent import azure_agent_list, azure_agent_invoke, azure_agent_
 from tools.mcp_registry import mcp_search
 from tools.mcp_client import mcp_list_tools, mcp_call_tool, mcp_stop_server
 
+# Crowe Portfolio knowledge plane: registry + agent catalog + dataset catalog
+# + code KB hybrid search across the entire Crowe Logic codebase.
+# Backed by crowe-portfolio-http (CROWE_PORTFOLIO_URL + CROWE_PORTFOLIO_TOKEN).
+from tools.portfolio_tools import (
+    portfolio_search_code,
+    portfolio_find_canonical,
+    portfolio_list_repos,
+    portfolio_show_repo,
+    portfolio_list_clusters,
+    portfolio_list_agents,
+    portfolio_get_agent,
+    portfolio_list_datasets,
+    portfolio_stale_repos,
+)
+
 # iTerm2 terminal control
 from tools.iterm2_control import (
     iterm_create_window, iterm_create_tab, iterm_split_pane,
@@ -144,6 +159,9 @@ from tools.iterm2_control import (
     iterm_alert, iterm_prompt_input,
     iterm_set_variable, iterm_get_variable,
 )
+
+# Crowe Terminal proxy is imported AFTER user_functions is defined below,
+# so the proxy can mutate the set in place at import time.
 
 # All user-facing functions the agent can call
 user_functions = {
@@ -201,6 +219,11 @@ user_functions = {
     azure_agent_list, azure_agent_invoke, azure_agent_create,
     # MCP ecosystem
     mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
+    # Crowe Portfolio knowledge plane (registry, agents, datasets, code KB)
+    portfolio_search_code, portfolio_find_canonical, portfolio_list_repos,
+    portfolio_show_repo, portfolio_list_clusters,
+    portfolio_list_agents, portfolio_get_agent,
+    portfolio_list_datasets, portfolio_stale_repos,
     # iTerm2 terminal control
     iterm_create_window, iterm_create_tab, iterm_split_pane,
     iterm_send_text, iterm_read_screen, iterm_inject_output,
@@ -210,3 +233,9 @@ user_functions = {
     iterm_alert, iterm_prompt_input,
     iterm_set_variable, iterm_get_variable,
 }
+
+# Crowe Terminal control plane (active when CROWE_AGENT_TOOLS=1 and the
+# terminal is running). Imported AFTER user_functions is defined so the
+# discover_and_register call at import time can mutate the set in place.
+# Silent no-op when the terminal isn't reachable.
+from tools import crowe_terminal as _crowe_terminal  # noqa: F401, E402

@@ -9,6 +9,7 @@ High-fidelity terminal rendering with real-time telemetry:
   - Reasoning block display for thinking models (Kimi K2.5)
 """
 
+import os
 import sys
 import time
 import re
@@ -119,6 +120,20 @@ class StreamRenderer:
         self._t_first_token = 0.0
         self._t_end = 0.0
 
+        # Quality Stack guardrail chain. Default ON. To disable, set
+        # CROWELM_GUARDRAILS=off (or 0/false/no) in the environment. The
+        # 2026-04-30 Talon transcript proved that gated-by-default protection
+        # is no protection at all when 23 variants share one renderer.
+        self._guardrail_chain = None
+        self._guardrail_telemetry: dict | None = None
+        _gr_env = os.environ.get("CROWELM_GUARDRAILS", "on").lower()
+        if _gr_env not in {"off", "0", "false", "no", "disable", "disabled"}:
+            try:
+                from cli.guardrail_pipeline import pipeline_for_session
+                self._guardrail_chain = pipeline_for_session()
+            except ImportError:
+                pass  # guardrail module not available; behave as before
+
     def _show_header(self):
         """Print the avatar + model label header (once per response).
 
@@ -186,7 +201,7 @@ class StreamRenderer:
     def feed(self, token: str):
         """Append a content token to the live stream.
 
-        The Markdown re-parse is throttled to _STREAM_FPS — see the
+        The Markdown re-parse is throttled to _STREAM_FPS - see the
         comment on _STREAM_FPS for why this matters. The unthrottled
         token is always appended to _text_chunks; _stop_md_live does
         a final flush so nothing is lost between the last throttled
@@ -196,6 +211,16 @@ class StreamRenderer:
             self.begin_stream()
         if self._t_first_token == 0.0:
             self._t_first_token = time.monotonic()
+
+        # Quality Stack: run the token through the guardrail chain before
+        # it touches the live widget. The chain holds back a tail buffer
+        # so partial credentials at chunk boundaries cannot leak. The
+        # final flush in finish() drains the buffer.
+        if self._guardrail_chain is not None:
+            token = self._guardrail_chain.stream(token)
+            if not token:
+                return
+
         self._text_chunks.append(token)
         self._full_text_chunks.append(token)
         self._token_count += 1
@@ -259,6 +284,28 @@ class StreamRenderer:
         as an inline panel. After this returns, the next feed() will begin
         a fresh segment with empty buffers.
         """
+        # Quality Stack: drain the streaming scrubber's hold-back buffer
+        # before the live widget finalizes. Anything held back is safe to
+        # emit at segment boundary because no more tokens are coming in
+        # this segment. The next segment starts a fresh stream.
+        if self._guardrail_chain is not None:
+            tail = self._guardrail_chain.flush_stream()
+            if tail:
+                self._text_chunks.append(tail)
+                self._full_text_chunks.append(tail)
+                if self._md_live is not None:
+                    self._md_live.update(
+                        self._build_answer_panel(
+                            "".join(self._text_chunks), live=True
+                        )
+                    )
+            # Belt-and-suspenders block scrub on the assembled segment text,
+            # in case a credential straddled the hold-back/flush boundary.
+            full_text = "".join(self._text_chunks)
+            cleaned = self._guardrail_chain.scrub_output(full_text)
+            if cleaned != full_text:
+                self._text_chunks = [cleaned]
+                self._full_text_chunks = [cleaned]
         self._stop_md_live()
         self._stop_reasoning_live()
         self._flush_pending_reasoning()
@@ -280,6 +327,21 @@ class StreamRenderer:
     def finish(self, session_state=None):
         """Finalize the stream and render telemetry footer."""
         self._t_end = time.monotonic()
+
+        # end_segment (called below) now drains the streaming scrubber and
+        # runs block-level scrub. finish() only handles turn-level concerns:
+        # scope-budget enforcement and telemetry summary capture.
+        if self._guardrail_chain is not None:
+            self._guardrail_chain.check_budget(
+                reasoning_tokens=self._reasoning_token_count,
+                output_tokens=self._token_count,
+            )
+            try:
+                from cli.guardrail_pipeline import telemetry_summary
+                self._guardrail_telemetry = telemetry_summary(self._guardrail_chain)
+            except ImportError:
+                self._guardrail_telemetry = None
+
         # end_segment() handles md_live, reasoning_live, and flushes any
         # tail-end reasoning that arrived after content but was never shown
         # in a live panel.

@@ -1,27 +1,33 @@
 """
-Crowe Logic Foundry - Complexity Router
+Crowe Logic Foundry - Prompt Router
 
-Classifies user prompts and routes them to the right CroweLM tier.
+Classifies user prompts into intents and resolves them to the best available
+CroweLM tier in MODEL_CHAIN. Heuristic-only (no extra LLM call before the
+user's request).
 
-Design notes
-------------
-- Heuristic-only by default. No extra LLM call before the user's request.
-  An LLM-based router would itself need ~500ms TTFB plus a model decision,
-  which negates the savings on the 80% of prompts that have an obvious shape.
-- The classifier is conservative: when in doubt, escalate to the highest
-  tier that fits. The cost of routing a domain prompt to Nano is much
-  higher than the cost of routing a trivial prompt to a reasoning tier.
-- Output is structured (`RouteDecision`) so call sites can log it,
-  display it, or override it.
+This module is the canonical replacement for the older ``classify_task`` /
+``TASK_CLASS_ROUTES`` system in ``config.agent_config``. The two coexist for
+now; the older system will be removed once call sites migrate to
+``route_prompt``.
+
+Design principles
+-----------------
+- Heuristic, not LLM-based. An LLM-based router adds ~500ms TTFB on the 80%
+  of prompts that have an obvious shape; the cost of routing a domain prompt
+  to Nano is much smaller than the cost of always paying that TTFB tax.
+- Conservative escalation. When two intents tie, escalate to the higher tier.
+- Structured output (``RouteDecision``) so call sites can log, display, or override.
+- No side effects. Does not mutate ``MODEL_CHAIN`` or any global state.
 
 Intent ladder (cheapest first):
+
     capability_question     "can you...", "do you...", "is there..."
     arithmetic              digits + math operators, no prose
     trivial                 short greetings, yes/no, ack
     ambiguous               very short prompts that aren't clearly one thing
     code                    "write/refactor/fix" + code-shaped tokens
     vision                  references to images, screenshots, photos
-    domain                  mycology, biotech, drug discovery, agronomy keywords
+    domain                  mycology, biotech, drug discovery keywords
     general                 default reasoning prompts
     deep                    explicit asks for analysis/strategy/architecture
 """
@@ -29,14 +35,13 @@ Intent ladder (cheapest first):
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, asdict
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Callable, Iterable
 
 from config.agent_config import MODEL_CHAIN, resolve_model_config
 
-# ─────────────────────────────────────────────────────────────────────
-# Intent classification
-# ─────────────────────────────────────────────────────────────────────
+
+# ── Intent classification ─────────────────────────────────────────────
 
 _CAPABILITY_PATTERNS = (
     r"\bcan you\b",
@@ -65,11 +70,13 @@ _TRIVIAL_PHRASES = {
 }
 
 _CODE_KEYWORDS = (
-    "refactor", "rewrite", "implement", "function", "class ", "method",
-    "bug", "stack trace", "compile", "lint", "test ", "unit test",
-    "regex", "snippet", "endpoint", "schema", "migration", "diff ",
+    " refactor", " rewrite", " implement", " function ", " class ", " method ",
+    " bug ", " stack trace", " compile", " lint", " test ", " unit test",
+    " regex", " snippet", " endpoint", " schema", " migration", " diff ",
 )
-_CODE_FENCES = re.compile(r"```|^\s*(def |class |function |const |let |var )", re.MULTILINE)
+_CODE_FENCES = re.compile(
+    r"```|^\s*(def |class |function |const |let |var )", re.MULTILINE
+)
 
 _VISION_KEYWORDS = (
     "screenshot", "screen shot", "image", "photo", "picture", "diagram",
@@ -107,215 +114,178 @@ def _contains_any(text: str, keywords: Iterable[str]) -> bool:
 
 
 def classify_prompt(text: str) -> str:
-    """Return a single intent label for the prompt (no confidence)."""
-    intent, _ = classify_with_confidence(text)
-    return intent
-
-
-def classify_with_confidence(text: str) -> tuple[str, float]:
-    """Return (intent, confidence in [0, 1]).
-
-    Confidence is calibrated per signal:
-    - Regex/exact-match intents (arithmetic, trivial) score near 1.0.
-    - Keyword-density intents (domain) score higher when multiple
-      keywords fire than when only one does.
-    - Length-gated intents (capability_question) lose confidence as the
-      prompt gets longer (long capability questions are often disguised
-      domain prompts).
-    - Default fallthroughs (general, ambiguous) carry intrinsically low
-      confidence so the auto-router knows to escalate or surface.
-    """
+    """Return a single intent label for ``text``. Order: specific → general."""
     if not text or not text.strip():
-        return ("ambiguous", _INTENT_CONFIDENCE["ambiguous"])
+        return "ambiguous"
 
     raw = text.strip()
     lower = raw.lower()
+    # Pad with spaces so space-bounded keywords (e.g. " test ") match at word
+    # boundaries rather than across them ("la[test ]" must not classify as code).
+    padded = f" {lower} "
 
     if _ARITHMETIC_PATTERN.match(raw) or _ARITHMETIC_INLINE_PATTERN.match(raw):
-        return ("arithmetic", _INTENT_CONFIDENCE["arithmetic"])
+        return "arithmetic"
 
     if lower in _TRIVIAL_PHRASES:
-        return ("trivial", _INTENT_CONFIDENCE["trivial"])
+        return "trivial"
     if len(lower) <= 4 and lower.isalpha():
-        return ("trivial", 0.85)  # short alpha words less certain than exact matches
+        return "trivial"
 
     if _matches_any(lower, _CAPABILITY_PATTERNS) and len(raw) < 200:
-        # Short capability questions are highly confident; longer ones drift
-        # toward "this might really be a domain ask in disguise."
-        if len(raw) < 80:
-            return ("capability_question", _INTENT_CONFIDENCE["capability_question"])
-        return ("capability_question", 0.65)
+        return "capability_question"
 
-    if _contains_any(lower, _VISION_KEYWORDS):
-        return ("vision", _INTENT_CONFIDENCE["vision"])
+    if _contains_any(padded, _VISION_KEYWORDS):
+        return "vision"
 
-    if _CODE_FENCES.search(raw):
-        return ("code", _INTENT_CONFIDENCE["code"])  # fenced code is strong signal
-    if _contains_any(lower, _CODE_KEYWORDS):
-        return ("code", 0.72)  # keyword-only is weaker than fence
+    if _contains_any(padded, _CODE_KEYWORDS) or _CODE_FENCES.search(raw):
+        return "code"
 
-    domain_hits = sum(1 for k in _DOMAIN_KEYWORDS if k in lower)
-    if domain_hits >= 2:
-        return ("domain", _INTENT_CONFIDENCE["domain"])
-    if domain_hits == 1:
-        return ("domain", 0.62)
+    if _contains_any(padded, _DOMAIN_KEYWORDS):
+        return "domain"
 
-    if _contains_any(lower, _DEEP_KEYWORDS):
-        return ("deep", _INTENT_CONFIDENCE["deep"])
+    if _contains_any(padded, _DEEP_KEYWORDS):
+        return "deep"
 
     if len(raw) < 25:
-        return ("ambiguous", _INTENT_CONFIDENCE["ambiguous"])
+        return "ambiguous"
 
-    return ("general", _INTENT_CONFIDENCE["general"])
+    return "general"
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Intent → tier mapping
-# ─────────────────────────────────────────────────────────────────────
+# ── Intent → tier preference ──────────────────────────────────────────
 
-# Maps intent -> ordered list of preferred selectors (label or alias).
-# Router walks this list and picks the first selector that resolves to a
-# model present in MODEL_CHAIN (so missing-model environments degrade
-# gracefully to whatever is configured).
+# Ordered selectors per intent. The router walks each list and picks the
+# first selector that resolves to a model present in MODEL_CHAIN AND
+# passes the optional availability check.
 _INTENT_PREFERENCES: dict[str, tuple[str, ...]] = {
     "capability_question": ("CroweLM Nano", "nano", "CroweLM Lite", "CroweLM Swift"),
     "arithmetic":          ("CroweLM Nano", "nano", "CroweLM Lite"),
     "trivial":             ("CroweLM Nano", "nano", "CroweLM Lite"),
     "ambiguous":           ("CroweLM Nano", "nano", "CroweLM Swift", "CroweLM Nexus"),
-    "vision":              ("CroweLM Vision", "vision", "talon-vision"),
+    "vision":              ("CroweLM Vision", "vision"),
     "code":                ("CroweLM Coder", "CroweLM Dev", "CroweLM Apex", "CroweLM Titan"),
     "domain":              ("CroweLM Apex", "CroweLM Titan", "CroweLM Sovereign", "CroweLM Prime"),
     "deep":                ("CroweLM Titan", "CroweLM Apex", "CroweLM Sovereign", "CroweLM Frontier"),
     "general":             ("CroweLM Nexus", "CroweLM Apex", "CroweLM Titan"),
 }
 
-
-# ─────────────────────────────────────────────────────────────────────
-# Route decision
-# ─────────────────────────────────────────────────────────────────────
-
-# Per-intent confidence ceilings. The classifier returns the highest score
-# in this table for which all signals fired. Lower-confidence intents
-# represent ambiguous inputs the router should flag for promotion review.
-_INTENT_CONFIDENCE: dict[str, float] = {
-    "arithmetic":          0.99,  # regex unambiguous
-    "trivial":             0.98,  # exact phrase match
-    "vision":              0.92,  # explicit image keyword
-    "capability_question": 0.85,  # pattern + length cap
-    "code":                0.85,  # code fence or strong keyword
-    "domain":              0.80,  # domain keyword present
-    "deep":                0.78,  # explicit "architecture/strategy"
-    "general":             0.65,  # default for medium prompts
-    "ambiguous":           0.40,  # short, unclear shape
+# Companions for parallel fan-out. When a turn is dispatched in
+# ``present_both`` or ``ensemble_synthesis`` fusion mode, these labels are
+# added alongside the primary. Empty by default - fan-out is opt-in per call site.
+_INTENT_COMPANIONS: dict[str, tuple[str, ...]] = {
+    "domain": ("DeepParallel",),  # second opinion via local 8-chain
+    "deep":   ("DeepParallel",),
 }
 
-# Confidence threshold below which the router decision is logged as a
-# low-confidence dispatch. Used by adaptive-promotion logic and by the
-# auto-route badge to highlight uncertain routes.
-LOW_CONFIDENCE_THRESHOLD: float = 0.60
 
+# ── Route decision ────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RouteDecision:
-    """A routing outcome: which model, with calibrated confidence."""
+    """Routing outcome: classified intent, primary + fallback chain, optional companions."""
 
     intent: str
-    selected_label: str
-    selected_name: str
-    selected_type: str
+    primary: dict                   # model_cfg from MODEL_CHAIN
+    fallbacks: tuple[dict, ...]     # ordered same-turn fallbacks
+    companions: tuple[dict, ...]    # parallel-dispatch companions (may be empty)
     reason: str
-    confidence: float = 0.0
 
     @property
-    def low_confidence(self) -> bool:
-        return self.confidence < LOW_CONFIDENCE_THRESHOLD
+    def primary_label(self) -> str:
+        return str(self.primary.get("label", self.primary.get("name", "?")))
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return {
+            "intent": self.intent,
+            "primary": self.primary_label,
+            "fallbacks": [str(c.get("label", c.get("name", ""))) for c in self.fallbacks],
+            "companions": [str(c.get("label", c.get("name", ""))) for c in self.companions],
+            "reason": self.reason,
+        }
 
 
-def _first_resolvable(selectors: Iterable[str], chain: list[dict]) -> dict | None:
-    """Find the first selector that resolves to a model in the given chain."""
-    chain_keys: dict[str, dict] = {}
-    for cfg in chain:
-        for sel in (cfg.get("name", ""), cfg.get("label", ""), *cfg.get("aliases", [])):
-            if sel:
-                chain_keys.setdefault(sel.lower(), cfg)
-
+def _resolve_all(
+    selectors: Iterable[str],
+    chain: list[dict],
+    availability: Callable[[dict], bool] | None,
+) -> list[dict]:
+    """Resolve every selector in order to a model in ``chain`` that passes availability."""
+    chain_ids = {id(cfg) for cfg in chain}
+    seen: set[int] = set()
+    out: list[dict] = []
     for selector in selectors:
-        cfg = chain_keys.get(selector.lower())
-        if cfg:
-            return cfg
-        # Fall back to the registry resolver, which handles
-        # normalized-key matching (strips punctuation, etc.).
         cfg = resolve_model_config(selector)
-        if cfg and any(cfg is c for c in chain):
-            return cfg
-    return None
+        if not cfg or id(cfg) in seen:
+            continue
+        if id(cfg) not in chain_ids:
+            continue
+        seen.add(id(cfg))
+        if availability is not None and not availability(cfg):
+            continue
+        out.append(cfg)
+    return out
 
 
-def route_prompt(text: str, chain: list[dict] | None = None) -> RouteDecision:
-    """Classify `text` and return the best model in `chain` for it.
+def route_prompt(
+    text: str,
+    *,
+    chain: list[dict] | None = None,
+    availability: Callable[[dict], bool] | None = None,
+) -> RouteDecision:
+    """Classify ``text`` and return a :class:`RouteDecision` against ``chain``.
 
-    Falls back to the first model in the chain if no preference resolves
-    (e.g., a stripped-down deployment that has only one tier configured).
-
-    When CROWE_LOGIC_SYNAPSE_FALLBACK=1 and the heuristic confidence is
-    below LOW_CONFIDENCE_THRESHOLD, the prompt is re-classified by
-    DeepParallel (a local multi-chain reasoning model on Ollama). The
-    fallback never raises; on any failure the heuristic decision is
-    kept.
+    ``availability(model_cfg) -> bool`` is consulted for every candidate; pass
+    it when you want to skip provider tiers whose endpoints are unconfigured
+    at runtime, so degraded environments still produce a route instead of
+    falling all the way through to the chain head.
     """
     chain = chain if chain is not None else MODEL_CHAIN
-    intent, confidence = classify_with_confidence(text)
-    fallback_used = False
+    intent = classify_prompt(text)
 
-    if confidence < LOW_CONFIDENCE_THRESHOLD:
-        from config.synapse_fallback import classify_with_deepparallel, fallback_enabled
-        if fallback_enabled():
-            second_opinion = classify_with_deepparallel(text)
-            if second_opinion is not None:
-                dp_intent, dp_conf = second_opinion
-                # Only override when the fallback returns higher confidence
-                # AND a recognized intent. This prevents a low-quality
-                # second opinion from making routing worse.
-                if dp_intent in _INTENT_PREFERENCES and dp_conf > confidence:
-                    intent, confidence = dp_intent, dp_conf
-                    fallback_used = True
+    preferences = _INTENT_PREFERENCES.get(intent, ())
+    backstop = ("CroweLM Nexus", "CroweLM Apex", "CroweLM Titan")
+    available = _resolve_all((*preferences, *backstop), chain, availability)
 
-    selectors = _INTENT_PREFERENCES.get(intent, ()) + (
-        # Backstop: any reasoning tier, then the first chain entry.
-        "CroweLM Nexus", "CroweLM Apex", "CroweLM Titan",
+    if not available:
+        primary = next(
+            (cfg for cfg in chain if cfg.get("provider") != "auto"),
+            chain[0] if chain else {},
+        )
+        return RouteDecision(
+            intent=intent,
+            primary=primary,
+            fallbacks=(),
+            companions=(),
+            reason=(
+                f"intent={intent}; no preferred tier resolved; "
+                f"fell back to chain head ({primary.get('label', '?')})"
+            ),
+        )
+
+    primary = available[0]
+    fallbacks = tuple(available[1:4])  # keep up to 3 same-turn fallbacks
+
+    companion_selectors = _INTENT_COMPANIONS.get(intent, ())
+    companions = tuple(
+        cfg for cfg in _resolve_all(companion_selectors, chain, availability)
+        if id(cfg) != id(primary)
     )
-
-    chosen = _first_resolvable(selectors, chain)
-    fallback_tag = " [via DeepParallel]" if fallback_used else ""
-    if chosen is None:
-        chosen = chain[0]
-        reason = (
-            f"intent={intent} (conf={confidence:.2f}){fallback_tag}; "
-            f"no preferred selector resolved in chain; falling back to first entry."
-        )
-    else:
-        reason = (
-            f"intent={intent} (conf={confidence:.2f}){fallback_tag}; matched "
-            f"preference list to {chosen.get('label', chosen.get('name', '?'))}."
-        )
 
     return RouteDecision(
         intent=intent,
-        selected_label=str(chosen.get("label", "")),
-        selected_name=str(chosen.get("name", "")),
-        selected_type=str(chosen.get("type", "")),
-        reason=reason,
-        confidence=confidence,
+        primary=primary,
+        fallbacks=fallbacks,
+        companions=companions,
+        reason=(
+            f"intent={intent}; primary={primary.get('label', '?')}; "
+            f"{len(fallbacks)} fallback(s); {len(companions)} companion(s)"
+        ),
     )
 
 
 __all__ = [
-    "LOW_CONFIDENCE_THRESHOLD",
     "RouteDecision",
     "classify_prompt",
-    "classify_with_confidence",
     "route_prompt",
 ]
