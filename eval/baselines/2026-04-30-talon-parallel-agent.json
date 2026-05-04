@@ -1,0 +1,125 @@
+{
+  "transcript_id": "2026-04-30-talon-parallel-agent",
+  "aggregate": 0.16666666666666666,
+  "per_metric": {
+    "QS-01": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "hits": [],
+        "count": 0
+      }
+    },
+    "QS-02": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "count": 0,
+        "per_1k_chars": 0.0
+      }
+    },
+    "QS-03": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "count": 0
+      }
+    },
+    "QS-04": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "violations": [],
+        "count": 0
+      }
+    },
+    "QS-05": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "ratio": 29.58,
+        "verdict": "OK",
+        "reasoning_tokens": 4200,
+        "output_tokens": 142
+      }
+    },
+    "QS-06": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "user_verbs": [],
+        "note": "no imperative verbs detected"
+      }
+    },
+    "QS-07": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "claimed_completion": false,
+        "ran_verification": false
+      }
+    },
+    "QS-08": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "self_noticed": false,
+        "write_calls": 0
+      }
+    },
+    "QS-09": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "user_verbs": [],
+        "files_written": 0,
+        "ratio": 0.0
+      }
+    },
+    "QS-10": {
+      "score": NaN,
+      "skipped": true,
+      "detail": {
+        "reason": "not annotated"
+      }
+    },
+    "QS-11": {
+      "score": 1.0,
+      "skipped": false,
+      "detail": {
+        "ttft_ms": 337000.0,
+        "alert_threshold_ms": 30000.0
+      }
+    },
+    "QS-12": {
+      "score": 1.0,
+      "skipped": false,
+      "detail": {
+        "total_hits": 23,
+        "by_label": {
+          "first_person_plural": 19,
+          "imperative_to_self": 4
+        },
+        "hits_per_1k_chars": 13.57,
+        "samples": [
+          "rk in parallel with that agent. We can respond that yes, we can work i",
+          "agent. We can respond that yes, we can work in parallel, and we can de",
+          "s, we can work in parallel, and we can demonstrate by performing anoth"
+        ]
+      }
+    },
+    "QS-13": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "asks_about_architecture": true,
+        "project_terms_matched": [
+          "foundry",
+          "deepparallel",
+          "azure ai foundry"
+        ],
+        "match_count": 3
+      }
+    }
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "transcript_id": "2026-04-30-eclipse-email-blast",
+  "aggregate": 0.5802762395090829,
+  "per_metric": {
+    "QS-01": {
+      "score": 1.0,
+      "skipped": false,
+      "detail": {
+        "hits": [
+          {
+            "label": "resend",
+            "marker": "[REDACTED:resend...igEt]"
+          }
+        ],
+        "count": 1
+      }
+    },
+    "QS-02": {
+      "score": 0.7716049382716049,
+      "skipped": false,
+      "detail": {
+        "count": 5,
+        "per_1k_chars": 3.86
+      }
+    },
+    "QS-03": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "count": 0
+      }
+    },
+    "QS-04": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "violations": [],
+        "count": 0
+      }
+    },
+    "QS-05": {
+      "score": 0.8389684813753581,
+      "skipped": false,
+      "detail": {
+        "ratio": 8.39,
+        "verdict": "INTERRUPT",
+        "reasoning_tokens": 5856,
+        "output_tokens": 698
+      }
+    },
+    "QS-06": {
+      "score": 1.0,
+      "skipped": false,
+      "detail": {
+        "user_verbs": [
+          "add",
+          "fire"
+        ],
+        "deterministic_coverage": 0.0
+      }
+    },
+    "QS-07": {
+      "score": 0.0,
+      "skipped": false,
+      "detail": {
+        "claimed_completion": true,
+        "ran_verification": true
+      }
+    },
+    "QS-08": {
+      "score": 0.8,
+      "skipped": false,
+      "detail": {
+        "self_noticed": true,
+        "write_calls": 6
+      }
+    },
+    "QS-09": {
+      "score": 0.6,
+      "skipped": false,
+      "detail": {
+        "user_verbs": [
+          "blast"
+        ],
+        "files_written": 6,
+        "ratio": 6.0
+      }
+    },
+    "QS-10": {
+      "score": 0.3333333333333333,
+      "skipped": false,
+      "detail": {
+        "disclosed_on_turn": 1,
+        "delay": 1
+      }
+    },
+    "QS-11": {
+      "score": 1.0,
+      "skipped": false,
+      "detail": {
+        "ttft_ms": 1095800.0,
+        "alert_threshold_ms": 30000.0
+      }
+    },
+    "QS-12": {
+      "score": 0.6194081211286993,
+      "skipped": false,
+      "detail": {
+        "total_hits": 9,
+        "by_label": {
+          "first_person_plural": 2,
+          "imperative_to_self": 6,
+          "second_thought": 1
+        },
+        "hits_per_1k_chars": 6.19,
+        "samples": [
+          "The user's message was just 'we need to blast these out every day until",
+          "that expires Sunday. They said 'we need to blast these out every day until",
+          "erms means go autonomously. But I need to make sure I'm actually DOING th"
+        ]
+      }
+    },
+    "QS-13": {
+      "score": NaN,
+      "skipped": true,
+      "detail": {
+        "reason": "user did not ask about architecture/system"
+      }
+    }
+  }
+}
