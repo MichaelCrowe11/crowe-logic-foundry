@@ -27,10 +27,10 @@ bumped STUDIO_VERSION.
 - [x] v0.6.0 tag
 - [ ] Trademark search for "Crowe Studio" / "Studio Foundry"
 
-### Chunked long-session recording
+### Chunked long-session recording (shipped v0.10.0)
 - [x] `start_live_capture(chunk_seconds=N)` uses ffmpeg `-f segment`
 - [x] `get_session_chunks(session_id)` returns all produced segments.
-- [ ] `route_session_chunks_to_tenant(session_id, tenant)` bundle route.
+- [x] `route_session_chunks_to_tenant(session_id, tenant)` bundle route.
 
 ### Creator loop (shipped v0.6.0)
 - [x] `shot_selector.build_edl` — script + shoot → EDL (rule-based)

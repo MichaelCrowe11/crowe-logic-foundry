@@ -5,6 +5,30 @@ Proprietary. Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
 
 Format: Keep a Changelog. Semantic versioning on the STUDIO_VERSION file.
 
+## [0.10.0] — 2026-05-07 — Chunked session bundle routing
+
+### Added
+- `tools/studio_route.py::route_session_chunks_to_tenant(session_id,
+  tenant, move=False)` — closes the chunked long-session recording
+  block. Reads the `start_live_capture(chunk_seconds=N)` session file
+  at `$CAPTURE_ROOT/sessions/<session_id>.json`, enumerates every
+  `chunk-*.mp4` produced under the session's chunk_dir, and copies (or
+  moves) them into `<tenant.raw_dir>/<session_id>/` as a single bundle.
+  Writes a `session.json` next to the chunks summarizing session_id,
+  source_session_path, chunk_count, total_bytes, chunked, started_at,
+  and bundled_at.
+- Tenant `ingest_cmd` is invoked ONCE for the whole bundle (not once
+  per chunk) with substitutions `{session_id}`, `{session_dir}`,
+  `{tenant_root}`, plus `{clip_path}` resolved to the FIRST chunk so
+  existing tenant ingest scripts that expect a single clip still see
+  something. Captures exit / stdout_tail / stderr_tail the same way
+  `route_clip_to_tenant` does, and looks up `manifest_id` against
+  `manifests_dir` with the same scan logic.
+- `tests/test_route_session_chunks.py` — tmp_path smoke test that
+  fakes a 3-chunk session, points STUDIO_TENANTS_PATH at a temp yaml
+  whose `ingest_cmd` is `/bin/echo {session_id} {session_dir}`, and
+  asserts the bundle, the `session.json`, and a single ingest exec.
+
 ## [0.9.0] — 2026-04-24 — Per-frame relabel experiment + eval harness
 
 ### Added

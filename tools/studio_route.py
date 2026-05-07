@@ -211,6 +211,144 @@ def route_clip_to_tenant(
         return json.dumps({"error": str(e)})
 
 
+def route_session_chunks_to_tenant(
+    session_id: str,
+    tenant: str,
+    move: bool = False,
+) -> str:
+    """
+    Bundle every chunk produced by a chunked live capture session into
+    the tenant's raw inbox under a single session folder, then trigger
+    the tenant's ingest_cmd ONCE for the whole bundle.
+
+    Reads the session file at $CAPTURE_ROOT/sessions/<session_id>.json
+    (the same file start_live_capture wrote), enumerates `chunk-*.mp4`
+    in the session's chunk_dir, copies/moves them all to
+    `<raw_dir>/<session_id>/`, writes a `session.json` summary next to
+    the chunks, and runs ingest_cmd a single time with `{session_dir}`
+    pointing at the bundle. `{clip_path}` is substituted with the FIRST
+    chunk so existing tenant ingest scripts that expect a single clip
+    still see something.
+
+    :param session_id: Session id used by start_live_capture(chunk_seconds=N).
+    :param tenant: Tenant name from the registry.
+    :param move: If true, move chunks; default copies them so the
+        original capture stays at $CAPTURE_ROOT/out/<session_id>/.
+    :return: JSON with {tenant, session_id, session_dir, chunks,
+        total_bytes, moved, ingest, manifest_id}.
+    :rtype: str
+    """
+    try:
+        # Locate the session file written by start_live_capture. Pull
+        # SESSIONS_DIR off tools.capture so test monkeypatches that
+        # redirect it (CAPTURE_ROOT override) flow through here too.
+        from tools import capture as capture_mod
+        session_file = capture_mod.SESSIONS_DIR / f"{session_id}.json"
+        if not session_file.exists():
+            return json.dumps({"error": f"No such session: {session_id}"})
+        session = json.loads(session_file.read_text())
+        if not session.get("chunked"):
+            return json.dumps({"error": f"Session is not chunked: {session_id}"})
+
+        chunk_dir = Path(session["path"]).parent
+        chunk_files = sorted(chunk_dir.glob("chunk-*.mp4"))
+        if not chunk_files:
+            return json.dumps({"error": f"No chunks produced yet for session: {session_id}"})
+
+        t = _find_tenant(tenant)
+        if not t:
+            return json.dumps({"error": f"Unknown tenant: {tenant}"})
+
+        raw_dir = _resolve_raw_dir(t)
+        session_dir = raw_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        chunks_summary = []
+        total_bytes = 0
+        first_dest = None
+        for src in chunk_files:
+            dest = session_dir / src.name
+            if dest.exists():
+                dest = session_dir / f"{src.stem}-{int(time.time())}{src.suffix}"
+            if move:
+                shutil.move(str(src), str(dest))
+            else:
+                shutil.copy2(str(src), str(dest))
+            size = dest.stat().st_size
+            total_bytes += size
+            chunks_summary.append({"name": dest.name, "bytes": size})
+            if first_dest is None:
+                first_dest = dest
+
+        bundle_meta = {
+            "session_id": session_id,
+            "source_session_path": str(session_file),
+            "chunk_count": len(chunks_summary),
+            "total_bytes": total_bytes,
+            "chunked": True,
+            "started_at": session.get("started_at"),
+            "bundled_at": time.time(),
+        }
+        (session_dir / "session.json").write_text(json.dumps(bundle_meta, indent=2))
+
+        ingest_info = None
+        ingest_cmd = t.get("ingest_cmd")
+        if ingest_cmd:
+            substitutions = {
+                "clip_path": str(first_dest) if first_dest else "",
+                "session_dir": str(session_dir),
+                "session_id": session_id,
+                "tenant_root": t["root"],
+            }
+            resolved_cmd = [str(arg).format(**substitutions) for arg in ingest_cmd]
+            proc = subprocess.run(
+                resolved_cmd,
+                cwd=t["root"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            ingest_info = {
+                "cmd": resolved_cmd,
+                "exit": proc.returncode,
+                "stdout_tail": (proc.stdout or "")[-800:],
+                "stderr_tail": (proc.stderr or "")[-400:],
+            }
+
+        manifest_id = None
+        manifests_dir = t.get("manifests_dir")
+        if manifests_dir:
+            mdir = Path(manifests_dir)
+            if mdir.exists():
+                for mf in sorted(mdir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
+                    try:
+                        m = json.loads(mf.read_text())
+                    except Exception:
+                        continue
+                    if m.get("id") == session_id:
+                        manifest_id = m["id"]
+                        break
+                    srcs = m.get("source_files") or []
+                    if any(session_id in str(s) for s in srcs):
+                        manifest_id = m.get("id")
+                        break
+
+        return json.dumps({
+            "tenant": tenant,
+            "session_id": session_id,
+            "session_dir": str(session_dir),
+            "chunks": chunks_summary,
+            "total_bytes": total_bytes,
+            "moved": bool(move),
+            "ingest": ingest_info,
+            "manifest_id": manifest_id,
+        })
+    except subprocess.TimeoutExpired as e:
+        return json.dumps({"error": "Tenant ingest timed out", "detail": str(e)})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def tenant_inbox_peek(tenant: str, limit: int = 10) -> str:
     """
     Show the most recent sessions in a tenant's raw inbox. Useful after
