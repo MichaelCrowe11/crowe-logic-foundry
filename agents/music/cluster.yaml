@@ -1,0 +1,88 @@
+name: crowelm-music
+description: "CroweLM-Music sub-cluster. Specialized agents that build and run Crowe Talon Pro: composition, mix, master, DSP, native, web, provenance, review, test, orchestration."
+version: 0.1.0
+
+# Cluster topology. Orchestrator dispatches; everyone else specializes.
+agents:
+  # Orchestration
+  - music-orchestrator    # Talon flagship: routing, state, gating
+
+  # User-facing creative tier (premium quality, Talon flagship)
+  - music-compose         # composition + arrangement
+  - music-provenance      # watermark spec + trust posture
+
+  # Mid-tier creative (Talon Super)
+  - music-mix             # mixing engineer
+
+  # Engineering tier (Coder, NVIDIA-hosted)
+  - music-master          # mastering parameter choices + pipeline driver
+  - music-dsp             # audio engine code
+  - music-native          # Mac native surface
+  - music-web             # workstation chrome + UI
+
+  # Workhorse tier (Ollama Pro: kimi-k2.6:cloud / Eclipse)
+  - music-critic          # reviewer of every output
+  - music-test            # test author + regression rig
+
+# Tier economics. Workhorse tier handles high-volume internal work; premium
+# tier reserved for user-facing taste calls and decisions that cannot be
+# walked back.
+tiers:
+  premium:
+    model: crowelm-talon
+    use_for: [music-orchestrator, music-compose, music-provenance]
+    rationale: "Top-tier reasoning. User-facing taste calls (composition,
+                provenance posture) and routing decisions that affect the
+                entire cluster. Cost per call is high; call rate is low."
+
+  research:
+    model: crowelm-talon-super
+    use_for: [music-mix]
+    rationale: "Mid-tier reasoning. Mix decisions need depth but iterate
+                fast; flagship is overkill, nano is not enough."
+
+  engineering:
+    model: crowelm-coder
+    use_for: [music-master, music-dsp, music-native, music-web]
+    rationale: "Code specialist tier. Audio engine, native, web, master
+                parameter manifests. Quality of generated code matters more
+                than reasoning depth."
+
+  workhorse:
+    model: crowelm-eclipse
+    use_for: [music-critic, music-test]
+    rationale: "Ollama Pro tier. High-volume, low-stakes work. Critic fires
+                on every change; test rigs run continuously. Cost per call
+                must be near-zero."
+
+# Default routing for the Talon Pro AI panel. The orchestrator always
+# receives the user's prompt first.
+ai_panel_entry: music-orchestrator
+
+# Pipelines defined in this cluster. Each pipeline coordinates 2+ agents.
+pipelines:
+  - compose-then-master.yaml      # compose -> mix -> master -> critic -> test
+  - dsp-feature.yaml              # provenance spec -> dsp impl -> test -> critic
+  - ui-feature.yaml               # web + native parallel -> critic on each diff
+  - sign-album-track.yaml         # master -> test (verify rig) -> critic -> commit attestation
+
+# Cross-cutting style rules every agent in this cluster honors. Critic
+# enforces these.
+style_rules:
+  - no_em_dashes
+  - no_emojis
+  - no_ai_access_framing
+  - no_client_tech_stack_exposure
+  - effective_dates_match_change_dates_on_legal_pages
+
+# Coordination contract. Specialists do not invoke each other; the
+# orchestrator dispatches and gathers. This keeps state consistent and
+# makes parallelism safe.
+contract:
+  fanout: orchestrator_only
+  critic_runs_on: every_specialist_output
+  landing_gate: critic_must_return_PASS_and_test_must_be_green
+  external_state_changes:
+    git_commit: orchestrator_with_critic_pass
+    git_push: requires_explicit_operator_approval
+    railway_deploy: requires_explicit_operator_approval
