@@ -27,6 +27,7 @@ from cli.cluster_dispatch import (
     DispatchResult,
     dispatch_in_parallel,
     dispatch_to_specialist,
+    dispatch_via_orchestrator,
     run_critic_gate,
 )
 from crowe_synapse_engine.agent_registry import AgentRegistry
@@ -233,6 +234,89 @@ def cluster_gate(diff: Optional[str], diff_file: Optional[str],
     click.echo(f"--- verdict: {'PASS' if passed else 'BLOCK/WARN/NOTE'} ---")
     click.echo(result.answer)
     sys.exit(0 if passed else 1)
+
+
+@cluster.command(name="orchestrate")
+@click.argument("brief", required=False)
+@click.option("-f", "--file", "brief_file",
+              type=click.Path(exists=True, dir_okay=False),
+              help="read the brief from this file instead of an argument")
+@click.option("--cluster-name", default="crowelm-music", show_default=True,
+              help="which cluster to route through")
+@click.option("--orchestrator", default="music-orchestrator", show_default=True,
+              help="orchestrator agent name")
+@click.option("--max-iterations", default=8, show_default=True, type=int,
+              help="cap on tool-call rounds before forcing an answer")
+@click.option("--timeout", default=240.0, show_default=True, type=float,
+              help="per-call timeout in seconds")
+@click.option("--json", "as_json", is_flag=True,
+              help="emit a structured JSON record of the entire run")
+def cluster_orchestrate(brief: Optional[str], brief_file: Optional[str],
+                        cluster_name: str, orchestrator: str,
+                        max_iterations: int, timeout: float, as_json: bool):
+    """Run a brief through the orchestrator with tool calling.
+
+    The orchestrator decides which specialists to dispatch to, gathers
+    their answers, gates with the critic if needed, and returns a final
+    synthesized response.
+
+    \b
+    Examples:
+      crowe-logic cluster orchestrate "Audit /apps copy for over-promised AI claims"
+      crowe-logic cluster orchestrate -f task.txt --json
+      cat task.txt | crowe-logic cluster orchestrate
+    """
+    text = _read_brief(brief, brief_file)
+    reg = _registry()
+    session = ClusterSession(session_id=f"cli-orch-{os.getpid()}", cluster=cluster_name)
+    run = dispatch_via_orchestrator(
+        text, registry=reg, session=session,
+        cluster_name=cluster_name, orchestrator_name=orchestrator,
+        timeout_s=timeout, max_iterations=max_iterations,
+    )
+
+    if as_json:
+        click.echo(json.dumps({
+            "succeeded": run.succeeded,
+            "iterations": run.iterations,
+            "orchestrator_tokens": run.orchestrator_tokens,
+            "tool_calls": [
+                {
+                    "specialist": r.specialist,
+                    "provider": r.provider,
+                    "tokens": r.total_tokens,
+                    "latency_s": round(r.latency_s, 2),
+                    "succeeded": r.succeeded,
+                    "error": r.error,
+                    "answer_preview": (r.answer or "")[:200],
+                }
+                for r in run.tool_calls
+            ],
+            "session_total_tokens": session.total_tokens(),
+            "final_answer": run.final_answer,
+            "error": run.error,
+        }, indent=2))
+        sys.exit(0 if run.succeeded else 1)
+
+    click.echo(f"orchestrator:        {orchestrator}")
+    click.echo(f"cluster:             {cluster_name}")
+    click.echo(f"iterations:          {run.iterations}/{max_iterations}")
+    click.echo(f"orchestrator tokens: {run.orchestrator_tokens}")
+    click.echo(f"tool dispatches:     {len(run.tool_calls)}")
+    if run.tool_calls:
+        click.echo()
+        for i, r in enumerate(run.tool_calls, 1):
+            click.echo(f"  [{i}] {r.specialist}  ({r.provider}, {r.total_tokens}t, {r.latency_s:.1f}s)"
+                       f"{'  FAILED' if not r.succeeded else ''}")
+    click.echo(f"session total tokens: {session.total_tokens()}")
+    if run.error:
+        click.echo()
+        click.echo(f"--- error ---")
+        click.echo(run.error)
+    click.echo()
+    click.echo("--- final answer ---")
+    click.echo(run.final_answer if run.final_answer else "(no final answer)")
+    sys.exit(0 if run.succeeded else 1)
 
 
 @cluster.command(name="parallel")

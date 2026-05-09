@@ -18,8 +18,10 @@ from crowe_synapse_engine.agent_registry import AgentRegistry
 from cli.cluster_dispatch import (
     ClusterSession,
     DispatchResult,
+    OrchestratedRun,
     dispatch_in_parallel,
     dispatch_to_specialist,
+    dispatch_via_orchestrator,
     run_critic_gate,
 )
 
@@ -191,6 +193,135 @@ class TestCriticGate:
                 )
         assert passed is False
         assert result.answer.startswith("BLOCK")
+
+
+# ── Orchestrator tool-use loop ───────────────────────────────────────────
+
+
+def _orch_response_with_tool_calls(calls: list[dict], ptok=200, ctok=80) -> dict:
+    """Build a fake orchestrator response that emits tool_calls."""
+    return {
+        "choices": [{
+            "message": {"content": "", "tool_calls": calls},
+            "finish_reason": "tool_calls",
+        }],
+        "usage": {
+            "prompt_tokens": ptok,
+            "completion_tokens": ctok,
+            "total_tokens": ptok + ctok,
+        },
+    }
+
+
+def _orch_final(answer: str, ptok=300, ctok=100) -> dict:
+    """Build a fake orchestrator response with a final answer (no tool_calls)."""
+    return {
+        "choices": [{
+            "message": {"content": answer, "tool_calls": []},
+            "finish_reason": "stop",
+        }],
+        "usage": {
+            "prompt_tokens": ptok,
+            "completion_tokens": ctok,
+            "total_tokens": ptok + ctok,
+        },
+    }
+
+
+class TestOrchestratorLoop:
+    def test_orchestrator_returns_final_without_calling_tools(self, registry):
+        """Simplest case: orchestrator answers directly, no specialists invoked."""
+        with patch("cli.cluster_dispatch._post_chat") as fake:
+            fake.return_value = _orch_final("Direct answer; no dispatch needed.")
+            with patch.dict(os.environ, {"NVIDIA_NIM_ENDPOINT": "http://nim.example", "NVIDIA_API_KEY": "x"}):
+                session = ClusterSession(session_id="orch-1", cluster="crowelm-music")
+                run = dispatch_via_orchestrator(
+                    "trivial brief", registry=registry, session=session,
+                )
+        assert run.succeeded
+        assert run.final_answer == "Direct answer; no dispatch needed."
+        assert run.iterations == 1
+        assert len(run.tool_calls) == 0
+        assert run.orchestrator_tokens == 400
+
+    def test_orchestrator_calls_one_specialist_then_finalizes(self, registry):
+        """Two-iteration loop: one tool call, then a final answer."""
+        with patch("cli.cluster_dispatch._post_chat") as fake:
+            fake.side_effect = [
+                _orch_response_with_tool_calls([
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "dispatch_to_specialist",
+                            "arguments": '{"specialist": "music-critic", "brief": "review me"}',
+                        },
+                    },
+                ]),
+                _fake_ok_response("PASS"),  # critic responds
+                _orch_final("Critic returned PASS. Recommend landing."),
+            ]
+            with patch.dict(os.environ, {
+                "NVIDIA_NIM_ENDPOINT": "http://nim.example", "NVIDIA_API_KEY": "x",
+                "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+            }):
+                session = ClusterSession(session_id="orch-2", cluster="crowelm-music")
+                run = dispatch_via_orchestrator(
+                    "review this", registry=registry, session=session,
+                )
+        assert run.succeeded
+        assert "PASS" in run.final_answer
+        assert run.iterations == 2
+        assert len(run.tool_calls) == 1
+        assert run.tool_calls[0].specialist == "music-critic"
+
+    def test_orchestrator_calls_list_specialists(self, registry):
+        """list_specialists is a no-dispatch tool; verify it's handled correctly."""
+        with patch("cli.cluster_dispatch._post_chat") as fake:
+            fake.side_effect = [
+                _orch_response_with_tool_calls([
+                    {"id": "c1", "type": "function",
+                     "function": {"name": "list_specialists", "arguments": "{}"}},
+                ]),
+                _orch_final("There are ten specialists in the cluster."),
+            ]
+            with patch.dict(os.environ, {"NVIDIA_NIM_ENDPOINT": "http://nim.example", "NVIDIA_API_KEY": "x"}):
+                session = ClusterSession(session_id="orch-3", cluster="crowelm-music")
+                run = dispatch_via_orchestrator("who is in the cluster?", registry=registry, session=session)
+        assert run.succeeded
+        # list_specialists doesn't dispatch, so no tool_calls in the run record.
+        assert len(run.tool_calls) == 0
+        assert "ten specialists" in run.final_answer
+
+    def test_orchestrator_max_iterations_caps_runaway(self, registry):
+        """If the orchestrator never stops calling tools, the loop bails out."""
+        # Always return a tool_call response → forces hitting max_iterations.
+        with patch("cli.cluster_dispatch._post_chat") as fake:
+            fake.side_effect = [
+                _orch_response_with_tool_calls([{
+                    "id": f"c{i}", "type": "function",
+                    "function": {"name": "list_specialists", "arguments": "{}"},
+                }])
+                for i in range(20)  # plenty of fake responses
+            ]
+            with patch.dict(os.environ, {"NVIDIA_NIM_ENDPOINT": "http://nim.example", "NVIDIA_API_KEY": "x"}):
+                session = ClusterSession(session_id="orch-4", cluster="crowelm-music")
+                run = dispatch_via_orchestrator(
+                    "loop forever", registry=registry, session=session,
+                    max_iterations=3,
+                )
+        assert not run.succeeded
+        assert "max_iterations" in (run.error or "")
+        assert run.iterations == 3
+
+    def test_orchestrator_unknown_orchestrator_returns_error(self, registry):
+        run = dispatch_via_orchestrator(
+            "x", registry=registry,
+            session=ClusterSession(session_id="x", cluster="crowelm-music"),
+            orchestrator_name="does-not-exist",
+        )
+        assert not run.succeeded
+        assert "not found" in (run.error or "")
 
 
 # ── Integration (live Ollama) ────────────────────────────────────────────

@@ -329,3 +329,293 @@ def run_critic_gate(
     )
     passed = result.succeeded and result.answer.strip() == "PASS"
     return passed, result
+
+
+# ── Orchestrator tool-use loop ───────────────────────────────────────────
+
+
+@dataclass
+class OrchestratedRun:
+    """Outcome of an orchestrator-driven session.
+
+    `final_answer` is what the orchestrator's LLM returned when it stopped
+    calling tools. `tool_calls` lists every dispatch the orchestrator made
+    along the way (each is a DispatchResult, recorded in `session.history`
+    as well). `iterations` is how many round-trips with the orchestrator's
+    own model it took.
+    """
+
+    final_answer: str
+    tool_calls: list[DispatchResult] = field(default_factory=list)
+    iterations: int = 0
+    orchestrator_tokens: int = 0
+    error: Optional[str] = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error is None and bool(self.final_answer)
+
+
+def _orchestrator_tools(registry: AgentRegistry, cluster_name: str) -> list[dict]:
+    """Build the OpenAI-format tool schemas the orchestrator can call.
+
+    Specialists are enumerated in the description so the model knows the
+    valid set without us having to bake the list into its prompt.
+    """
+    specialists = sorted(
+        a.name for a in registry.agents_in_cluster(cluster_name)
+        if a.alias_of is None  # don't expose aliases as targets
+    )
+    spec_list = ", ".join(specialists)
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "list_specialists",
+                "description": (
+                    "Return the list of specialist names available in the "
+                    f"{cluster_name} cluster. Useful when deciding who to "
+                    "dispatch to."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "dispatch_to_specialist",
+                "description": (
+                    "Send a brief to one specialist and receive their "
+                    "structured response. Specialists available: " + spec_list +
+                    ". Brief should be specific and contain all context the "
+                    "specialist needs to act."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "specialist": {
+                            "type": "string",
+                            "description": "Specialist name, e.g. music-compose, music-master.",
+                            "enum": specialists,
+                        },
+                        "brief": {
+                            "type": "string",
+                            "description": "The task brief for the specialist.",
+                        },
+                    },
+                    "required": ["specialist", "brief"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_critic_gate",
+                "description": (
+                    "Run the cluster's critic against a diff or proposed "
+                    "change. Returns 'PASS' if the change is clean, or a "
+                    "BLOCK/WARN/NOTE finding if it violates a cluster rule. "
+                    "Use before recommending a change land."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "diff": {
+                            "type": "string",
+                            "description": "The diff or change content to review.",
+                        },
+                    },
+                    "required": ["diff"],
+                },
+            },
+        },
+    ]
+
+
+def _execute_tool_call(
+    name: str,
+    arguments: dict,
+    *,
+    registry: AgentRegistry,
+    cluster_name: str,
+    session: ClusterSession,
+    timeout_s: float,
+) -> tuple[str, Optional[DispatchResult]]:
+    """Execute one tool call from the orchestrator and return (result_string, dispatch_result).
+
+    The result_string is what gets sent back to the orchestrator as the
+    tool's output. The dispatch_result is the structured artifact (None
+    for tools that don't dispatch, like list_specialists).
+    """
+    if name == "list_specialists":
+        specialists = sorted(
+            a.name for a in registry.agents_in_cluster(cluster_name)
+            if a.alias_of is None
+        )
+        return json.dumps({"specialists": specialists}), None
+
+    if name == "dispatch_to_specialist":
+        specialist = arguments.get("specialist", "")
+        brief = arguments.get("brief", "")
+        if not specialist or not brief:
+            return json.dumps({"error": "specialist and brief are required"}), None
+        result = dispatch_to_specialist(
+            specialist, brief, registry=registry,
+            session=session, timeout_s=timeout_s,
+        )
+        return json.dumps({
+            "specialist": result.specialist,
+            "succeeded": result.succeeded,
+            "answer": result.answer,
+            "tokens": result.total_tokens,
+            "latency_s": round(result.latency_s, 2),
+            "error": result.error,
+        }), result
+
+    if name == "run_critic_gate":
+        diff = arguments.get("diff", "")
+        if not diff:
+            return json.dumps({"error": "diff is required"}), None
+        passed, result = run_critic_gate(
+            diff, registry=registry, session=session, timeout_s=timeout_s,
+        )
+        return json.dumps({
+            "passed": passed,
+            "verdict": "PASS" if passed else "BLOCK/WARN/NOTE",
+            "critic_answer": result.answer,
+            "tokens": result.total_tokens,
+            "latency_s": round(result.latency_s, 2),
+        }), result
+
+    return json.dumps({"error": f"unknown tool: {name}"}), None
+
+
+def dispatch_via_orchestrator(
+    brief: str,
+    *,
+    registry: AgentRegistry,
+    session: ClusterSession,
+    cluster_name: str = "crowelm-music",
+    orchestrator_name: str = "music-orchestrator",
+    timeout_s: float = 240.0,
+    max_iterations: int = 8,
+    max_completion_tokens: int = 4096,
+) -> OrchestratedRun:
+    """Run a brief through the orchestrator with tool calling enabled.
+
+    The orchestrator (premium tier, e.g. Talon flagship) receives the
+    brief plus a tool catalog (list_specialists, dispatch_to_specialist,
+    run_critic_gate). It decides what to do, calls tools as needed, and
+    eventually returns a plain assistant message which becomes the final
+    answer.
+
+    Iteration cap prevents runaway loops. Completion-token cap per turn
+    prevents one over-eager response from blowing the budget.
+    """
+    target = registry.resolve_alias(orchestrator_name)
+    if target is None:
+        return OrchestratedRun(final_answer="", error=f"orchestrator not found: {orchestrator_name!r}")
+
+    model_cfg = resolve_model_config(target.model)
+    if model_cfg is None:
+        return OrchestratedRun(
+            final_answer="",
+            error=f"model not registered: {target.model!r}",
+        )
+    try:
+        base_url, api_key = _resolve_endpoint(model_cfg)
+    except RuntimeError as exc:
+        return OrchestratedRun(final_answer="", error=str(exc))
+
+    tools = _orchestrator_tools(registry, cluster_name)
+    messages: list[dict] = [
+        {"role": "system", "content": target.prompt_override or ""},
+        {"role": "user", "content": brief},
+    ]
+
+    tool_call_results: list[DispatchResult] = []
+    orchestrator_tokens = 0
+
+    for iteration in range(1, max_iterations + 1):
+        payload = {
+            "model": model_cfg.get("backend_name", target.model),
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "stream": False,
+            "max_tokens": max_completion_tokens,
+        }
+
+        try:
+            data = _post_chat(base_url, api_key, payload, timeout_s=timeout_s)
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
+            return OrchestratedRun(
+                final_answer="",
+                tool_calls=tool_call_results,
+                iterations=iteration - 1,
+                orchestrator_tokens=orchestrator_tokens,
+                error=f"transport: {exc.__class__.__name__}: {exc}",
+            )
+
+        usage = data.get("usage") or {}
+        orchestrator_tokens += int(usage.get("total_tokens", 0) or 0)
+
+        try:
+            choice = data["choices"][0]
+            message = choice["message"]
+        except (KeyError, IndexError, TypeError):
+            return OrchestratedRun(
+                final_answer="", tool_calls=tool_call_results,
+                iterations=iteration, orchestrator_tokens=orchestrator_tokens,
+                error="malformed orchestrator response",
+            )
+
+        tool_calls = message.get("tool_calls") or []
+
+        # Append the assistant's turn to history so subsequent calls have
+        # the model's reasoning visible.
+        assistant_turn = {
+            "role": "assistant",
+            "content": message.get("content") or "",
+        }
+        if tool_calls:
+            assistant_turn["tool_calls"] = tool_calls
+        messages.append(assistant_turn)
+
+        if not tool_calls:
+            # Model produced a final answer.
+            return OrchestratedRun(
+                final_answer=message.get("content") or "",
+                tool_calls=tool_call_results,
+                iterations=iteration,
+                orchestrator_tokens=orchestrator_tokens,
+            )
+
+        for call in tool_calls:
+            fn = call.get("function") or {}
+            name = fn.get("name", "")
+            try:
+                arguments = json.loads(fn.get("arguments") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                arguments = {}
+            result_text, dispatch_result = _execute_tool_call(
+                name, arguments,
+                registry=registry, cluster_name=cluster_name,
+                session=session, timeout_s=timeout_s,
+            )
+            if dispatch_result is not None:
+                tool_call_results.append(dispatch_result)
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.get("id") or "",
+                "content": result_text,
+            })
+
+    return OrchestratedRun(
+        final_answer="",
+        tool_calls=tool_call_results,
+        iterations=max_iterations,
+        orchestrator_tokens=orchestrator_tokens,
+        error=f"max_iterations ({max_iterations}) reached without final answer",
+    )
