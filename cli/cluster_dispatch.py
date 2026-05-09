@@ -107,6 +107,19 @@ _PROVIDER_DEFAULT_ENV = {
     "azure":         ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY"),
 }
 
+# Canonical public endpoints, used as a last-resort default when the env
+# var for a provider's endpoint is not set. The API key still has to come
+# from the env; the endpoint URL is public and safe to default. This
+# matters when the dispatch path is invoked from a spawned subprocess
+# (e.g. the Mac app's bridge calling `crowe-logic cluster orchestrate`)
+# where the operator's shell-set NVIDIA_NIM_ENDPOINT may not have been
+# persisted to ~/.env.secrets yet.
+_PROVIDER_DEFAULT_URL = {
+    "nvidia":        "https://integrate.api.nvidia.com/v1",
+    "openai_compat": "https://integrate.api.nvidia.com/v1",
+    "anthropic":     "https://api.anthropic.com",
+}
+
 
 def _resolve_endpoint(model_cfg: dict) -> tuple[str, Optional[str]]:
     """Return (base_url, api_key) for a resolved model config.
@@ -125,6 +138,11 @@ def _resolve_endpoint(model_cfg: dict) -> tuple[str, Optional[str]]:
             api_key_env = default_api
 
     base_url = os.environ.get(endpoint_env, "") if endpoint_env else ""
+    if not base_url:
+        # Fall back to the canonical public URL so the dispatch works even
+        # when the operator hasn't persisted the endpoint to their shell
+        # profile. The API key still has to come from the env.
+        base_url = _PROVIDER_DEFAULT_URL.get(provider, "")
     api_key = os.environ.get(api_key_env, "") if api_key_env else None
     if not base_url:
         raise RuntimeError(

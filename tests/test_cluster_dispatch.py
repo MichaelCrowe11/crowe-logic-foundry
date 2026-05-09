@@ -100,16 +100,22 @@ class TestDispatchHttp:
         assert not result.succeeded
         assert "transport" in (result.error or "")
 
-    def test_missing_endpoint_env_returns_error(self, registry):
-        # music-master uses crowelm-coder which is NVIDIA-NIM-backed. With
-        # NVIDIA_NIM_ENDPOINT unset, dispatch should fail cleanly.
+    def test_missing_endpoint_env_falls_back_to_default_url(self, registry):
+        # music-master uses crowelm-coder (NVIDIA-NIM-backed). With
+        # NVIDIA_NIM_ENDPOINT unset, dispatch should fall back to the
+        # canonical public URL so the operator doesn't have to persist
+        # the env var. We mock _post_chat to verify the URL passed in.
         env = {k: v for k, v in os.environ.items() if k != "NVIDIA_NIM_ENDPOINT"}
         with patch.dict(os.environ, env, clear=True):
-            result = dispatch_to_specialist(
-                "music-master", "test", registry=registry
-            )
-        assert not result.succeeded
-        assert "NVIDIA_NIM_ENDPOINT" in (result.error or "")
+            with patch("cli.cluster_dispatch._post_chat") as fake:
+                fake.return_value = _fake_ok_response("ok")
+                result = dispatch_to_specialist(
+                    "music-master", "test", registry=registry
+                )
+        assert result.succeeded
+        # _post_chat should have been called with the canonical NIM URL.
+        called_base_url = fake.call_args[0][0]
+        assert called_base_url == "https://integrate.api.nvidia.com/v1"
 
 
 class TestSessionTracking:
