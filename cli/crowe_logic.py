@@ -3005,5 +3005,16 @@ def substrate_dna_cmd():
         console.print(Markdown(content))
 
 
+# ── cluster subgroup ─────────────────────────────────────────────────────
+# Imported here (after `main` is defined) and registered as a subgroup so
+# operators can run cluster work via the CLI:
+#   crowe-logic cluster ask <specialist> "<prompt>"
+#   crowe-logic cluster gate -f <diff-file>
+#   crowe-logic cluster list / show <cluster>
+from cli.cluster_cli import register as _register_cluster_cli  # noqa: E402
+
+_register_cluster_cli(main)
+
+
 if __name__ == "__main__":
     main()
