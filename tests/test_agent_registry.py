@@ -1,8 +1,8 @@
-"""Tests for crowe_synapse_engine.agent_registry — YAML agent loading."""
+"""Tests for crowe_synapse_engine.agent_registry, YAML agent loading."""
 
 import os
 import pytest
-from crowe_synapse_engine.agent_registry import AgentRegistry, AgentConfig
+from crowe_synapse_engine.agent_registry import AgentRegistry, AgentConfig, ClusterConfig
 
 
 @pytest.fixture
@@ -65,3 +65,74 @@ class TestToolResolution:
         assert "web_search" in resolved
         assert "browse_url" in resolved
         assert "execute_shell" not in resolved
+
+
+class TestRecursiveLoading:
+    """Sub-cluster directories under agents/ also load their member yaml files."""
+
+    def test_loads_agents_from_subdirectories(self, registry):
+        names = [a.name for a in registry.list_agents()]
+        assert "music-orchestrator" in names
+        assert "music-compose" in names
+        assert "music-critic" in names
+        assert "music-test" in names
+
+    def test_subdirectory_agents_keep_full_config(self, registry):
+        critic = registry.get_agent("music-critic")
+        assert critic is not None
+        assert critic.cluster == "crowelm-music"
+        assert critic.model == "crowelm-eclipse"
+        assert "BLOCK" in critic.prompt_override
+
+
+class TestClusterManifest:
+    """cluster.yaml files declare a cluster, not an agent."""
+
+    def test_cluster_manifest_not_loaded_as_agent(self, registry):
+        agent_names = [a.name for a in registry.list_agents()]
+        # 'crowelm-music' is the cluster name, not an agent name; ensure it
+        # is recognized as a cluster instead of accidentally treated as an agent.
+        assert "crowelm-music" not in agent_names
+
+    def test_cluster_loaded_separately(self, registry):
+        cluster = registry.get_cluster("crowelm-music")
+        assert cluster is not None
+        assert isinstance(cluster, ClusterConfig)
+        assert "music-orchestrator" in cluster.agents
+        assert "music-critic" in cluster.agents
+
+    def test_agents_in_cluster(self, registry):
+        members = registry.agents_in_cluster("crowelm-music")
+        member_names = {a.name for a in members}
+        # All ten cluster members plus the legacy `music` alias.
+        assert "music-orchestrator" in member_names
+        assert "music-compose" in member_names
+        assert "music-mix" in member_names
+        assert "music-master" in member_names
+        assert "music-dsp" in member_names
+        assert "music-native" in member_names
+        assert "music-web" in member_names
+        assert "music-provenance" in member_names
+        assert "music-critic" in member_names
+        assert "music-test" in member_names
+        assert "music" in member_names  # legacy alias
+
+
+class TestAliasResolution:
+    def test_alias_field_loaded(self, registry):
+        legacy = registry.get_agent("music")
+        assert legacy is not None
+        assert legacy.alias_of == "music-orchestrator"
+
+    def test_resolve_alias_returns_target(self, registry):
+        target = registry.resolve_alias("music")
+        assert target is not None
+        assert target.name == "music-orchestrator"
+
+    def test_resolve_alias_on_non_alias_returns_self(self, registry):
+        agent = registry.resolve_alias("music-compose")
+        assert agent is not None
+        assert agent.name == "music-compose"
+
+    def test_resolve_alias_on_unknown_returns_none(self, registry):
+        assert registry.resolve_alias("does-not-exist") is None

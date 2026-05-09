@@ -2,12 +2,10 @@ name: music
 description: "Legacy alias. Routes to the CroweLM-Music sub-cluster orchestrator (agents/music/orchestrator.yaml). Kept for backward compatibility with pipelines that reference 'music' directly."
 model: crowelm-talon
 alias_of: music-orchestrator
+cluster: crowelm-music
 tools:
   - talon_*
-  - substrate_*
   - read_file
-  - write_file
-  - edit_file
   - execute_shell
 prompt_override: |
   You are the legacy entry point for the CroweLM-Music cluster. New traffic
@@ -22,4 +20,3 @@ prompt_override: |
 pipelines:
   - compose.yaml
 quantum_evaluator: melody_path
-cluster: crowelm-music
