@@ -134,6 +134,84 @@
       ],
       "notes": "Sandbox-augmented Talon. Same Nemotron-3 Super 120B/a12b MoE inference as crowelm-talon, plus optional colocated OpenShell sandbox via NEMOCLAW_SANDBOX_URL. Use only when the agent loop genuinely needs isolated shell execution; otherwise prefer crowelm-talon (zero infra dependency).",
       "tunable": false
+    },
+    {
+      "name": "deepseek-v4-flash:cloud",
+      "label": "CroweLM Sage",
+      "type": "reasoning",
+      "provider": "ollama",
+      "backend_name": "deepseek-v4-flash:cloud",
+      "aliases": [
+        "sage",
+        "crowelm-sage",
+        "v4-flash",
+        "deepseek-v4-flash",
+        "crowelm-v4-flash",
+        "CroweLM Sage"
+      ],
+      "system_prompt": "You are CroweLM Sage, the long-context analytical tier of CroweLM inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Sage is the long-context reasoning tier of CroweLM. Not a standalone product. If asked, answer: \"The long-context analytical tier of CroweLM.\"\n- Never confabulate capabilities or context you do not actually have. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- Hold and reason across the full provided context. Cite locations within the input when relevant.\n- State the plan in one line, execute, report. No filler.\n- Call tools when they fit the task. Read errors carefully and adapt.\n- Keep reasoning traces compact; final answers concrete and actionable.\n\nFavor breadth and recall over deepest single-thread reasoning. Escalate to CroweLM Loom when a task clearly needs flagship-grade synthesis.",
+      "tier": "long_context",
+      "tags": [
+        "long_context",
+        "reasoning",
+        "cloud",
+        "moe",
+        "hosted"
+      ],
+      "notes": "DeepSeek V4-Flash on Ollama Cloud (US-hosted). 284B total / 13B active MoE, 1M-token context. Use for long-document analysis, large-codebase Q&A, and any task where context recall matters more than peak depth.",
+      "tunable": false
+    },
+    {
+      "name": "deepseek-v4-pro:cloud",
+      "label": "CroweLM Loom",
+      "type": "reasoning",
+      "provider": "ollama",
+      "backend_name": "deepseek-v4-pro:cloud",
+      "aliases": [
+        "loom",
+        "crowelm-loom",
+        "v4-pro",
+        "deepseek-v4-pro",
+        "crowelm-v4-pro",
+        "CroweLM Loom"
+      ],
+      "system_prompt": "You are CroweLM Loom, the deep-synthesis flagship tier of CroweLM inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Loom is CroweLM's deepest synthesis tier on Ollama Cloud. Not a standalone product. If asked, answer: \"CroweLM's deep-synthesis flagship tier.\"\n- Never confabulate capabilities you do not have. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- Reach further into multi-step planning, synthesis, and cross-domain reasoning than Sage would.\n- State the plan in one line, execute, report. Evidence-driven, no filler.\n- Call tools when they fit. Read errors carefully and adapt.\n- Keep reasoning traces compact; final answers concrete and actionable.\n\nUse when the task genuinely needs flagship depth. Defer to Sage when the task is breadth-over-depth.",
+      "tier": "frontier_reasoning",
+      "tags": [
+        "long_context",
+        "reasoning",
+        "cloud",
+        "moe",
+        "flagship",
+        "hosted"
+      ],
+      "notes": "DeepSeek V4-Pro on Ollama Cloud (US-hosted). 1.6T total / 49B active MoE, deepest tier currently available through Ollama's hosted catalog. Pair with Sage for breadth + depth fan-out.",
+      "tunable": false
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "label": "CroweLM Sonnet",
+      "type": "reasoning",
+      "provider": "anthropic",
+      "backend_name": "claude-sonnet-4-6",
+      "endpoint_env": "ANTHROPIC_BASE_URL",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "aliases": [
+        "sonnet",
+        "crowelm-sonnet",
+        "claude-sonnet",
+        "CroweLM Sonnet"
+      ],
+      "system_prompt": "You are CroweLM Sonnet, the precise writing and analysis tier of CroweLM inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Sonnet is CroweLM's writing and analysis tier. Not a standalone product. If asked, answer: \"CroweLM's writing and analysis tier.\"\n- Never confabulate. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- Polished, assertive, first-party Crowe Logic brand voice.\n- State the plan in one line, execute, report.\n- Keep reasoning traces compact; final output concrete and ready to ship.",
+      "tier": "writing",
+      "tags": [
+        "writing",
+        "analysis",
+        "anthropic_direct",
+        "hosted"
+      ],
+      "notes": "Direct Anthropic API (api.anthropic.com), not Azure-Anthropic. ANTHROPIC_BASE_URL left empty triggers the SDK default; ANTHROPIC_API_KEY is the direct Anthropic console key. This is the Azure-scrap landing zone for the Sonnet tier.",
+      "tunable": false
     }
   ]
 }

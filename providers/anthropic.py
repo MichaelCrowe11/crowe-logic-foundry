@@ -55,12 +55,19 @@ class AnthropicProvider:
             "cache_control": {"type": "ephemeral"},
         }
 
-        # Normalize endpoint: Azure expects /anthropic base path
-        base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/anthropic"):
-            base_url += "/anthropic"
-
-        self.client = Anthropic(api_key=api_key, base_url=base_url)
+        # Normalize endpoint:
+        #   - Direct Anthropic API: empty endpoint or api.anthropic.com host
+        #     means use the SDK default base_url (https://api.anthropic.com).
+        #   - Azure AI Foundry: append the /anthropic surface path if the
+        #     resource URL doesn't already include it.
+        endpoint_clean = (endpoint or "").rstrip("/")
+        if not endpoint_clean or "api.anthropic.com" in endpoint_clean:
+            self.client = Anthropic(api_key=api_key)
+        else:
+            base_url = endpoint_clean
+            if not base_url.endswith("/anthropic"):
+                base_url += "/anthropic"
+            self.client = Anthropic(api_key=api_key, base_url=base_url)
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})
