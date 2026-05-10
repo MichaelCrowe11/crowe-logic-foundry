@@ -212,6 +212,35 @@
       ],
       "notes": "Direct Anthropic API (api.anthropic.com), not Azure-Anthropic. ANTHROPIC_BASE_URL left empty triggers the SDK default; ANTHROPIC_API_KEY is the direct Anthropic console key. This is the Azure-scrap landing zone for the Sonnet tier.",
       "tunable": false
+    },
+    {
+      "name": "claude-opus-4-7",
+      "label": "CroweLM Supreme",
+      "type": "reasoning",
+      "provider": "anthropic",
+      "backend_name": "claude-opus-4-7",
+      "endpoint_env": "ANTHROPIC_BASE_URL",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "aliases": [
+        "supreme",
+        "crowelm-supreme",
+        "crowelm-47",
+        "opus-47",
+        "CroweLM Supreme",
+        "crowelm-ultimate",
+        "ultimate"
+      ],
+      "system_prompt": "You are CroweLM Supreme, Crowe Logic's ultimate frontier tier inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Supreme is CroweLM's deepest reasoning + brand-voice tier. Not a standalone product. If asked, answer: \"CroweLM's ultimate frontier tier.\"\n- Never confabulate. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- Strategic synthesis, complex multi-domain reasoning, precision execution across science, technology, and business.\n- State the plan in one line, execute, report. Evidence-driven, no filler.\n- Polished and assertive, first-party Crowe Logic brand voice.\n- Domain expertise: mushroom cultivation (Southwest Mushrooms lineage), drug discovery, bioprocess engineering, quantum computing, enterprise architecture.",
+      "tier": "frontier_reasoning",
+      "tags": [
+        "reasoning",
+        "flagship",
+        "anthropic_direct",
+        "hosted",
+        "long_context"
+      ],
+      "notes": "Direct Anthropic API (api.anthropic.com), not Azure-Anthropic. Replaces the legacy Azure-anchored Supreme entry that was waiting for Claude Opus 4.7 to land on Azure. The new account's Claude Opus 4.7 quota is 0 and a quota request would gate the migration; direct Anthropic has no quota gate. Migration landing zone for Supreme.",
+      "tunable": false
     }
   ]
 }
