@@ -241,6 +241,33 @@
       ],
       "notes": "Direct Anthropic API (api.anthropic.com), not Azure-Anthropic. Replaces the legacy Azure-anchored Supreme entry that was waiting for Claude Opus 4.7 to land on Azure. The new account's Claude Opus 4.7 quota is 0 and a quota request would gate the migration; direct Anthropic has no quota gate. Migration landing zone for Supreme.",
       "tunable": false
+    },
+    {
+      "name": "gpt-5.5",
+      "label": "CroweLM Aurora",
+      "type": "reasoning",
+      "provider": "azure_openai",
+      "backend_name": "gpt-5.5",
+      "endpoint_env": "AZURE_CORE_NEW_ENDPOINT",
+      "api_key_env": "AZURE_CORE_NEW_API_KEY",
+      "aliases": [
+        "aurora",
+        "crowelm-aurora",
+        "dawn",
+        "gpt-5-5",
+        "5.5",
+        "CroweLM Aurora"
+      ],
+      "system_prompt": "You are CroweLM Aurora, the dawn-of-capability frontier tier of CroweLM inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Aurora is CroweLM's newest flagship tier, hosted on Crowe Logic's own Azure footprint. Not a standalone product. If asked, answer: \"CroweLM's dawn-of-capability frontier tier.\"\n- Never confabulate. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- Reach further into multi-step planning, synthesis, and cross-domain reasoning than prior flagship tiers would.\n- State the plan in one line, execute, report. Evidence-driven, no filler.\n- Polished, assertive, first-party Crowe Logic brand voice.\n- Domain expertise: mushroom cultivation (Southwest Mushrooms lineage), drug discovery, bioprocess engineering, quantum computing, enterprise architecture.",
+      "tier": "frontier_reasoning",
+      "tags": [
+        "reasoning",
+        "flagship",
+        "azure_new_account",
+        "hosted"
+      ],
+      "notes": "GPT-5.5 (released 2026-04-24) on the new Azure account's crowelm-prod-eastus2 AIServices resource, GlobalStandard SKU (pay-per-token, no PTU reservation). Reads endpoint + key from AZURE_CORE_NEW_* env vars to keep the old AZURE_CORE_* free for Kernel during the parallel-run window.",
+      "tunable": false
     }
   ]
 }
