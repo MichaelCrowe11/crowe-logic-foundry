@@ -279,6 +279,15 @@ class SynapseRuntime:
                         name=slot["name"],
                         arguments=arguments,
                     )
+                    delegate_msg = AICLMessage(
+                        act=Act.DELEGATE,
+                        from_agent=agent_name,
+                        to_agent=f"tool:{call.name}",
+                        subject=f"execute tool {call.name}",
+                        parent_message_id=intent_msg.id,
+                        payload={"tool_call_id": call.id, "arguments": call.arguments},
+                    )
+                    yield aicl_chunk(delegate_msg)
                     yield RuntimeChunk(
                         kind=ChunkKind.TOOL_CALL,
                         tool_name=call.name,
@@ -295,17 +304,32 @@ class SynapseRuntime:
                         },
                     )
                     if hook_outcome.block:
+                        block_reason = hook_outcome.reason or "blocked by hook"
                         yield RuntimeChunk(
                             kind=ChunkKind.HOOK_BLOCKED,
                             tool_name=call.name,
-                            reason=hook_outcome.reason or "blocked by hook",
+                            reason=block_reason,
                             meta={"tool_call_id": call.id},
+                        )
+                        yield aicl_chunk(
+                            AICLMessage(
+                                act=Act.DISPUTE,
+                                from_agent=agent_name,
+                                to_agent=f"tool:{call.name}",
+                                subject=f"tool blocked by hook: {block_reason}",
+                                parent_message_id=delegate_msg.id,
+                                evidence=["hook:PreToolUse"],
+                                payload={
+                                    "tool_call_id": call.id,
+                                    "reason": block_reason,
+                                },
+                            )
                         )
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": call.id,
-                                "content": f"Blocked by hook: {hook_outcome.reason}",
+                                "content": f"Blocked by hook: {block_reason}",
                             }
                         )
                         continue
@@ -313,17 +337,57 @@ class SynapseRuntime:
                     result = await self.tool_registry.run_tool(
                         call, permission_callback=self.permission_callback
                     )
+                    permission_denied = result.is_error and result.content.startswith(
+                        "Permission denied"
+                    )
                     yield RuntimeChunk(
                         kind=(
                             ChunkKind.PERMISSION_DENIED
-                            if result.is_error
-                            and result.content.startswith("Permission denied")
+                            if permission_denied
                             else ChunkKind.TOOL_RESULT
                         ),
                         tool_name=result.name,
                         tool_result=result.content,
                         meta={"tool_call_id": result.id, "is_error": result.is_error},
                     )
+                    yield aicl_chunk(
+                        AICLMessage(
+                            act=Act.REPORT,
+                            from_agent=f"tool:{result.name}",
+                            to_agent=agent_name,
+                            subject=(
+                                f"tool failed: {result.content[:160]}"
+                                if result.is_error
+                                else f"tool completed: {result.content[:160]}"
+                            ),
+                            parent_message_id=delegate_msg.id,
+                            confidence=(
+                                0.0
+                                if permission_denied
+                                else 0.25
+                                if result.is_error
+                                else 1.0
+                            ),
+                            evidence=[f"tool_call:{result.id}"],
+                            requires_human=permission_denied,
+                            payload={
+                                "tool_call_id": result.id,
+                                "is_error": result.is_error,
+                            },
+                        )
+                    )
+                    if permission_denied:
+                        yield aicl_chunk(
+                            AICLMessage(
+                                act=Act.UNCERTAIN,
+                                from_agent=agent_name,
+                                subject=f"permission denied for tool {result.name}",
+                                parent_message_id=delegate_msg.id,
+                                confidence=0.0,
+                                requires_human=True,
+                                payload={"tool_call_id": result.id},
+                            )
+                        )
                     await self.hook_registry.dispatch(
                         HookEvent.POST_TOOL_USE,
                         {
@@ -342,6 +406,16 @@ class SynapseRuntime:
                     )
 
             if rounds_used >= max_turns and stop_reason == "max_turns":
+                yield aicl_chunk(
+                    AICLMessage(
+                        act=Act.UNCERTAIN,
+                        from_agent=agent_name,
+                        subject=f"max turns reached before final answer: {max_turns}",
+                        parent_message_id=intent_msg.id,
+                        confidence=0.2,
+                        payload={"rounds_used": rounds_used, "max_turns": max_turns},
+                    )
+                )
                 yield RuntimeChunk(
                     kind=ChunkKind.ERROR,
                     text=f"Max turns ({max_turns}) reached without final answer.",

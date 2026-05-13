@@ -119,6 +119,88 @@ def test_synapse_runtime_emits_aicl_intent_and_commit(monkeypatch):
     assert chunks[-1].kind == ChunkKind.DONE
 
 
+def test_synapse_runtime_emits_aicl_for_tool_delegate_and_report(monkeypatch):
+    """Tool execution should become a threaded DELEGATE/REPORT AICL exchange."""
+    import crowe_synapse_engine.runtime.synapse as synapse_module
+
+    class FakeCompletions:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content=None,
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            index=0,
+                                            id="call_search",
+                                            function=SimpleNamespace(
+                                                name="web_search",
+                                                arguments='{"query": "aicl"}',
+                                            ),
+                                        )
+                                    ],
+                                ),
+                                finish_reason="tool_calls",
+                            )
+                        ]
+                    )
+                ]
+            return [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="Final.", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+            ]
+
+    class FakeClient:
+        chat = SimpleNamespace(completions=FakeCompletions())
+
+    async def web_search(query: str) -> str:
+        return f"results for {query}"
+
+    tool_registry = ToolRegistry()
+    tool_registry.register("web_search", "search the web", web_search)
+    monkeypatch.setattr(
+        synapse_module, "_resolve_client", lambda _provider: FakeClient()
+    )
+    runtime = synapse_module.SynapseRuntime(
+        provider=ModelProvider.AZURE_OPENAI,
+        tool_registry=tool_registry,
+    )
+
+    async def collect_chunks():
+        return [
+            chunk
+            async for chunk in runtime.run(
+                agent_name="research",
+                user_prompt="Find AICL references",
+                system_prompt="You can use tools.",
+                model="crowelm-pro",
+                tools=["web_search"],
+            )
+        ]
+
+    chunks = asyncio.run(collect_chunks())
+    aicl = [chunk.meta["aicl"] for chunk in chunks if chunk.kind == ChunkKind.AICL]
+    assert [msg["act"] for msg in aicl] == ["intent", "delegate", "report", "commit"]
+    assert aicl[1]["to_agent"] == "tool:web_search"
+    assert aicl[1]["payload"]["arguments"] == {"query": "aicl"}
+    assert aicl[2]["parent_message_id"] == aicl[1]["id"]
+    assert aicl[2]["evidence"] == ["tool_call:call_search"]
+    assert chunks[-1].kind == ChunkKind.DONE
+
+
 def test_select_runtime_sdk_hint_returns_bridge():
     """runtime_hint='sdk' must return the SDK bridge regardless of install state."""
     agent = AgentConfig(name="x", model="claude-opus-4-7")
