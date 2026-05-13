@@ -158,7 +158,16 @@ class SynapseRuntime:
     ) -> AsyncIterator[RuntimeChunk]:
         from crowe_synapse_engine.aicl import AICLMessage, Act, aicl_chunk
 
+        from crowe_synapse_engine.runtime.dispatcher import resolve_model
+
         client = _resolve_client(self.provider)
+        # Resolve the logical model name to the real deployment string. Logical
+        # names like "crowelm-pro" never reach the upstream API; the resolver
+        # returns the entry's backend_name (or the name itself when no alias
+        # mapping exists). Brand Veil seam: the runtime never logs which
+        # vendor model actually answered the call.
+        resolved = resolve_model(model)
+        upstream_model = resolved.backend_name if resolved is not None else model
         resolved_tools = self.tool_registry.resolve(tools) if tools else []
         tool_schemas = [tool.to_openai_schema() for tool in resolved_tools]
 
@@ -186,7 +195,7 @@ class SynapseRuntime:
             while rounds_used < max_turns:
                 rounds_used += 1
                 kwargs: dict[str, Any] = {
-                    "model": model,
+                    "model": upstream_model,
                     "messages": messages,
                     "stream": True,
                 }

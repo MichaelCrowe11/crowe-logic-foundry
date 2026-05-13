@@ -40,14 +40,16 @@ _REPO = Path(__file__).resolve().parents[1]
 @pytest.mark.parametrize(
     "model,expected",
     [
-        ("crowelm-pro", ModelProvider.AZURE_OPENAI),
-        ("crowelm-talon", ModelProvider.AZURE_OPENAI),
+        # Catalog entries (resolver wins over pattern table).
+        ("crowelm-pro", ModelProvider.WATSONX),  # CroweLM Apex -> watsonx
+        ("crowelm-talon", ModelProvider.NVIDIA),  # NIM via openai_compat
+        ("claude-opus-4-7", ModelProvider.ANTHROPIC),
+        ("claude-sonnet-4-6", ModelProvider.ANTHROPIC),
+        ("gpt-5.4-pro", ModelProvider.WATSONX),  # canonical name of Apex
+        # Pattern-only names (no catalog entry; fall through to glob table).
         ("crowelm-aurora", ModelProvider.AZURE_OPENAI),
         ("crowelm-talon-nim", ModelProvider.NVIDIA),
         ("crowelm-pro-ollama", ModelProvider.OLLAMA),
-        ("claude-opus-4-7", ModelProvider.ANTHROPIC),
-        ("claude-sonnet-4-6", ModelProvider.ANTHROPIC),
-        ("gpt-5.4-pro", ModelProvider.HOSTED_OPENAI),
         ("ollama/llama3", ModelProvider.OLLAMA),
         ("openrouter/some-model", ModelProvider.OPENROUTER),
         ("watsonx/mixtral", ModelProvider.WATSONX),
@@ -63,7 +65,9 @@ def test_runtime_hint_sdk_overrides_model_routing():
 
 
 def test_select_runtime_returns_synapse_for_crowelm():
-    agent = AgentConfig(name="x", model="crowelm-pro")
+    # crowelm-talon resolves to NVIDIA NIM (OpenAI-compatible) via the catalog.
+    # crowelm-pro now resolves to watsonx, which SynapseRuntime cannot serve.
+    agent = AgentConfig(name="x", model="crowelm-talon")
     runtime = select_runtime(agent)
     assert type(runtime).__name__ == "SynapseRuntime"
 
@@ -88,7 +92,9 @@ def test_synapse_runtime_emits_aicl_intent_and_commit(monkeypatch):
     class FakeClient:
         chat = SimpleNamespace(completions=FakeCompletions())
 
-    monkeypatch.setattr(synapse_module, "_resolve_client", lambda _provider: FakeClient())
+    monkeypatch.setattr(
+        synapse_module, "_resolve_client", lambda _provider: FakeClient()
+    )
     runtime = synapse_module.SynapseRuntime(provider=ModelProvider.AZURE_OPENAI)
 
     async def collect_chunks():
@@ -106,9 +112,10 @@ def test_synapse_runtime_emits_aicl_intent_and_commit(monkeypatch):
     chunks = asyncio.run(collect_chunks())
     aicl_chunks = [chunk for chunk in chunks if chunk.kind == ChunkKind.AICL]
     assert [chunk.meta["aicl"]["act"] for chunk in aicl_chunks] == ["intent", "commit"]
-    assert aicl_chunks[1].meta["aicl"]["parent_message_id"] == aicl_chunks[0].meta[
-        "aicl"
-    ]["id"]
+    assert (
+        aicl_chunks[1].meta["aicl"]["parent_message_id"]
+        == aicl_chunks[0].meta["aicl"]["id"]
+    )
     assert chunks[-1].kind == ChunkKind.DONE
 
 
