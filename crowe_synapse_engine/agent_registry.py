@@ -31,6 +31,14 @@ class AgentConfig:
     quantum_evaluator: str | None = None
     cluster: str | None = None
     alias_of: str | None = None
+    # Runtime fields. All optional; existing YAML stays valid.
+    # ``runtime`` is the dispatcher hint: None lets the dispatcher pick by
+    # model name; "sdk" forces the Claude Agent SDK bridge.
+    runtime: str | None = None
+    permission_mode: str = "default"
+    mcp_servers: dict = field(default_factory=dict)
+    subagents: list = field(default_factory=list)
+    hooks: list = field(default_factory=list)
 
 
 @dataclass
@@ -111,6 +119,11 @@ class AgentRegistry:
                 quantum_evaluator=data.get("quantum_evaluator"),
                 cluster=data.get("cluster", inferred_cluster),
                 alias_of=data.get("alias_of"),
+                runtime=data.get("runtime"),
+                permission_mode=data.get("permission_mode", "default"),
+                mcp_servers=data.get("mcp_servers", {}) or {},
+                subagents=data.get("subagents", []) or [],
+                hooks=data.get("hooks", []) or [],
             )
             self._agents[agent.name] = agent
 

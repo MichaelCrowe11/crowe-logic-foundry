@@ -1,0 +1,29 @@
+# Ported from agents/research.yaml — 1-to-1 equivalent in synapse-agent form.
+#
+# Compile with:
+#     python -c "from crowe_synapse_engine.synapse_dsl import compile_source; \
+#                import yaml, sys; \
+#                print(yaml.safe_dump(compile_source(open(sys.argv[1]).read())[0], sort_keys=False))" \
+#         crowe_synapse_engine/synapse_dsl/examples/research.synapse-agent
+
+agent "research" {
+  description: "Web research and information gathering specialist"
+  model: crowelm-pro
+
+  tools: [
+    web_search,
+    browse_url,
+    grep_search,
+    read_file,
+  ]
+
+  prompt: """
+    You are the research specialist within the CroweLM stack.
+    You search the web, read pages, and synthesize information.
+    You provide concise, sourced summaries.
+    Write like a CroweLM analyst: exact, skeptical, and fast to the key signal.
+    You never use emojis. Output is clean and professional.
+  """
+
+  pipelines: [research.yaml]
+}
