@@ -49,6 +49,20 @@ MODEL_PLAN_ACCESS = {
     "Mistral-Large-3": "pro",
     "FW-MiniMax-M2.5": "pro",
     "FW-MiniMax-M2.7": "pro",
+    # New Azure account (crowelm-prod-eastus2, mike@southwestmushrooms.com)
+    # deployed 2026-05-13 as the v2 tier floor.
+    "gpt-5.5": "team",
+    "gpt-4o": "personal",
+    "DeepSeek-R1-0528": "pro",
+    "DeepSeek-V3.1": "personal",
+    "cohere-command-a": "pro",
+    "Llama-3.3-70B-Instruct": "personal",
+    "Codestral-2501": "pro",
+    # Utility tiers (not customer-selectable; serve embedding + routing surfaces)
+    "text-embedding-3-large": "personal",
+    "embed-v-4-0": "personal",
+    "model-router": "pro",
+    "sora-2": "team",
     "claude-opus-4-6-2": "pro",
     "claude-opus-4-6": "pro",
     "gpt-5.4": "pro",
@@ -99,6 +113,54 @@ MODEL_DISPLAY = {
     "FW-MiniMax-M2.7": {
         "name": "CroweLM Vega",
         "description": "Next-generation mid-tier model. Improved reasoning and instruction-following over Atlas.",
+    },
+    # ── New Azure account (crowelm-prod-eastus2) tier floor ──────────────
+    # Deployed 2026-05-13 to the mike@southwestmushrooms.com subscription.
+    # Names are additive; the older entries above keep routing to the old
+    # crowelogicos-* account until those env vars get repointed.
+    "gpt-5.5": {
+        "name": "CroweLM Aurora",
+        "description": "Top-tier general-purpose flagship. Newest OpenAI deployment, broadest knowledge and tool-use surface.",
+    },
+    "gpt-4o": {
+        "name": "CroweLM Sight",
+        "description": "Vision-capable legacy daily driver. Used for image analysis and multimodal tasks.",
+    },
+    "DeepSeek-R1-0528": {
+        "name": "CroweLM Reason Pro",
+        "description": "Frontier reasoning model with explicit chain-of-thought. Successor to CroweLM Reason.",
+    },
+    "DeepSeek-V3.1": {
+        "name": "CroweLM Vector Pro",
+        "description": "General-purpose reasoning with strong cost-efficiency. Upgrade from CroweLM Vector.",
+    },
+    "cohere-command-a": {
+        "name": "CroweLM Continental",
+        "description": "Multilingual flagship with strong European and Asian language coverage. Backed by Cohere Command-A.",
+    },
+    "Llama-3.3-70B-Instruct": {
+        "name": "CroweLM Forge Pro",
+        "description": "Open-weights workhorse, latest Meta release in the 70B family.",
+    },
+    "Codestral-2501": {
+        "name": "CroweLM Codex",
+        "description": "Code generation and analysis specialist. Mistral Codestral tuned for software engineering.",
+    },
+    "text-embedding-3-large": {
+        "name": "CroweLM Embed",
+        "description": "High-quality semantic embeddings for retrieval and clustering.",
+    },
+    "embed-v-4-0": {
+        "name": "CroweLM Embed Multilingual",
+        "description": "Cohere embed-v-4-0; multilingual semantic embeddings.",
+    },
+    "model-router": {
+        "name": "CroweLM Conductor",
+        "description": "Azure-managed router that auto-selects the cheapest model meeting the request's quality bar.",
+    },
+    "sora-2": {
+        "name": "CroweLM Cinema",
+        "description": "Video generation surface. Used by the Crowe Studio Scene Engine for short-form synthesis.",
     },
     "claude-opus-4-6": {
         "name": "CroweLM Prime",
