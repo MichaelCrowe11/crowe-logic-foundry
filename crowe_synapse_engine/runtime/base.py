@@ -33,6 +33,7 @@ class ChunkKind(str, Enum):
     TOOL_RESULT = "tool_result"
     PERMISSION_DENIED = "permission_denied"
     HOOK_BLOCKED = "hook_blocked"
+    AICL = "aicl"
     DONE = "done"
     ERROR = "error"
 

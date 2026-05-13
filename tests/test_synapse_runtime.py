@@ -204,6 +204,7 @@ def test_runtime_chunk_kinds_are_complete():
         ChunkKind.TOOL_RESULT,
         ChunkKind.PERMISSION_DENIED,
         ChunkKind.HOOK_BLOCKED,
+        ChunkKind.AICL,
         ChunkKind.DONE,
         ChunkKind.ERROR,
     }
