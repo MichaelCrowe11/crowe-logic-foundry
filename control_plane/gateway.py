@@ -660,3 +660,100 @@ async def list_available_models(
         if plan_rank(entry["min_plan"]) <= rank
     ]
     return {"plan": plan_id, "models": available}
+
+
+def _required_envs(cfg: dict) -> list[str]:
+    """Return the env var names a single model config requires to dispatch.
+
+    Used by the /health endpoint to surface "this tier is blocked because
+    NVIDIA_API_KEY isn't set" without the caller having to read the
+    provider source. Defaults match those used inside ``_call_provider``
+    and ``cli.headless._build_provider``.
+    """
+    provider_kind = cfg.get("provider", "")
+    if provider_kind == "azure_openai":
+        return [
+            cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT"),
+            cfg.get("api_key_env", "AZURE_CORE_API_KEY"),
+        ]
+    if provider_kind == "anthropic":
+        return [
+            cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT"),
+            cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY"),
+        ]
+    if provider_kind == "openai_compat":
+        return [
+            cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT"),
+            cfg.get("api_key_env", "CROWE_OPEN_API_KEY"),
+        ]
+    if provider_kind == "nvidia":
+        return ["NVIDIA_NIM_ENDPOINT", "NVIDIA_API_KEY"]
+    if provider_kind == "openrouter":
+        return ["OPENROUTER_API_KEY"]
+    if provider_kind == "ollama":
+        return [cfg.get("base_url_env", "OLLAMA_BASE_URL")]
+    return []
+
+
+@router.get("/health")
+async def gateway_health(
+    key_info: dict = Depends(_resolve_api_key),
+):
+    """Per-tier credential and stream-flag status.
+
+    Auth-gated like /models because it surfaces which provider env vars
+    are set or missing. The shape lets a caller see exactly why a
+    specific tier (e.g. CroweLM Vega, CroweLM Reason) is failing without
+    reading Railway env vars one by one.
+
+    Response shape::
+
+        {
+          "stream_enabled": bool,
+          "tiers_ok": int,
+          "tiers_blocked": int,
+          "tiers": [
+            {
+              "model": "FW-MiniMax-M2.7",
+              "display_name": "CroweLM Vega",
+              "provider": "openai_compat",
+              "required_env": ["CROWE_OPEN_ENDPOINT", "CROWE_OPEN_API_KEY"],
+              "missing_env": ["CROWE_OPEN_API_KEY"],
+              "ok": false,
+            },
+            ...
+          ]
+        }
+    """
+    from config.agent_config import MODEL_CHAIN
+
+    tiers: list[dict] = []
+    for cfg in MODEL_CHAIN:
+        if cfg.get("provider") == "auto":
+            # Meta-models like "crowelm-auto" don't have provider creds
+            # of their own; their status is determined by what they
+            # resolve to. Skip from the health report.
+            continue
+        required = _required_envs(cfg)
+        missing = [name for name in required if not os.environ.get(name, "").strip()]
+        display = MODEL_DISPLAY.get(cfg["name"], {}).get(
+            "name", cfg.get("label", cfg["name"])
+        )
+        tiers.append(
+            {
+                "model": cfg["name"],
+                "display_name": display,
+                "provider": cfg.get("provider", ""),
+                "surface": cfg.get("surface"),
+                "required_env": required,
+                "missing_env": missing,
+                "ok": len(missing) == 0,
+            }
+        )
+
+    return {
+        "stream_enabled": CROWE_STREAM_ENABLED,
+        "tiers_ok": sum(1 for t in tiers if t["ok"]),
+        "tiers_blocked": sum(1 for t in tiers if not t["ok"]),
+        "tiers": tiers,
+    }
