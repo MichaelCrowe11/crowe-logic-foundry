@@ -59,9 +59,19 @@ MODEL_PLAN_ACCESS = {
     "cohere-command-a": "pro",
     "Llama-3.3-70B-Instruct": "personal",
     "Codestral-2501": "pro",
+    # Frontier additions on new account (Phase 2, 2026-05-13)
+    "Kimi-K2.6": "pro",
+    "DeepSeek-V4-Flash": "pro",
+    "grok-4.3": "team",
+    "grok-4-1-fast-reasoning": "pro",
+    "grok-4-1-fast-non-reasoning": "personal",
+    "Llama-4-Maverick-17B-128E-Instruct-FP8": "pro",
+    "Llama-4-Scout-17B-16E-Instruct": "pro",
     # Utility tiers (not customer-selectable; serve embedding + routing surfaces)
     "text-embedding-3-large": "personal",
     "embed-v-4-0": "personal",
+    "Cohere-rerank-v4.0-pro": "pro",
+    "Cohere-rerank-v4.0-fast": "personal",
     "model-router": "pro",
     "sora-2": "team",
     "claude-opus-4-6-2": "pro",
@@ -162,6 +172,42 @@ MODEL_DISPLAY = {
     "sora-2": {
         "name": "CroweLM Cinema",
         "description": "Video generation surface. Used by the Crowe Studio Scene Engine for short-form synthesis.",
+    },
+    "Kimi-K2.6": {
+        "name": "CroweLM Lunar Pro",
+        "description": "Long-context successor to Lunar. Improved instruction-following on multi-document inputs.",
+    },
+    "DeepSeek-V4-Flash": {
+        "name": "CroweLM Velocity",
+        "description": "Fastest frontier reasoner. Newest DeepSeek release tuned for low-latency tool-calling.",
+    },
+    "grok-4.3": {
+        "name": "CroweLM Oracle Pro",
+        "description": "Realtime-aware flagship reasoning. Successor to CroweLM Oracle.",
+    },
+    "grok-4-1-fast-reasoning": {
+        "name": "CroweLM Sage",
+        "description": "Cost-efficient reasoning tier. Trades depth for speed; good fit for high-volume agent loops.",
+    },
+    "grok-4-1-fast-non-reasoning": {
+        "name": "CroweLM Sage Lite",
+        "description": "Cheapest reasoning-family tier. No chain-of-thought, just direct answers.",
+    },
+    "Llama-4-Maverick-17B-128E-Instruct-FP8": {
+        "name": "CroweLM Maverick",
+        "description": "Open-weights frontier. 17B/128-expert mixture-of-experts. Portability hedge for sovereign deployments.",
+    },
+    "Llama-4-Scout-17B-16E-Instruct": {
+        "name": "CroweLM Scout",
+        "description": "Vision-capable open-weights tier. Used as the alternate Crowe Vision backbone alongside Sight.",
+    },
+    "Cohere-rerank-v4.0-pro": {
+        "name": "CroweLM Sieve Pro",
+        "description": "Precision reranker for retrieval pipelines. Used by Phase 1 grounding in the cultivation OS.",
+    },
+    "Cohere-rerank-v4.0-fast": {
+        "name": "CroweLM Sieve",
+        "description": "Fast reranker for high-throughput retrieval. Trade some precision for latency.",
     },
     "claude-opus-4-6": {
         "name": "CroweLM Prime",
