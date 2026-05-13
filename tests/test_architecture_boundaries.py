@@ -28,8 +28,8 @@ INTERNAL_PACKAGES = {
 ALLOWED_PACKAGE_DEPENDENCIES = {
     "cli": {"config", "crowe_synapse_engine", "iterm", "providers", "tools"},
     "config": set(),
-    "control_plane": {"config", "dashboard", "domain", "knowledge", "providers"},
-    "crowe_synapse_engine": set(),
+    "control_plane": {"cli", "config", "dashboard", "domain", "knowledge", "providers"},
+    "crowe_synapse_engine": {"config"},
     "dashboard": set(),
     "domain": {"tools"},
     "iterm": set(),
@@ -42,6 +42,17 @@ ALLOWED_PACKAGE_DEPENDENCIES = {
 # when callers do not pass an explicit renderer. We allow that coupling only in
 # the current fallback-renderer files so it cannot spread further.
 FILE_LEVEL_EXCEPTIONS = {
+    # The control-plane streaming shim intentionally mirrors the headless CLI
+    # renderer/provider wiring until those primitives move into a shared leaf
+    # module. Keep this exception pinned to one file.
+    ("control_plane", "cli"): {
+        "control_plane/streaming.py",
+    },
+    # The runtime dispatcher is the Brand Veil catalog resolver. It may read
+    # config entries, but the rest of crowe_synapse_engine stays config-free.
+    ("crowe_synapse_engine", "config"): {
+        "crowe_synapse_engine/runtime/dispatcher.py",
+    },
     ("providers", "cli"): {
         "providers/_shared.py",
         "providers/anthropic.py",

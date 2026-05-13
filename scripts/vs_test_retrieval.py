@@ -21,7 +21,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 import urllib.request
 from pathlib import Path
 
@@ -81,7 +80,7 @@ def main() -> int:
     print(f"  status: {vs.get('status')}")
     print(f"  file_counts: {vs.get('file_counts')}")
     if vs.get("file_counts", {}).get("in_progress", 0) > 0:
-        print(f"  WARNING: files still indexing; results may be incomplete")
+        print("  WARNING: files still indexing; results may be incomplete")
     print()
 
     for label, question in PROBES:
@@ -92,7 +91,8 @@ def main() -> int:
             "input": question,
             "tools": [{"type": "file_search", "vector_store_ids": [vs_id]}],
             "include": ["file_search_call.results"],
-            "max_output_tokens": 600,
+            "max_output_tokens": 4000,
+            "reasoning": {"effort": "medium"},
         }
         try:
             resp = http("POST", f"{base}/responses", key,
@@ -122,7 +122,7 @@ def main() -> int:
             for fid, fname in cited_files.items():
                 print(f"  {fid}  {fname}")
         else:
-            print(f"\n(no file citations: model may have answered from base knowledge)")
+            print("\n(no file citations: model may have answered from base knowledge)")
         print()
 
     return 0

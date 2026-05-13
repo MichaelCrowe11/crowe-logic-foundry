@@ -30,7 +30,7 @@ def clean_env(monkeypatch):
 @pytest.fixture
 def configured_env(clean_env):
     """Minimal env that satisfies the happy path."""
-    clean_env.setenv("NEMOCLAW_ENDPOINT", "https://fake.brevlab.com")
+    clean_env.setenv("NEMOCLAW_SANDBOX_URL", "https://fake.brevlab.com")
     clean_env.setenv("NEMOCLAW_API_KEY", "test-token")
     return clean_env
 
@@ -253,7 +253,7 @@ def test_shell_sends_authorization_header(configured_env):
 
 
 def test_shell_omits_authorization_when_key_unset(clean_env):
-    clean_env.setenv("NEMOCLAW_ENDPOINT", "https://fake.brevlab.com")
+    clean_env.setenv("NEMOCLAW_SANDBOX_URL", "https://fake.brevlab.com")
     response = _MockResponse(json_data={"stdout": "", "return_code": 0})
     client = _MockClient(response)
     with patch.object(nemoclaw, "httpx") as mock_httpx:
@@ -263,7 +263,7 @@ def test_shell_omits_authorization_when_key_unset(clean_env):
     assert "Authorization" not in headers
 
 
-def test_shell_uses_sandbox_url_when_set(configured_env):
+def test_shell_uses_sandbox_url_override(configured_env):
     configured_env.setenv("NEMOCLAW_SANDBOX_URL", "http://10.0.0.5:8081")
     response = _MockResponse(json_data={"stdout": "", "return_code": 0})
     client = _MockClient(response)
@@ -284,13 +284,19 @@ def test_nemoclaw_tools_are_registered_in_user_functions():
 
 
 def test_talon_alias_resolves_to_nemoclaw_provider():
-    """Guard against future config reshuffles silently breaking Talon."""
+    """Talon sandbox aliases keep NIM inference plus optional NemoClaw tools.
+
+    The model itself routes to NVIDIA NIM; the attached shell sandbox is
+    controlled independently by NEMOCLAW_SANDBOX_URL in tools.nemoclaw.
+    """
     from config.agent_config import resolve_model_config
 
     cfg = resolve_model_config("talon-nemoclaw")
     assert cfg is not None, "talon-nemoclaw alias missing from model chain"
+    assert cfg["name"] == "crowelm-talon-nemoclaw"
     assert cfg["provider"] == "openai_compat"
-    assert cfg["endpoint_env"] == "NEMOCLAW_ENDPOINT"
+    assert cfg["endpoint_env"] == "NVIDIA_NIM_ENDPOINT"
+    assert cfg["api_key_env"] == "NVIDIA_API_KEY"
 
 
 def test_provider_model_name_interpolates_env_vars(monkeypatch):
