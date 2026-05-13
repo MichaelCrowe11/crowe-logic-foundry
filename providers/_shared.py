@@ -49,15 +49,17 @@ def _coerce_tool_args(func, args: dict) -> dict:
 # switches models mid-session.
 _TOOL_CACHE: dict[int, tuple[list[dict], dict]] = {}
 SOFT_TOOL_BUDGET_ROUND: int = 6
-_RESEARCH_LOOP_TOOLS = frozenset({
-    "web_search",
-    "browse_url",
-    "browser_navigate",
-    "browser_click",
-    "browser_type_text",
-    "browser_snapshot",
-    "browser_screenshot",
-})
+_RESEARCH_LOOP_TOOLS = frozenset(
+    {
+        "web_search",
+        "browse_url",
+        "browser_navigate",
+        "browser_click",
+        "browser_type_text",
+        "browser_snapshot",
+        "browser_screenshot",
+    }
+)
 
 
 def build_tool_schemas(user_functions) -> list[dict]:
@@ -94,18 +96,20 @@ def build_tool_schemas(user_functions) -> list[dict]:
             if param.default is inspect.Parameter.empty:
                 required.append(pname)
 
-        tools.append({
-            "type": "function",
-            "function": {
-                "name": func.__name__,
-                "description": description,
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": func.__name__,
+                    "description": description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required,
+                    },
                 },
-            },
-        })
+            }
+        )
     return tools
 
 
@@ -118,6 +122,7 @@ def load_tools() -> tuple[list[dict], dict]:
     skips paying the inspect.signature + docstring-parsing cost again.
     """
     from tools import user_functions
+
     key = id(user_functions)
     cached = _TOOL_CACHE.get(key)
     if cached is not None:
@@ -128,15 +133,13 @@ def load_tools() -> tuple[list[dict], dict]:
     return _TOOL_CACHE[key]
 
 
-def should_send_tool_budget_warning(rounds_used: int, tool_names: list[str], warning_sent: bool) -> bool:
+def should_send_tool_budget_warning(
+    rounds_used: int, tool_names: list[str], warning_sent: bool
+) -> bool:
     """Return True when the model appears stuck in repetitive web research."""
     if warning_sent or rounds_used < SOFT_TOOL_BUDGET_ROUND:
         return False
-    normalized = {
-        (name or "").strip()
-        for name in tool_names
-        if (name or "").strip()
-    }
+    normalized = {(name or "").strip() for name in tool_names if (name or "").strip()}
     return bool(normalized) and normalized.issubset(_RESEARCH_LOOP_TOOLS)
 
 
@@ -196,7 +199,7 @@ class _InlineReasoningSplitter:
                     break
                 if i:
                     out.append(("reasoning", self._buf[:i]))
-                self._buf = self._buf[i + len(self.CLOSE):]
+                self._buf = self._buf[i + len(self.CLOSE) :]
                 self.in_think = False
             else:
                 i = self._buf.find(self.OPEN)
@@ -208,7 +211,7 @@ class _InlineReasoningSplitter:
                     break
                 if i:
                     out.append(("content", self._buf[:i]))
-                self._buf = self._buf[i + len(self.OPEN):]
+                self._buf = self._buf[i + len(self.OPEN) :]
                 self.in_think = True
         return out
 
@@ -220,6 +223,24 @@ class _InlineReasoningSplitter:
         return [(kind, text)]
 
 
+_EM_DASH = "—"
+
+
+def _strip_em_dash(text: str) -> str:
+    """Streaming-safe em-dash strip.
+
+    Single-character replace so chunk boundaries cannot split the match.
+    The batched ``cli.guardrails.style.StyleEnforcer`` collapses surrounding
+    whitespace via regex; that semantics is wrong for streaming because
+    spaces around the dash can land in adjacent chunks. Use ", " (comma +
+    space) to avoid double-space artifacts when source text already had
+    spaces around the dash.
+    """
+    if not text or _EM_DASH not in text:
+        return text
+    return text.replace(_EM_DASH, ", ")
+
+
 def _dispatch_content(renderer, splitter: _InlineReasoningSplitter, text: str) -> None:
     """Route a streamed content chunk to ``feed`` / ``feed_reasoning`` via the splitter."""
     for kind, piece in splitter.feed(text):
@@ -228,7 +249,7 @@ def _dispatch_content(renderer, splitter: _InlineReasoningSplitter, text: str) -
         if kind == "reasoning":
             renderer.feed_reasoning(piece)
         else:
-            renderer.feed(piece)
+            renderer.feed(_strip_em_dash(piece))
 
 
 def _flush_content(renderer, splitter: _InlineReasoningSplitter) -> None:
@@ -238,7 +259,7 @@ def _flush_content(renderer, splitter: _InlineReasoningSplitter) -> None:
         if kind == "reasoning":
             renderer.feed_reasoning(piece)
         else:
-            renderer.feed(piece)
+            renderer.feed(_strip_em_dash(piece))
 
 
 # Phrases that indicate the model announced a next action without executing it.
@@ -357,10 +378,12 @@ class BaseOpenAIProvider:
 
     def _force_final_response(self, renderer, session_state, full_response: str) -> str:
         """Run one no-tools pass so the turn can finish gracefully at the budget cap."""
-        self.messages.append({
-            "role": "user",
-            "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
-        })
+        self.messages.append(
+            {
+                "role": "user",
+                "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+            }
+        )
 
         try:
             renderer.set_spinner("finalizing answer...")
@@ -377,9 +400,8 @@ class BaseOpenAIProvider:
                     continue
 
                 if self.SUPPORTS_REASONING:
-                    reasoning = (
-                        getattr(delta, "reasoning", None)
-                        or getattr(delta, "reasoning_content", None)
+                    reasoning = getattr(delta, "reasoning", None) or getattr(
+                        delta, "reasoning_content", None
                     )
                     if reasoning:
                         renderer.feed_reasoning(reasoning)
@@ -419,8 +441,9 @@ class BaseOpenAIProvider:
         renderer.finish(session_state=session_state)
         return full_response
 
-    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
-                        renderer=None):
+    def stream_response(
+        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+    ):
         """Stream a response with the tool-calling loop.
 
         Drop-in compatible across all OpenAI-compatible providers.
@@ -438,6 +461,7 @@ class BaseOpenAIProvider:
 
         if renderer is None:
             from cli.renderer import StreamRenderer
+
             favicon = session_state.get("favicon", "")
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
@@ -475,9 +499,8 @@ class BaseOpenAIProvider:
                     # field. Backends that never emit it can flip
                     # SUPPORTS_REASONING off as a micro-optimization.
                     if self.SUPPORTS_REASONING:
-                        reasoning = (
-                            getattr(delta, "reasoning", None)
-                            or getattr(delta, "reasoning_content", None)
+                        reasoning = getattr(delta, "reasoning", None) or getattr(
+                            delta, "reasoning_content", None
                         )
                         if reasoning:
                             renderer.feed_reasoning(reasoning)
@@ -492,16 +515,22 @@ class BaseOpenAIProvider:
                                 tool_calls_accumulator[idx] = {
                                     "id": self._next_tool_call_id(),
                                     "raw_id": tc.id or "",
-                                    "name": tc.function.name if tc.function and tc.function.name else "",
+                                    "name": tc.function.name
+                                    if tc.function and tc.function.name
+                                    else "",
                                     "arguments": "",
                                 }
                             if tc.id:
                                 tool_calls_accumulator[idx]["raw_id"] = tc.id
                             if tc.function:
                                 if tc.function.name:
-                                    tool_calls_accumulator[idx]["name"] = tc.function.name
+                                    tool_calls_accumulator[idx]["name"] = (
+                                        tc.function.name
+                                    )
                                 if tc.function.arguments:
-                                    tool_calls_accumulator[idx]["arguments"] += tc.function.arguments
+                                    tool_calls_accumulator[idx]["arguments"] += (
+                                        tc.function.arguments
+                                    )
 
                     finish = chunk.choices[0].finish_reason if chunk.choices else None
                     if finish in ("stop", "tool_calls"):
@@ -539,8 +568,12 @@ class BaseOpenAIProvider:
                     # tool_call — silently re-invoke instead of handing control
                     # back to the user. The announcement still counts as an
                     # assistant turn so the model can see its own statement.
-                    self.messages.append({"role": "assistant", "content": response_text})
-                    self.messages.append({"role": "user", "content": AUTO_CONTINUE_NUDGE})
+                    self.messages.append(
+                        {"role": "assistant", "content": response_text}
+                    )
+                    self.messages.append(
+                        {"role": "user", "content": AUTO_CONTINUE_NUDGE}
+                    )
                     auto_continues_used += 1
                     renderer.end_segment()
                     renderer.stop_spinner()
@@ -567,11 +600,13 @@ class BaseOpenAIProvider:
                 tc = tool_calls_accumulator[idx]
                 name = (tc["name"] or "").strip() or "invalid_tool_call"
                 round_tool_names.append(name)
-                assistant_msg["tool_calls"].append({
-                    "id": tc["id"],
-                    "type": "function",
-                    "function": {"name": name, "arguments": tc["arguments"]},
-                })
+                assistant_msg["tool_calls"].append(
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {"name": name, "arguments": tc["arguments"]},
+                    }
+                )
             self.messages.append(assistant_msg)
 
             for idx in ordered_indices:
@@ -586,10 +621,12 @@ class BaseOpenAIProvider:
                 func = tool_map.get(name)
                 failed = False
                 if not raw_name:
-                    result_str = json.dumps({
-                        "error": "Model emitted a tool call without a function name.",
-                        "raw_arguments": args_json[:2000],
-                    })
+                    result_str = json.dumps(
+                        {
+                            "error": "Model emitted a tool call without a function name.",
+                            "raw_arguments": args_json[:2000],
+                        }
+                    )
                     failed = True
                 elif func:
                     try:
@@ -598,7 +635,12 @@ class BaseOpenAIProvider:
                         # content, and _coerce_tool_args then normalizes
                         # numeric/bool types smaller models emit as strings.
                         from cli.tool_args import parse_tool_arguments
-                        args, _recovered = parse_tool_arguments(args_json) if args_json else ({}, False)
+
+                        args, _recovered = (
+                            parse_tool_arguments(args_json)
+                            if args_json
+                            else ({}, False)
+                        )
                         args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
@@ -613,13 +655,16 @@ class BaseOpenAIProvider:
                 renderer.stop_spinner()
 
                 render_tool_card(
-                    console, name, args_json,
+                    console,
+                    name,
+                    args_json,
                     status="fail" if failed else "ok",
                     result=result_str,
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
                 from cli.branding import record_action
+
                 record_action(
                     session_state,
                     name=name,
@@ -636,17 +681,25 @@ class BaseOpenAIProvider:
                     duration_ms=duration_ms,
                 )
 
-                self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result_str[:50000],
-                })
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result_str[:50000],
+                    }
+                )
 
-            if should_send_tool_budget_warning(_round + 1, round_tool_names, budget_warning_sent):
-                self.messages.append({
-                    "role": "user",
-                    "content": build_tool_budget_warning(_round + 1, self.MAX_ROUNDS),
-                })
+            if should_send_tool_budget_warning(
+                _round + 1, round_tool_names, budget_warning_sent
+            ):
+                self.messages.append(
+                    {
+                        "role": "user",
+                        "content": build_tool_budget_warning(
+                            _round + 1, self.MAX_ROUNDS
+                        ),
+                    }
+                )
                 budget_warning_sent = True
         else:
             return self._force_final_response(renderer, session_state, full_response)
