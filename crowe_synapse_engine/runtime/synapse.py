@@ -156,6 +156,8 @@ class SynapseRuntime:
         max_turns: int = 20,
         meta: dict[str, Any] | None = None,
     ) -> AsyncIterator[RuntimeChunk]:
+        from crowe_synapse_engine.aicl import AICLMessage, Act, aicl_chunk
+
         client = _resolve_client(self.provider)
         resolved_tools = self.tool_registry.resolve(tools) if tools else []
         tool_schemas = [tool.to_openai_schema() for tool in resolved_tools]
@@ -168,6 +170,15 @@ class SynapseRuntime:
             HookEvent.USER_PROMPT_SUBMIT,
             {"agent_name": agent_name, "user_prompt": user_prompt, "meta": meta or {}},
         )
+
+        # Emit AICL INTENT at run start. Threads subsequent COMMIT to this id.
+        intent_msg = AICLMessage(
+            act=Act.INTENT,
+            from_agent=agent_name,
+            subject=user_prompt[:200],
+            payload={"model": model, "max_turns": max_turns},
+        )
+        yield aicl_chunk(intent_msg)
 
         rounds_used = 0
         stop_reason = "max_turns"
@@ -339,6 +350,16 @@ class SynapseRuntime:
                 HookEvent.STOP,
                 {"agent_name": agent_name, "rounds_used": rounds_used},
             )
+
+        # Emit AICL COMMIT at successful run end, threaded to the opening INTENT.
+        commit_msg = AICLMessage(
+            act=Act.COMMIT,
+            from_agent=agent_name,
+            subject=f"run complete: {stop_reason}",
+            parent_message_id=intent_msg.id,
+            payload={"rounds_used": rounds_used, "stop_reason": stop_reason},
+        )
+        yield aicl_chunk(commit_msg)
 
         yield RuntimeChunk(
             kind=ChunkKind.DONE,

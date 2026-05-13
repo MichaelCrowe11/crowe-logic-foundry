@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -65,6 +66,50 @@ def test_select_runtime_returns_synapse_for_crowelm():
     agent = AgentConfig(name="x", model="crowelm-pro")
     runtime = select_runtime(agent)
     assert type(runtime).__name__ == "SynapseRuntime"
+
+
+def test_synapse_runtime_emits_aicl_intent_and_commit(monkeypatch):
+    """A live runtime turn should emit threaded AICL boundary messages."""
+    import crowe_synapse_engine.runtime.synapse as synapse_module
+
+    class FakeCompletions:
+        def create(self, **_kwargs):
+            return [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="Done.", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+            ]
+
+    class FakeClient:
+        chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(synapse_module, "_resolve_client", lambda _provider: FakeClient())
+    runtime = synapse_module.SynapseRuntime(provider=ModelProvider.AZURE_OPENAI)
+
+    async def collect_chunks():
+        return [
+            chunk
+            async for chunk in runtime.run(
+                agent_name="research",
+                user_prompt="Find the latest substrate papers",
+                system_prompt="You are concise.",
+                model="crowelm-pro",
+                tools=[],
+            )
+        ]
+
+    chunks = asyncio.run(collect_chunks())
+    aicl_chunks = [chunk for chunk in chunks if chunk.kind == ChunkKind.AICL]
+    assert [chunk.meta["aicl"]["act"] for chunk in aicl_chunks] == ["intent", "commit"]
+    assert aicl_chunks[1].meta["aicl"]["parent_message_id"] == aicl_chunks[0].meta[
+        "aicl"
+    ]["id"]
+    assert chunks[-1].kind == ChunkKind.DONE
 
 
 def test_select_runtime_sdk_hint_returns_bridge():
