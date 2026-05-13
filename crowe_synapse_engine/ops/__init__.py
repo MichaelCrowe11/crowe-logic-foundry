@@ -29,8 +29,23 @@ from crowe_synapse_engine.ops.models import (
     TrackingEvent,
     Trial,
 )
+from crowe_synapse_engine.ops.service import AiclSink, OpsService, RecallTrace
+from crowe_synapse_engine.ops.stage_rules import (
+    TERMINAL_STAGES,
+    IllegalStageTransition,
+    allowed_next,
+    is_terminal,
+    validate_transition,
+)
+from crowe_synapse_engine.ops.store import (
+    InMemoryStore,
+    Store,
+    get_default_store,
+    iter_recall_forward,
+)
 
 __all__ = [
+    # Models
     "Batch",
     "BatchStage",
     "ContaminationEvent",
@@ -50,4 +65,18 @@ __all__ = [
     "Strain",
     "TrackingEvent",
     "Trial",
+    # Service + stage rules
+    "AiclSink",
+    "IllegalStageTransition",
+    "OpsService",
+    "RecallTrace",
+    "TERMINAL_STAGES",
+    "allowed_next",
+    "is_terminal",
+    "validate_transition",
+    # Store
+    "InMemoryStore",
+    "Store",
+    "get_default_store",
+    "iter_recall_forward",
 ]

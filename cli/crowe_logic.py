@@ -3338,5 +3338,20 @@ from cli.synapse_cli import register as _register_synapse_cli  # noqa: E402
 _register_synapse_cli(main)
 
 
+# ── ops subgroup ─────────────────────────────────────────────────────────
+# Cultivation operations + research-lab commands. Same OpsService the HTTP
+# router uses; AICL audit lines stream to stderr.
+#   crowe-logic ops register-strain <name> <species>
+#   crowe-logic ops create-batch <code> <strain_id> <location>
+#   crowe-logic ops advance <batch_id> <stage>
+#   crowe-logic ops haccp <batch_id> <ccp> <target> <actual> <result>
+#   crowe-logic ops harvest <batch_id> <lot_code> <weight_kg>
+#   crowe-logic ops ship <lot_id> <recipient> <destination>
+#   crowe-logic ops recall <batch_id>
+from cli.ops_cli import register as _register_ops_cli  # noqa: E402
+
+_register_ops_cli(main)
+
+
 if __name__ == "__main__":
     main()
