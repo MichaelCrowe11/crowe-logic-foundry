@@ -49,6 +49,7 @@ MODEL_PLAN_ACCESS = {
     "Mistral-Large-3": "pro",
     "FW-MiniMax-M2.5": "pro",
     "FW-MiniMax-M2.7": "pro",
+    "crowe-synapse": "pro",
     # New Azure account (crowelm-prod-eastus2, mike@southwestmushrooms.com)
     # deployed 2026-05-13 as the v2 tier floor.
     "gpt-5.5": "team",
@@ -193,6 +194,10 @@ MODEL_DISPLAY = {
     "crowelm-grower": {
         "name": "CroweLM Grower",
         "description": "Cultivation operations specialist. Domain-tuned for commercial mycology, substrate prep, sterilization, and yield analysis.",
+    },
+    "crowe-synapse": {
+        "name": "CroweLM Synapse",
+        "description": "Autonomous CLI executor. Tool-use specialist for code generation, file edits, and multi-step execution under AICL discipline.",
     },
 }
 
