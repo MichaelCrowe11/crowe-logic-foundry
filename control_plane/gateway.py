@@ -184,6 +184,13 @@ async def _call_provider(
     provider_kind = cfg.get("provider", "azure_openai")
     name = provider_model_name(cfg)
 
+    # Azure-hosted models deployed on the /v1/responses surface need a
+    # different SDK call than /v1/chat/completions. Tracked separately so
+    # _sync_call can branch on the API shape, not just the provider kind.
+    use_responses_api = (
+        provider_kind == "azure_openai" and cfg.get("surface") == "responses"
+    )
+
     def _sync_call():
         """Execute the provider call synchronously (OpenAI SDK is not async)."""
         if provider_kind == "azure_openai":
@@ -202,9 +209,14 @@ async def _call_provider(
                     detail=f"Missing credentials for {name} ({endpoint_var}/{api_key_var})",
                 )
 
-            if cfg.get("surface") == "responses":
-                # Responses API — no direct non-streaming token count; use chat fallback
-                provider = AzureOpenAIProvider(
+            if use_responses_api:
+                # Responses-surface deployments do NOT respond on
+                # /chat/completions, so we must use the Responses API.
+                # Previously this branch wrongly constructed an
+                # AzureOpenAIProvider and called chat.completions, which
+                # 400s with "Invalid model" against responses-only
+                # deployments (e.g. gpt-5.4-pro on AZURE_CORE).
+                provider = AzureResponsesProvider(
                     model=name,
                     system_instructions="You are a helpful assistant.",
                     endpoint=endpoint,
@@ -295,7 +307,71 @@ async def _call_provider(
                 status_code=400, detail=f"Unsupported provider: {provider_kind}"
             )
 
-        # Build messages for the OpenAI-compatible SDK call
+        if use_responses_api:
+            # Responses API call: uses `input` (list of role/content items)
+            # and `instructions` (system prompt as a top-level field).
+            # Token usage fields are `input_tokens` / `output_tokens` rather
+            # than `prompt_tokens` / `completion_tokens`.
+            input_items: list[dict] = []
+            for m in messages:
+                role = m.get("role", "user")
+                if role not in ("user", "system", "developer", "assistant"):
+                    continue
+                content_text = str(m.get("content", ""))
+                if role == "assistant":
+                    # Responses input items can't carry a bare assistant role;
+                    # surface prior assistant turns as developer context.
+                    input_items.append(
+                        {
+                            "type": "message",
+                            "role": "developer",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": f"Previous assistant reply:\n{content_text}",
+                                }
+                            ],
+                        }
+                    )
+                else:
+                    input_items.append(
+                        {
+                            "type": "message",
+                            "role": role,
+                            "content": [{"type": "input_text", "text": content_text}],
+                        }
+                    )
+
+            kwargs: dict = {
+                "model": provider.model,
+                "input": input_items,
+                "instructions": "You are a helpful assistant.",
+            }
+            if max_tokens is not None:
+                kwargs["max_output_tokens"] = max_tokens
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+
+            response = provider.client.responses.create(**kwargs)
+            # `output_text` is the SDK-provided concatenation of all text
+            # output items. Fall back to walking response.output if the
+            # SDK version doesn't expose the helper.
+            content = getattr(response, "output_text", "") or ""
+            if not content:
+                for item in getattr(response, "output", []) or []:
+                    if getattr(item, "type", None) != "message":
+                        continue
+                    for piece in getattr(item, "content", []) or []:
+                        text = getattr(piece, "text", "") or ""
+                        if text:
+                            content += text
+            usage = getattr(response, "usage", None)
+            input_tokens = getattr(usage, "input_tokens", 0) if usage else 0
+            output_tokens = getattr(usage, "output_tokens", 0) if usage else 0
+            return content, input_tokens, output_tokens
+
+        # Chat Completions path (default for everything that isn't a
+        # responses-surface Azure deployment).
         sdk_messages = [{"role": "system", "content": "You are a helpful assistant."}]
         for m in messages:
             sdk_messages.append(
