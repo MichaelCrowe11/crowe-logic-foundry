@@ -57,62 +57,71 @@ deploy_oai model-router           model-router                2025-11-18        
 deploy_oai gpt-4o-realtime        gpt-4o-realtime-preview     2025-06-03         GlobalStandard 1
 deploy_oai sora-2                 sora-2                      2025-10-06         GlobalStandard 1
 
-# ── AI Foundry serverless endpoints ────────────────────────────────────
-deploy_serverless() {
-  local name=$1 registry=$2 model=$3
-  if az ml serverless-endpoint show \
-       --name "$name" --workspace-name "$HUB_WS" --resource-group "$HUB_RG" \
-       >/dev/null 2>&1; then
+# ── Phase 2: MaaS-gated deployments via cognitiveservices ──────────────
+# These call PUT on the Microsoft.CognitiveServices/accounts/deployments
+# resource directly. The publisher (Anthropic / Meta-Llama-4 / xAI /
+# Moonshot) gate requires the user to FIRST click through the Subscribe
+# flow once in Azure AI Studio per publisher:
+#
+#   https://ai.azure.com/explore/models/claude-opus-4-7/version/1/registry/azureml-anthropic
+#   https://ai.azure.com/explore/models/Llama-4-Maverick-17B-128E-Instruct-FP8/version/1/registry/azureml-meta
+#   https://ai.azure.com/explore/models/grok-4.3/version/1/registry/azureml-xai
+#   https://ai.azure.com/explore/models/Kimi-K2.6/version/1/registry/azureml-moonshotai
+#
+# After clicking "Subscribe to model" on each (one-time per subscription),
+# this script's Wave 2 deploys will succeed via the standard
+# az cognitiveservices path.
+
+SUB="$(az account show --query id -o tsv)"
+deploy_maas() {
+  local name=$1 model=$2 format=$3 ver=${4:-1} sku=${5:-GlobalStandard} cap=${6:-1}
+  if az cognitiveservices account deployment show \
+       --name "$CS_ACCT" --resource-group "$CS_RG" \
+       --deployment-name "$name" >/dev/null 2>&1; then
     skip "$name already deployed"
     return 0
   fi
-  local model_id="azureml://registries/${registry}/models/${model}/labels/latest"
-  if az ml serverless-endpoint create \
-       --name "$name" \
-       --workspace-name "$HUB_WS" --resource-group "$HUB_RG" \
-       --set model_id="$model_id" \
-       --no-wait \
-       --output none 2>err.log; then
-    done_ok "$name (queued: $registry / $model)"
+  printf "%-30s %-30s " "$name" "$model:$ver ($format)"
+  if az cognitiveservices account deployment create \
+       --name "$CS_ACCT" --resource-group "$CS_RG" \
+       --deployment-name "$name" \
+       --model-name "$model" --model-version "$ver" --model-format "$format" \
+       --sku-name "$sku" --sku-capacity "$cap" \
+       --query "properties.provisioningState" -o tsv 2>err.log; then
+    done_ok "$name"
     rm -f err.log
   else
-    fail "$name failed: $(tail -2 err.log | tr '\n' ' ')"
+    local err
+    err=$(grep -o 'InvalidModelProviderData\|ServerlessModelNotAvailable\|ServiceModelDeprecated\|UserError\|.\{80,\}' err.log | head -1)
+    fail "$name: $err"
     rm -f err.log
   fi
 }
 
-log "Wave 2 / 2 — AI Foundry serverless endpoints (queued in parallel)"
+log "Wave 2 / 2 — MaaS-gated frontier models (requires publisher subscribe per the URLs above)"
 
-# Anthropic — Prime, Forge, Haste, Vision
-deploy_serverless claude-opus-4-7   azureml-anthropic claude-opus-4-7
-deploy_serverless claude-sonnet-4-6 azureml-anthropic claude-sonnet-4-6
-deploy_serverless claude-haiku-4-5  azureml-anthropic claude-haiku-4-5
+# Anthropic — Prime, Forge, Haste
+deploy_maas claude-opus-4-7   claude-opus-4-7   Anthropic 1
+deploy_maas claude-sonnet-4-6 claude-sonnet-4-6 Anthropic 1
+deploy_maas claude-haiku-4-5  claude-haiku-4-5  Anthropic 1
 
 # Moonshot — Lunar, Thinker
-deploy_serverless Kimi-K2-6         azureml-moonshotai Kimi-K2.6
-deploy_serverless Kimi-K2-Thinking  azureml-moonshotai Kimi-K2-Thinking
+deploy_maas Kimi-K2-6        Kimi-K2.6         Moonshot 1
+deploy_maas Kimi-K2-Thinking Kimi-K2-Thinking  Moonshot 1
 
-# DeepSeek — Reason, Vector
-deploy_serverless DeepSeek-V4-Flash azureml-deepseek DeepSeek-V4-Flash
-deploy_serverless DeepSeek-V3-2     azureml-deepseek DeepSeek-V3.2
+# DeepSeek — Reason Premium, Vector Premium (V4 / V3.2 are NOT gated)
+deploy_maas DeepSeek-V4-Flash DeepSeek-V4-Flash DeepSeek 1
+deploy_maas DeepSeek-V3-2     DeepSeek-V3.2     DeepSeek 1
 
 # xAI Grok — Oracle, Sage, Coder
-deploy_serverless grok-4-3                 azureml-xai grok-4.3
-deploy_serverless grok-4-1-fast-reasoning  azureml-xai grok-4-1-fast-reasoning
-deploy_serverless grok-code-fast-1         azureml-xai grok-code-fast-1
+deploy_maas grok-4-3                 grok-4.3                xAI 1
+deploy_maas grok-4-1-fast-reasoning  grok-4-1-fast-reasoning xAI 1
+deploy_maas grok-code-fast-1         grok-code-fast-1        xAI 1
 
-# Meta / Llama — Maverick, Scout
-deploy_serverless Llama-4-Maverick azureml-meta Llama-4-Maverick-17B-128E-Instruct-FP8
-deploy_serverless Llama-4-Scout    azureml-meta Llama-4-Scout-17B-16E-Instruct
+# Meta / Llama 4 — Maverick, Scout (Llama 3.3 was NOT gated; deployed above)
+deploy_maas Llama-4-Maverick Llama-4-Maverick-17B-128E-Instruct-FP8 Meta 1
+deploy_maas Llama-4-Scout    Llama-4-Scout-17B-16E-Instruct          Meta 1
 
-# Cohere — Continental, Rerank, Embed
-deploy_serverless Cohere-Command-A    azureml-cohere COHERE-COMMAND-A
-deploy_serverless Cohere-rerank-v4    azureml-cohere Cohere-rerank-v4.0-pro
-deploy_serverless Cohere-embed-v4     azureml-cohere embed-v-4-0
-
-log "Queued. Foundry serverless endpoints provision asynchronously (~5-10 min each)."
-echo "  Poll status with:"
-echo "    az ml serverless-endpoint list --workspace-name $HUB_WS --resource-group $HUB_RG -o table"
-echo ""
-echo "  Cognitive Services deployments complete synchronously above; check with:"
+log "Done. Re-run to retry any deployments still pending publisher subscribe."
+echo "  Status:"
 echo "    az cognitiveservices account deployment list --name $CS_ACCT --resource-group $CS_RG -o table"
