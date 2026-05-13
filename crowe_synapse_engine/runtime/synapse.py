@@ -46,12 +46,37 @@ _OPENAI_COMPATIBLE_PROVIDERS: frozenset[ModelProvider] = frozenset(
 )
 
 
-def _resolve_client(provider: ModelProvider):
+# Default (endpoint_env, api_key_env) per provider. The catalog can override
+# either name per model via ResolvedModel.endpoint_env / api_key_env, which is
+# how distinct Azure resources (AZURE_OPENAI vs AZURE_CORE vs AZURE_KERNEL) or
+# distinct NIM endpoints (NVIDIA_BASE_URL vs NVIDIA_NIM_ENDPOINT) are addressed
+# without changing the runtime's per-provider client construction logic.
+_DEFAULT_ENDPOINT_ENV: dict[ModelProvider, str] = {
+    ModelProvider.AZURE_OPENAI: "AZURE_OPENAI_ENDPOINT",
+    ModelProvider.HOSTED_OPENAI: "HOSTED_OPENAI_BASE_URL",
+    ModelProvider.NVIDIA: "NVIDIA_BASE_URL",
+    ModelProvider.OLLAMA: "OLLAMA_BASE_URL",
+    ModelProvider.OPENROUTER: "OPENROUTER_BASE_URL",
+}
+
+_DEFAULT_API_KEY_ENV: dict[ModelProvider, str] = {
+    ModelProvider.AZURE_OPENAI: "AZURE_OPENAI_API_KEY",
+    ModelProvider.HOSTED_OPENAI: "OPENAI_API_KEY",
+    ModelProvider.NVIDIA: "NVIDIA_API_KEY",
+    ModelProvider.OLLAMA: "OLLAMA_API_KEY",
+    ModelProvider.OPENROUTER: "OPENROUTER_API_KEY",
+}
+
+
+def _resolve_client(provider: ModelProvider, *, resolved=None):
     """Construct an ``openai.OpenAI`` client from env for the given provider.
 
-    Each provider exposes a different (base_url, api_key) pair. Resolution
-    is env-only here; richer wiring (per-agent endpoint overrides) belongs
-    in a future config layer, not the runtime hot path.
+    The optional ``resolved`` argument is a ``ResolvedModel`` from the
+    dispatcher's catalog. When provided, its ``endpoint_env`` and
+    ``api_key_env`` override the per-provider defaults. This is what lets
+    one logical provider (``AZURE_OPENAI``) address multiple Azure
+    resources behind different env names (CroweLM Kernel uses
+    ``AZURE_CORE_*``, CroweLM Aurora uses ``AZURE_OPENAI_*``, etc.).
     """
     try:
         from openai import OpenAI
@@ -61,12 +86,19 @@ def _resolve_client(provider: ModelProvider):
             "Install with: pip install openai"
         ) from exc
 
+    endpoint_env_name = getattr(
+        resolved, "endpoint_env", None
+    ) or _DEFAULT_ENDPOINT_ENV.get(provider)
+    api_key_env_name = getattr(
+        resolved, "api_key_env", None
+    ) or _DEFAULT_API_KEY_ENV.get(provider)
+    endpoint = os.environ.get(endpoint_env_name or "", "")
+    api_key = os.environ.get(api_key_env_name or "", "")
+
     if provider == ModelProvider.AZURE_OPENAI:
-        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
-        api_key = os.environ.get("AZURE_OPENAI_API_KEY", "")
         if not endpoint or not api_key:
             raise RuntimeError(
-                "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set "
+                f"{endpoint_env_name} and {api_key_env_name} must be set "
                 "for the Azure OpenAI provider."
             )
         base_url = endpoint.rstrip("/")
@@ -79,36 +111,29 @@ def _resolve_client(provider: ModelProvider):
         return OpenAI(api_key=api_key, base_url=base_url)
 
     if provider == ModelProvider.HOSTED_OPENAI:
-        base_url = os.environ.get("HOSTED_OPENAI_BASE_URL", "https://api.openai.com/v1")
-        api_key = os.environ.get("OPENAI_API_KEY", "")
+        base_url = endpoint or "https://api.openai.com/v1"
         if not api_key:
             raise RuntimeError(
-                "OPENAI_API_KEY must be set for the hosted OpenAI provider."
+                f"{api_key_env_name} must be set for the hosted OpenAI provider."
             )
         return OpenAI(api_key=api_key, base_url=base_url)
 
     if provider == ModelProvider.NVIDIA:
-        base_url = os.environ.get(
-            "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
-        )
-        api_key = os.environ.get("NVIDIA_API_KEY", "")
+        base_url = endpoint or "https://integrate.api.nvidia.com/v1"
         if not api_key:
-            raise RuntimeError("NVIDIA_API_KEY must be set for the NIM provider.")
+            raise RuntimeError(f"{api_key_env_name} must be set for the NIM provider.")
         return OpenAI(api_key=api_key, base_url=base_url)
 
     if provider == ModelProvider.OLLAMA:
-        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        base_url = endpoint or "http://localhost:11434/v1"
         # Ollama doesn't require an API key, but the OpenAI SDK does.
-        return OpenAI(
-            api_key=os.environ.get("OLLAMA_API_KEY", "ollama"), base_url=base_url
-        )
+        return OpenAI(api_key=api_key or "ollama", base_url=base_url)
 
     if provider == ModelProvider.OPENROUTER:
-        base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        base_url = endpoint or "https://openrouter.ai/api/v1"
         if not api_key:
             raise RuntimeError(
-                "OPENROUTER_API_KEY must be set for the OpenRouter provider."
+                f"{api_key_env_name} must be set for the OpenRouter provider."
             )
         return OpenAI(api_key=api_key, base_url=base_url)
 
@@ -160,14 +185,17 @@ class SynapseRuntime:
 
         from crowe_synapse_engine.runtime.dispatcher import resolve_model
 
-        client = _resolve_client(self.provider)
-        # Resolve the logical model name to the real deployment string. Logical
-        # names like "crowelm-pro" never reach the upstream API; the resolver
-        # returns the entry's backend_name (or the name itself when no alias
-        # mapping exists). Brand Veil seam: the runtime never logs which
-        # vendor model actually answered the call.
+        # Resolve the logical model name to the real deployment string +
+        # endpoint/api-key env-var overrides. Logical names like "crowelm-pro"
+        # never reach the upstream API; the resolver returns the entry's
+        # backend_name (or the name itself when no alias mapping exists).
+        # The resolved entry also tells _resolve_client which env vars to read
+        # for the endpoint and api key, letting one provider class
+        # (AZURE_OPENAI) address multiple Azure resources (Kernel, Aurora,
+        # Apex Premium) without code changes. Brand Veil seam intact.
         resolved = resolve_model(model)
         upstream_model = resolved.backend_name if resolved is not None else model
+        client = _resolve_client(self.provider, resolved=resolved)
         resolved_tools = self.tool_registry.resolve(tools) if tools else []
         tool_schemas = [tool.to_openai_schema() for tool in resolved_tools]
 

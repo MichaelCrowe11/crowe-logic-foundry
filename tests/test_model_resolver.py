@@ -108,3 +108,63 @@ def test_resolved_model_frozen():
     )
     with pytest.raises(Exception):  # FrozenInstanceError
         resolved.backend_name = "z"  # type: ignore[misc]
+
+
+# ── Endpoint env override (Task #20) ────────────────────────────────────
+
+
+def test_resolve_client_honors_resolved_endpoint_env(monkeypatch):
+    """When ResolvedModel.endpoint_env is set, _resolve_client must read THAT
+    env var, not the per-provider default. This is what makes crowelm-kernel
+    (endpoint_env=AZURE_CORE_ENDPOINT) work alongside crowelm-aurora
+    (endpoint_env=AZURE_OPENAI_ENDPOINT) under one ModelProvider class.
+    """
+    from crowe_synapse_engine.runtime.synapse import _resolve_client
+
+    # Clear both possible env vars so the test isn't contaminated by the user's
+    # environment. Then set ONLY the catalog-specified one.
+    monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("AZURE_CORE_ENDPOINT", "https://core.example.com/openai")
+    monkeypatch.setenv("AZURE_CORE_API_KEY", "secret-kernel")
+
+    resolved = ResolvedModel(
+        canonical_name="crowelm-kernel",
+        backend_name="crowelm-kernel-v3",
+        provider=ModelProvider.AZURE_OPENAI,
+        endpoint_env="AZURE_CORE_ENDPOINT",
+        api_key_env="AZURE_CORE_API_KEY",
+    )
+    client = _resolve_client(ModelProvider.AZURE_OPENAI, resolved=resolved)
+    # The OpenAI client was constructed; base_url reflects the catalog endpoint.
+    assert "core.example.com" in str(client.base_url)
+
+
+def test_resolve_client_default_env_when_no_override(monkeypatch):
+    """When ResolvedModel is None, the per-provider defaults still apply."""
+    from crowe_synapse_engine.runtime.synapse import _resolve_client
+
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://default.example.com/openai")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "secret-default")
+
+    client = _resolve_client(ModelProvider.AZURE_OPENAI, resolved=None)
+    assert "default.example.com" in str(client.base_url)
+
+
+def test_resolve_client_missing_env_raises_with_catalog_name(monkeypatch):
+    """The error message names the catalog-specified env var, not the default,
+    so the user knows which env var to actually set."""
+    from crowe_synapse_engine.runtime.synapse import _resolve_client
+
+    monkeypatch.delenv("AZURE_CORE_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_CORE_API_KEY", raising=False)
+
+    resolved = ResolvedModel(
+        canonical_name="crowelm-kernel",
+        backend_name="crowelm-kernel-v3",
+        provider=ModelProvider.AZURE_OPENAI,
+        endpoint_env="AZURE_CORE_ENDPOINT",
+        api_key_env="AZURE_CORE_API_KEY",
+    )
+    with pytest.raises(RuntimeError, match="AZURE_CORE_ENDPOINT"):
+        _resolve_client(ModelProvider.AZURE_OPENAI, resolved=resolved)

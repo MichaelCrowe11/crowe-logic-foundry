@@ -93,7 +93,7 @@ def test_synapse_runtime_emits_aicl_intent_and_commit(monkeypatch):
         chat = SimpleNamespace(completions=FakeCompletions())
 
     monkeypatch.setattr(
-        synapse_module, "_resolve_client", lambda _provider: FakeClient()
+        synapse_module, "_resolve_client", lambda _provider, **_kw: FakeClient()
     )
     runtime = synapse_module.SynapseRuntime(provider=ModelProvider.AZURE_OPENAI)
 
@@ -172,7 +172,7 @@ def test_synapse_runtime_emits_aicl_for_tool_delegate_and_report(monkeypatch):
     tool_registry = ToolRegistry()
     tool_registry.register("web_search", "search the web", web_search)
     monkeypatch.setattr(
-        synapse_module, "_resolve_client", lambda _provider: FakeClient()
+        synapse_module, "_resolve_client", lambda _provider, **_kw: FakeClient()
     )
     runtime = synapse_module.SynapseRuntime(
         provider=ModelProvider.AZURE_OPENAI,
