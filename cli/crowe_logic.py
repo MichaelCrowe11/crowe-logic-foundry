@@ -29,18 +29,31 @@ from rich.markup import escape as _rich_escape
 from rich import box
 
 from dotenv import load_dotenv
+
 load_dotenv(os.path.join(_PACKAGE_ROOT, ".env"))
 
 # Resolve the real project root (handles pipx installs where __file__ is in site-packages)
 PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 
 from cli.branding import (
-    welcome_screen, show_welcome, show_inline_image, get_favicon,
-    session_state, reset_session_state,
-    render_tool_card, render_error as render_error_block, render_transcript_markdown,
-    render_session_hud, render_recent_actions, record_action, show_last_transcript,
-    show_retry_countdown, is_rate_limit_error,
-    build_toolbar, SlashCompleter, create_chat_keybindings,
+    welcome_screen,
+    show_welcome,
+    show_inline_image,
+    get_favicon,
+    session_state,
+    reset_session_state,
+    render_tool_card,
+    render_error as render_error_block,
+    render_transcript_markdown,
+    render_session_hud,
+    render_recent_actions,
+    record_action,
+    show_last_transcript,
+    show_retry_countdown,
+    is_rate_limit_error,
+    build_toolbar,
+    SlashCompleter,
+    create_chat_keybindings,
 )
 from cli.session_runtime import (
     build_runtime_system_instructions,
@@ -56,10 +69,10 @@ _PROVIDER_HEALTH_TTL_SECONDS = 600
 
 # Smart routing state — tracks current model position in the chain
 _model_state = {
-    "chain_index": 0,         # current position in MODEL_CHAIN
-    "active_model": None,     # deployment name of the currently active model
-    "failures": {},           # model_name -> consecutive failure count
-    "agent_id": None,         # cached agent ID (may change on fallback)
+    "chain_index": 0,  # current position in MODEL_CHAIN
+    "active_model": None,  # deployment name of the currently active model
+    "failures": {},  # model_name -> consecutive failure count
+    "agent_id": None,  # cached agent ID (may change on fallback)
     "openrouter_provider": None,  # OpenRouterProvider instance (reused for conversation)
 }
 
@@ -93,7 +106,9 @@ def _save_provider_health(data: dict) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _set_provider_health(provider: str, *, status: str, reason: str = "", model_label: str = "") -> None:
+def _set_provider_health(
+    provider: str, *, status: str, reason: str = "", model_label: str = ""
+) -> None:
     if not provider:
         return
     data = _load_provider_health()
@@ -116,7 +131,9 @@ def _clear_provider_health(provider: str) -> None:
 
 
 def _provider_health_block(provider: str) -> str | None:
-    if not provider or os.environ.get("CROWE_LOGIC_IGNORE_PROVIDER_HEALTH", "").strip() in ("1", "true", "yes"):
+    if not provider or os.environ.get(
+        "CROWE_LOGIC_IGNORE_PROVIDER_HEALTH", ""
+    ).strip() in ("1", "true", "yes"):
         return None
     data = _load_provider_health()
     entry = data.get(provider)
@@ -204,14 +221,18 @@ def _apply_provider_instructions(provider, system_instructions: str):
     return provider
 
 
-def _get_openrouter_provider(model_cfg: dict, *, system_instructions: str | None = None):
+def _get_openrouter_provider(
+    model_cfg: dict, *, system_instructions: str | None = None
+):
     """Get or create an OpenRouterProvider for the given model."""
     from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL
     from providers.openrouter import OpenRouterProvider
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     current = _model_state.get("openrouter_provider")
     if current and current.model == model_name:
         return _apply_provider_instructions(current, system_instructions)
@@ -239,7 +260,9 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
 
     model_name = model_cfg["name"]
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     current = _model_state.get("ollama_provider")
     if current and current.model == model_name:
         return _apply_provider_instructions(current, system_instructions)
@@ -256,12 +279,18 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
 
 def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a NvidiaProvider for the given model."""
-    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, provider_model_name
+    from config.agent_config import (
+        NVIDIA_NIM_ENDPOINT,
+        NVIDIA_API_KEY,
+        provider_model_name,
+    )
     from providers.nvidia import NvidiaProvider
 
     model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
         return _apply_provider_instructions(current, system_instructions)
@@ -290,12 +319,15 @@ def _get_watsonx_provider(model_cfg: dict, *, system_instructions: str | None = 
     # adapter; backend_name (upstream model id) is also accepted by resolve().
     model_name = model_cfg.get("name") or model_cfg.get("backend_name") or ""
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     current = _model_state.get("watsonx_provider")
     if current and current.model == model_name:
         return _apply_provider_instructions(current, system_instructions)
 
     from pathlib import Path as _P
+
     if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
         raise RuntimeError(
             f"watsonx model '{label}' is missing credentials — "
@@ -311,14 +343,18 @@ def _get_watsonx_provider(model_cfg: dict, *, system_instructions: str | None = 
     return provider
 
 
-def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
+def _get_hosted_openai_provider(
+    model_cfg: dict, *, system_instructions: str | None = None
+):
     """Get or create a self-hosted OpenAI-compatible provider for the given model."""
     from config.agent_config import provider_model_name
     from providers.hosted_openai import HostedOpenAIProvider
 
     model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     endpoint_var = model_cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
     api_key_var = model_cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
 
@@ -332,8 +368,7 @@ def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | N
         )
 
     current = _model_state.get("hosted_openai_provider")
-    if (current and current.model == model_name
-            and current.endpoint == endpoint):
+    if current and current.model == model_name and current.endpoint == endpoint:
         return _apply_provider_instructions(current, system_instructions)
 
     provider = HostedOpenAIProvider(
@@ -347,7 +382,9 @@ def _get_hosted_openai_provider(model_cfg: dict, *, system_instructions: str | N
     return provider
 
 
-def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | None = None):
+def _get_azure_openai_provider(
+    model_cfg: dict, *, system_instructions: str | None = None
+):
     """
     Get or create an AzureOpenAIProvider for the given model config.
 
@@ -362,7 +399,9 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
 
     model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
     api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
 
@@ -376,11 +415,14 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
         )
 
     current = _model_state.get("azure_openai_provider")
-    if (current and current.model == model_name
-            and current.endpoint == endpoint):
+    if current and current.model == model_name and current.endpoint == endpoint:
         return _apply_provider_instructions(current, system_instructions)
 
-    provider_cls = AzureResponsesProvider if model_cfg.get("surface") == "responses" else AzureOpenAIProvider
+    provider_cls = (
+        AzureResponsesProvider
+        if model_cfg.get("surface") == "responses"
+        else AzureOpenAIProvider
+    )
     provider = provider_cls(
         model=model_name,
         system_instructions=system_instructions,
@@ -405,7 +447,9 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
 
     model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
-    system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
+    system_instructions = system_instructions or build_runtime_system_instructions(
+        model_cfg
+    )
     endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
     api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
 
@@ -419,8 +463,7 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
         )
 
     current = _model_state.get("anthropic_provider")
-    if (current and current.model == model_name
-            and current.endpoint == endpoint):
+    if current and current.model == model_name and current.endpoint == endpoint:
         return _apply_provider_instructions(current, system_instructions)
 
     provider = AnthropicProvider(
@@ -446,17 +489,25 @@ def _get_provider_for_dual(model_cfg: dict, system_instructions: str):
     """
     provider_kind = model_cfg.get("provider")
     if provider_kind == "anthropic":
-        return _get_anthropic_provider(model_cfg, system_instructions=system_instructions)
+        return _get_anthropic_provider(
+            model_cfg, system_instructions=system_instructions
+        )
     if provider_kind == "azure_openai":
-        return _get_azure_openai_provider(model_cfg, system_instructions=system_instructions)
+        return _get_azure_openai_provider(
+            model_cfg, system_instructions=system_instructions
+        )
     if provider_kind == "nvidia":
         return _get_nvidia_provider(model_cfg, system_instructions=system_instructions)
     if provider_kind == "watsonx":
         return _get_watsonx_provider(model_cfg, system_instructions=system_instructions)
     if provider_kind == "openai_compat":
-        return _get_hosted_openai_provider(model_cfg, system_instructions=system_instructions)
+        return _get_hosted_openai_provider(
+            model_cfg, system_instructions=system_instructions
+        )
     if provider_kind == "openrouter":
-        return _get_openrouter_provider(model_cfg, system_instructions=system_instructions)
+        return _get_openrouter_provider(
+            model_cfg, system_instructions=system_instructions
+        )
     if provider_kind == "ollama":
         return _get_ollama_provider(model_cfg, system_instructions=system_instructions)
     raise RuntimeError(
@@ -529,7 +580,9 @@ def _show_account_status() -> None:
     try:
         from cli.foundry_api import get_client
     except Exception:
-        console.print("  [red]Account lookup unavailable: foundry_api import failed[/red]")
+        console.print(
+            "  [red]Account lookup unavailable: foundry_api import failed[/red]"
+        )
         return
 
     status = get_client().account_status()
@@ -553,7 +606,9 @@ def _show_account_status() -> None:
     tier_str = status.tier or "unknown"
     active_str = "active" if status.active else "paused"
 
-    console.print(f"  [bold #bfa669]Account[/bold #bfa669]  ·  tier: {tier_str}  ·  {active_str}")
+    console.print(
+        f"  [bold #bfa669]Account[/bold #bfa669]  ·  tier: {tier_str}  ·  {active_str}"
+    )
     console.print(f"  [dim]balance:[/dim]    {balance_str} / {allocation_str} credits")
     if status.reset_at:
         console.print(f"  [dim]resets:[/dim]     {status.reset_at}")
@@ -575,16 +630,21 @@ def _estimate_credits_for_turn(model_cfg: dict, dual_state=None) -> tuple[int, s
     except Exception:
         return (1, model_cfg.get("label", "?"))
 
-    peer = dual_state.right_cfg if (dual_state and getattr(dual_state, "active", False)) else None
+    peer = (
+        dual_state.right_cfg
+        if (dual_state and getattr(dual_state, "active", False))
+        else None
+    )
     synth = bool(dual_state and getattr(dual_state, "synth_active", False))
     primary = (
-        dual_state.left_cfg if (dual_state and getattr(dual_state, "active", False))
+        dual_state.left_cfg
+        if (dual_state and getattr(dual_state, "active", False))
         else model_cfg
     )
     cc = estimate_turn_credits(primary, dual_mode_peer_cfg=peer, synthesis=synth)
     label = primary.get("label", "?")
     if peer:
-        label = f"{primary.get('label','?')} + {peer.get('label','?')}"
+        label = f"{primary.get('label', '?')} + {peer.get('label', '?')}"
         if synth:
             label += " + synth"
     return (cc.credits, label)
@@ -633,7 +693,9 @@ def _record_turn_telemetry(model_cfg: dict, session_state: dict) -> None:
     """
     try:
         from cli.cost_model import (
-            SessionCostTracker, estimate_turn_cost, estimate_turn_credits,
+            SessionCostTracker,
+            estimate_turn_cost,
+            estimate_turn_credits,
         )
     except Exception:
         return
@@ -677,7 +739,9 @@ def _record_dual_turn_telemetry(dual_state, session_state: dict) -> None:
     """
     try:
         from cli.cost_model import (
-            SessionCostTracker, estimate_turn_cost, estimate_turn_credits,
+            SessionCostTracker,
+            estimate_turn_cost,
+            estimate_turn_credits,
         )
     except Exception:
         return
@@ -688,7 +752,10 @@ def _record_dual_turn_telemetry(dual_state, session_state: dict) -> None:
         session_state["cost_tracker"] = tracker
 
     transcripts = session_state.get("last_dual_transcripts") or {}
-    for pane_id, pane_cfg in (("left", dual_state.left_cfg), ("right", dual_state.right_cfg)):
+    for pane_id, pane_cfg in (
+        ("left", dual_state.left_cfg),
+        ("right", dual_state.right_cfg),
+    ):
         if pane_cfg is None:
             continue
         pane_data = transcripts.get(pane_id, {})
@@ -701,7 +768,10 @@ def _record_dual_turn_telemetry(dual_state, session_state: dict) -> None:
         )
         credits = estimate_turn_credits(pane_cfg)
         tracker.record_turn(
-            model_cfg=pane_cfg, cost=cost, credits=credits, dual_pair=True,
+            model_cfg=pane_cfg,
+            cost=cost,
+            credits=credits,
+            dual_pair=True,
         )
 
     if dual_state.synth_active and dual_state.synth_cfg is not None:
@@ -710,7 +780,8 @@ def _record_dual_turn_telemetry(dual_state, session_state: dict) -> None:
         synth_out = max(synth_tokens // 4, 0)
         cost = estimate_turn_cost(
             dual_state.synth_cfg.get("provider", "unknown"),
-            dual_state.synth_cfg.get("backend_name") or dual_state.synth_cfg.get("name", ""),
+            dual_state.synth_cfg.get("backend_name")
+            or dual_state.synth_cfg.get("name", ""),
             input_tokens=0,
             output_tokens=synth_out,
         )
@@ -721,10 +792,17 @@ def _record_dual_turn_telemetry(dual_state, session_state: dict) -> None:
 def _is_model_error(error_str: str) -> bool:
     """Detect errors that indicate the model itself is failing (not user error)."""
     indicators = [
-        "server_error", "Sorry, something went wrong",
-        "InternalServerError", "502", "503", "504",
-        "model_error", "overloaded", "capacity",
-        "The server had an error", "run failed",
+        "server_error",
+        "Sorry, something went wrong",
+        "InternalServerError",
+        "502",
+        "503",
+        "504",
+        "model_error",
+        "overloaded",
+        "capacity",
+        "The server had an error",
+        "run failed",
         "response.completed",
     ]
     lower = error_str.lower()
@@ -803,12 +881,16 @@ def _deploy_with_model(client, model_name: str) -> str:
 
     # Persist agent ID
     with open(AGENT_ID_FILE, "w") as f:
-        json.dump({
-            "agent_id": agent.id,
-            "name": AGENT_NAME,
-            "version": AGENT_VERSION,
-            "model": model_name,
-        }, f, indent=2)
+        json.dump(
+            {
+                "agent_id": agent.id,
+                "name": AGENT_NAME,
+                "version": AGENT_VERSION,
+                "model": model_name,
+            },
+            f,
+            indent=2,
+        )
 
     _model_state["agent_id"] = agent.id
     _model_state["active_model"] = model_name
@@ -842,6 +924,7 @@ def get_client():
     from azure.ai.agents import AgentsClient
     from azure.identity import DefaultAzureCredential
     from config.agent_config import PROJECT_ENDPOINT
+
     return AgentsClient(endpoint=PROJECT_ENDPOINT, credential=DefaultAzureCredential())
 
 
@@ -881,10 +964,12 @@ def _extract_tool_info(step_details) -> list[dict]:
         return tools
     for tc in tool_calls:
         if tc.type == "function" and hasattr(tc, "function"):
-            tools.append({
-                "name": tc.function.name,
-                "args": getattr(tc.function, "arguments", ""),
-            })
+            tools.append(
+                {
+                    "name": tc.function.name,
+                    "args": getattr(tc.function, "arguments", ""),
+                }
+            )
         elif tc.type == "code_interpreter":
             tools.append({"name": "code_interpreter", "args": ""})
         else:
@@ -894,7 +979,9 @@ def _extract_tool_info(step_details) -> list[dict]:
 
 def _render_tool_card_old(tool_info: dict):
     """Legacy tool card — replaced by hybrid cards from branding module."""
-    render_tool_card(console, tool_info["name"], tool_info.get("args", ""), status="running")
+    render_tool_card(
+        console, tool_info["name"], tool_info.get("args", ""), status="running"
+    )
 
 
 def _render_error(msg: str, title: str = "Error"):
@@ -939,26 +1026,32 @@ def _cancel_active_runs(client, thread_id: str):
 
 _tool_map_cache = None
 
+
 def _get_tool_map() -> dict:
     """Cached name -> function lookup from registered user_functions."""
     global _tool_map_cache
     if _tool_map_cache is None:
         from tools import user_functions
+
         _tool_map_cache = {f.__name__: f for f in user_functions}
     return _tool_map_cache
 
 
 _orchestrator = None
 
+
 def _get_orchestrator():
     """Lazy-loaded Crowe-Synapse orchestrator."""
     global _orchestrator
     if _orchestrator is None:
         from crowe_synapse_engine import Orchestrator
+
         _orchestrator = Orchestrator(
             db_path=os.path.expanduser("~/.crowe-logic/memory.db"),
             agents_dir=os.path.join(PROJECT_ROOT, "agents"),
-            templates_dir=os.path.join(PROJECT_ROOT, "crowe_synapse_engine", "templates"),
+            templates_dir=os.path.join(
+                PROJECT_ROOT, "crowe_synapse_engine", "templates"
+            ),
         )
     return _orchestrator
 
@@ -985,6 +1078,7 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
         # so smaller local models that serialize everything as strings
         # (e.g. limit="10" instead of limit=10) don't raise TypeError.
         from providers._shared import _coerce_tool_args
+
         args = _coerce_tool_args(func, args)
         result = func(**args)
         return str(result) if result is not None else ""
@@ -994,7 +1088,11 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
 
 def stream_response(client, thread_id: str, agent_id: str):
     from azure.ai.agents.models import (
-        MessageDeltaChunk, ThreadRun, RunStep, AgentStreamEvent, ToolOutput,
+        MessageDeltaChunk,
+        ThreadRun,
+        RunStep,
+        AgentStreamEvent,
+        ToolOutput,
     )
     from cli.renderer import StreamRenderer
 
@@ -1058,7 +1156,10 @@ def stream_response(client, thread_id: str, agent_id: str):
 
                 elif isinstance(event_data, RunStep):
                     step_id = getattr(event_data, "id", None)
-                    if event_data.type == "tool_calls" and event_data.status == "in_progress":
+                    if (
+                        event_data.type == "tool_calls"
+                        and event_data.status == "in_progress"
+                    ):
                         if step_id not in tool_calls_shown:
                             tool_calls_shown.add(step_id)
                             tools = _extract_tool_info(event_data.step_details)
@@ -1110,7 +1211,9 @@ def stream_response(client, thread_id: str, agent_id: str):
         if run.status == "completed":
             break
         if run.status != "requires_action":
-            _render_error(str(getattr(run, "last_error", run.status)), f"Run {run.status.title()}")
+            _render_error(
+                str(getattr(run, "last_error", run.status)), f"Run {run.status.title()}"
+            )
             tool_phase_ok = False
             break
 
@@ -1127,7 +1230,9 @@ def stream_response(client, thread_id: str, agent_id: str):
 
                 failed = result.startswith('{"error"')
                 render_tool_card(
-                    console, tool_name, tc.function.arguments,
+                    console,
+                    tool_name,
+                    tc.function.arguments,
                     status="fail" if failed else "ok",
                     result=result,
                     duration_ms=duration_ms,
@@ -1153,7 +1258,9 @@ def stream_response(client, thread_id: str, agent_id: str):
 
         renderer.set_spinner("thinking...")
         try:
-            client.runs.submit_tool_outputs(thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs)
+            client.runs.submit_tool_outputs(
+                thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs
+            )
             run = _poll_run(run_id)
         except Exception as e:
             renderer.stop_spinner()
@@ -1168,7 +1275,9 @@ def stream_response(client, thread_id: str, agent_id: str):
         elif run.status == "completed":
             break
         else:
-            _render_error(str(getattr(run, "last_error", run.status)), f"Run {run.status.title()}")
+            _render_error(
+                str(getattr(run, "last_error", run.status)), f"Run {run.status.title()}"
+            )
             tool_phase_ok = False
             break
 
@@ -1186,8 +1295,14 @@ def stream_response(client, thread_id: str, agent_id: str):
                                 parts.append(val.strip())
                     if parts:
                         final_text = "\n\n".join(parts)
-                        full_text = f"{full_text}\n\n{final_text}".strip() if full_text.strip() else final_text
-                        render_transcript_markdown(console, final_text, title="answer", meta="final")
+                        full_text = (
+                            f"{full_text}\n\n{final_text}".strip()
+                            if full_text.strip()
+                            else final_text
+                        )
+                        render_transcript_markdown(
+                            console, final_text, title="answer", meta="final"
+                        )
                     break
         except Exception:
             pass
@@ -1223,6 +1338,7 @@ def chat():
     # out to two models in parallel with a side-by-side pane renderer.
     from cli.dual_mode import DualModeState, handle_dual_command, run_dual_turn
     from cli.history import ensure_history
+
     dual_state = DualModeState()
     turn_history = ensure_history(session_state)
 
@@ -1287,7 +1403,9 @@ def chat():
         if user_input.lower() == "/clear":
             console.clear()
             show_welcome(AGENT_VERSION)
-            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="ready")
+            render_session_hud(
+                console, state=session_state, cwd=os.getcwd(), meta="ready"
+            )
             console.print()
             continue
         if user_input.lower() == "/status":
@@ -1314,10 +1432,13 @@ def chat():
         _lower = user_input.lower().strip()
         if _lower.startswith("/replay") or _lower.startswith("/fork"):
             replay_input = _handle_replay_or_fork(
-                user_input, turn_history, dual_state, console,
+                user_input,
+                turn_history,
+                dual_state,
+                console,
             )
             if replay_input is None:
-                continue   # error already reported
+                continue  # error already reported
             user_input = replay_input
             # Fall through to normal dispatch with the replayed prompt.
         if user_input.lower().startswith("/model"):
@@ -1329,7 +1450,11 @@ def chat():
                 # /model resolve <alias>: print what an alias currently maps to.
                 # Useful for debugging the hidden layering between _BASE_MODEL_CHAIN
                 # and models.extra.json overrides.
-                target = parts[2].strip().strip("<>").strip("'\"").strip() if len(parts) == 3 else ""
+                target = (
+                    parts[2].strip().strip("<>").strip("'\"").strip()
+                    if len(parts) == 3
+                    else ""
+                )
                 _resolve_model_alias(target)
             else:
                 # Switch to specified model. Strip surrounding angle brackets,
@@ -1355,7 +1480,9 @@ def chat():
                 if not _preflight_credits(_current_model(), dual_state=dual_state):
                     continue
                 ctx = orch.prepare(user_input, thread_id=_active_thread_id())
-                render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="dual")
+                render_session_hud(
+                    console, state=session_state, cwd=os.getcwd(), meta="dual"
+                )
                 console.print()
                 try:
                     run_dual_turn(
@@ -1391,6 +1518,7 @@ def chat():
             # CroweLM Auto: pick the best concrete tier for this user turn.
             if model_cfg.get("provider") == "auto":
                 from config.agent_config import route_candidates_for_auto
+
                 router_cfg = model_cfg
                 auto_candidates, task_class = route_candidates_for_auto(
                     user_input,
@@ -1407,7 +1535,9 @@ def chat():
             if not _preflight_credits(model_cfg):
                 continue
             ctx = orch.prepare(user_input, thread_id=_active_thread_id())
-            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
+            render_session_hud(
+                console, state=session_state, cwd=os.getcwd(), meta="turn"
+            )
             console.print()
 
             # Smart routing: try current model, fallback on failure
@@ -1417,7 +1547,9 @@ def chat():
                 # from _model_state when the user isn't on the router.
                 if router_cfg is None:
                     model_cfg = _current_model()
-                runtime_instructions = _runtime_system_instructions(model_cfg, session_state)
+                runtime_instructions = _runtime_system_instructions(
+                    model_cfg, session_state
+                )
                 last_error = None
 
                 for attempt in range(2):
@@ -1430,7 +1562,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "anthropic":
                             # ── Azure AI Foundry Anthropic (native Anthropic API) ──
@@ -1440,7 +1575,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "nvidia":
                             # ── NVIDIA NIM path (production CroweLM) ──
@@ -1450,7 +1588,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "watsonx":
                             # ── IBM watsonx.ai path (Granite + hosted Llama/Mistral) ──
@@ -1460,7 +1601,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "openai_compat":
                             # ── Crowe-managed self-hosted OpenAI-compatible stack ──
@@ -1470,7 +1614,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "openrouter":
                             # ── OpenRouter path (Chat Completions) ──
@@ -1480,7 +1627,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         elif model_cfg.get("provider") == "ollama":
                             # ── Ollama path (local CroweLM fallback) ──
@@ -1490,7 +1640,10 @@ def chat():
                             )
                             provider.add_user_message(user_input)
                             provider.stream_response(
-                                console, render_tool_card, session_state, _get_orchestrator,
+                                console,
+                                render_tool_card,
+                                session_state,
+                                _get_orchestrator,
                             )
                         else:
                             # ── Legacy Azure AI Agents Service path (provider="azure") ──
@@ -1503,7 +1656,9 @@ def chat():
                             _cancel_active_runs(client, thread.id)
                             if attempt == 0:
                                 client.messages.create(
-                                    thread_id=thread.id, role="user", content=user_input,
+                                    thread_id=thread.id,
+                                    role="user",
+                                    content=user_input,
                                 )
                             stream_response(client, thread.id, agent_id)
 
@@ -1529,13 +1684,17 @@ def chat():
                     except KeyboardInterrupt:
                         session_state["api_status"] = "ok"
                         iterm_set_var("crowe_logic_api", "ok")
-                        if (model_cfg.get("provider") == "azure"
-                                and azure_state["client"] is not None
-                                and azure_state["thread"] is not None):
+                        if (
+                            model_cfg.get("provider") == "azure"
+                            and azure_state["client"] is not None
+                            and azure_state["thread"] is not None
+                        ):
                             _cancel_active_runs(
                                 azure_state["client"], azure_state["thread"].id
                             )
-                        console.print("\n  [dim]Interrupted current turn. You can steer or ask a new question.[/dim]\n")
+                        console.print(
+                            "\n  [dim]Interrupted current turn. You can steer or ask a new question.[/dim]\n"
+                        )
                         succeeded = True
                         break
                     except Exception as stream_err:
@@ -1545,9 +1704,11 @@ def chat():
                             if attempt < 1:
                                 wait = 3
                                 show_retry_countdown(console, wait, attempt + 2, 2)
-                                if (model_cfg.get("provider") == "azure"
-                                        and azure_state["client"] is not None
-                                        and azure_state["thread"] is not None):
+                                if (
+                                    model_cfg.get("provider") == "azure"
+                                    and azure_state["client"] is not None
+                                    and azure_state["thread"] is not None
+                                ):
                                     _cancel_active_runs(
                                         azure_state["client"], azure_state["thread"].id
                                     )
@@ -1627,15 +1788,22 @@ def chat():
                         azure_state["thread"] = azure_state["client"].threads.create()
                         azure_state["agent_id"] = agent_id
                     except Exception as deploy_err:
-                        console.print(f"  [dim red]Fallback deploy failed: {_rich_escape(str(deploy_err))}[/dim red]")
+                        console.print(
+                            f"  [dim red]Fallback deploy failed: {_rich_escape(str(deploy_err))}[/dim red]"
+                        )
                         continue
 
-            console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+            console.print(
+                f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]"
+            )
         except Exception as e:
             error_msg = str(e)
-            if (azure_state["client"] is not None
-                    and azure_state["thread"] is not None
-                    and "while a run" in error_msg and "is active" in error_msg):
+            if (
+                azure_state["client"] is not None
+                and azure_state["thread"] is not None
+                and "while a run" in error_msg
+                and "is active" in error_msg
+            ):
                 client = azure_state["client"]
                 thread = azure_state["thread"]
                 agent_id = azure_state["agent_id"]
@@ -1644,7 +1812,9 @@ def chat():
                 time.sleep(1)
                 try:
                     stream_response(client, thread.id, agent_id)
-                    console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+                    console.print(
+                        f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]"
+                    )
                 except Exception as retry_err:
                     _render_error(str(retry_err))
             else:
@@ -1653,6 +1823,7 @@ def chat():
 
 def _list_tools_inline():
     from tools import user_functions
+
     table = Table(
         title="Available Tools",
         box=box.ROUNDED,
@@ -1669,7 +1840,10 @@ def _list_tools_inline():
         doc = (func.__doc__ or "").strip().split("\n")[0]
         table.add_row(func.__name__, doc)
 
-    table.add_row("[dim]code_interpreter[/dim]", "[dim]Run Python in sandbox (Azure built-in)[/dim]")
+    table.add_row(
+        "[dim]code_interpreter[/dim]",
+        "[dim]Run Python in sandbox (Azure built-in)[/dim]",
+    )
     console.print()
     console.print(table)
     console.print()
@@ -1694,12 +1868,16 @@ def _show_status_inline():
     table.add_column("Value", style="white")
     table.add_row("Active Model", model_cfg["label"])
     table.add_row("Version", AGENT_VERSION)
-    table.add_row("Steering", session_state.get("steering_instruction", "") or "[dim]off[/dim]")
+    table.add_row(
+        "Steering", session_state.get("steering_instruction", "") or "[dim]off[/dim]"
+    )
     table.add_row("Dataset Context", session_state.get("dataset_selection", "all"))
 
     # CroweLM training data summary
     try:
-        manifest_path = os.path.join(PROJECT_ROOT, "data", "crowelm-unified", "DATASET_MANIFEST.json")
+        manifest_path = os.path.join(
+            PROJECT_ROOT, "data", "crowelm-unified", "DATASET_MANIFEST.json"
+        )
         if os.path.exists(manifest_path):
             with open(manifest_path) as f:
                 manifest = json.load(f)
@@ -1707,7 +1885,9 @@ def _show_status_inline():
             table.add_row("", "")
             table.add_row("[dim]Training Data[/dim]", "")
             table.add_row("Raw Samples", f"{summary.get('total_raw_samples', 0):,}")
-            table.add_row("Training Entries", f"{summary.get('crowelm_training_entries', 0):,}")
+            table.add_row(
+                "Training Entries", f"{summary.get('crowelm_training_entries', 0):,}"
+            )
             table.add_row("Dataset Size", f"{summary.get('total_size_gb', 0):.2f} GB")
             table.add_row("Domains", summary.get("domains", ""))
     except Exception:
@@ -1717,7 +1897,11 @@ def _show_status_inline():
     table.add_row("", "")
     table.add_row("[dim]CroweLM Models[/dim]", "")
     for i, m in enumerate(MODEL_CHAIN):
-        marker = "[bold #6fbf73]>[/bold #6fbf73] " if i == _model_state["chain_index"] else "  "
+        marker = (
+            "[bold #6fbf73]>[/bold #6fbf73] "
+            if i == _model_state["chain_index"]
+            else "  "
+        )
         status_note = _model_status_note(m)
         fail_str = f"  [#bf6f6f]({status_note})[/#bf6f6f]" if status_note else ""
         table.add_row(f"{marker}{m['label']}", f"{m.get('type', 'general')}{fail_str}")
@@ -1756,7 +1940,9 @@ def _resolve_model_alias(alias: str):
     console.print(f"  [#bfa669 bold]{cfg['label']}[/#bfa669 bold]")
     console.print(f"  [dim]alias queried:[/dim]  {alias}")
     console.print(f"  [dim]provider:[/dim]       {cfg.get('provider', '?')}")
-    console.print(f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}")
+    console.print(
+        f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}"
+    )
     console.print(f"  [dim]type:[/dim]           {cfg.get('type', 'general')}")
     if chain_index is not None:
         console.print(f"  [dim]chain index:[/dim]    {chain_index + 1}")
@@ -1791,7 +1977,11 @@ def _show_models():
         status = (
             f"[#bf6f6f]{status_note}[/#bf6f6f]"
             if status_note
-            else ("[bold #6fbf73]ACTIVE[/bold #6fbf73]" if is_active else "[dim]standby[/dim]")
+            else (
+                "[bold #6fbf73]ACTIVE[/bold #6fbf73]"
+                if is_active
+                else "[dim]standby[/dim]"
+            )
         )
         table.add_row(str(i + 1), m["label"], m.get("type", "general"), status)
 
@@ -1831,40 +2021,37 @@ def _model_switch_error(model_cfg: dict) -> str | None:
         endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
         api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
         missing = [
-            var for var in (endpoint_var, api_key_var)
+            var
+            for var in (endpoint_var, api_key_var)
             if not os.environ.get(var, "").strip()
         ]
         if missing:
             return (
-                f"Cannot switch to {label} — missing "
-                + ", ".join(missing)
-                + " in .env"
+                f"Cannot switch to {label} — missing " + ", ".join(missing) + " in .env"
             )
 
     if provider == "anthropic":
         endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
         api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
         missing = [
-            var for var in (endpoint_var, api_key_var)
+            var
+            for var in (endpoint_var, api_key_var)
             if not os.environ.get(var, "").strip()
         ]
         if missing:
             return (
-                f"Cannot switch to {label} — missing "
-                + ", ".join(missing)
-                + " in .env"
+                f"Cannot switch to {label} — missing " + ", ".join(missing) + " in .env"
             )
 
     if provider == "nvidia":
         missing = [
-            var for var in ("NVIDIA_NIM_ENDPOINT", "NVIDIA_API_KEY")
+            var
+            for var in ("NVIDIA_NIM_ENDPOINT", "NVIDIA_API_KEY")
             if not os.environ.get(var, "").strip()
         ]
         if missing:
             return (
-                f"Cannot switch to {label} — missing "
-                + ", ".join(missing)
-                + " in .env"
+                f"Cannot switch to {label} — missing " + ", ".join(missing) + " in .env"
             )
 
     if provider == "openai_compat":
@@ -1885,9 +2072,12 @@ def _model_switch_error(model_cfg: dict) -> str | None:
         # watsonx.ai brands read credentials from ~/.crowe-logic/ibm.env via
         # config.crowelm.watsonx_adapter; we only verify the env file exists.
         from pathlib import Path as _P
+
         if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
-            return (f"Cannot switch to {label} — ~/.crowe-logic/ibm.env missing. "
-                    "Run the IBM Cloud setup wizard.")
+            return (
+                f"Cannot switch to {label} — ~/.crowe-logic/ibm.env missing. "
+                "Run the IBM Cloud setup wizard."
+            )
         # IBM Granite Guardian / Llama Guard moderation models require a paid
         # watsonx plan ("subscription not registered" on Lite). Block them
         # unless the user explicitly opts in via WATSONX_GUARDIAN_ENABLED=1.
@@ -1897,7 +2087,9 @@ def _model_switch_error(model_cfg: dict) -> str | None:
             or "llama-guard" in backend
             or label in ("CroweLM Warden", "CroweLM Aegis")
         )
-        if is_guardian and os.environ.get("WATSONX_GUARDIAN_ENABLED", "").strip() not in ("1", "true", "yes"):
+        if is_guardian and os.environ.get(
+            "WATSONX_GUARDIAN_ENABLED", ""
+        ).strip() not in ("1", "true", "yes"):
             return (
                 f"Cannot switch to {label} — watsonx Guardian models require a "
                 "paid IBM Cloud plan. Set WATSONX_GUARDIAN_ENABLED=1 once your "
@@ -1927,9 +2119,21 @@ def _switch_model(azure_state: dict, target: str):
 
         _model_state["chain_index"] = idx
         provider = model.get("provider")
-        if provider in ("anthropic", "azure_openai", "nvidia", "openai_compat", "openrouter", "ollama", "watsonx"):
+        if provider in (
+            "anthropic",
+            "azure_openai",
+            "nvidia",
+            "openai_compat",
+            "openrouter",
+            "ollama",
+            "watsonx",
+        ):
             # Reset cached provider so the next turn rebuilds with the new model
-            cache_key = "hosted_openai_provider" if provider == "openai_compat" else f"{provider}_provider"
+            cache_key = (
+                "hosted_openai_provider"
+                if provider == "openai_compat"
+                else f"{provider}_provider"
+            )
             _model_state[cache_key] = None
             session_state["active_model"] = model["label"]
             console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
@@ -1941,7 +2145,9 @@ def _switch_model(azure_state: dict, target: str):
                 session_state["active_model"] = model["label"]
                 console.print(f"  [#6fbf73]Now using {model['label']}[/#6fbf73]")
             except Exception as e:
-                console.print(f"  [red]Failed to activate {model['label']}: {_rich_escape(str(e))}[/red]")
+                console.print(
+                    f"  [red]Failed to activate {model['label']}: {_rich_escape(str(e))}[/red]"
+                )
         iterm_set_var("crowe_logic_model", model["label"])
 
     # Try numeric index first
@@ -1974,7 +2180,9 @@ def _switch_model(azure_state: dict, target: str):
 
 def _show_data_telemetry():
     """Display CroweLM training dataset telemetry."""
-    manifest_path = os.path.join(PROJECT_ROOT, "data", "crowelm-unified", "DATASET_MANIFEST.json")
+    manifest_path = os.path.join(
+        PROJECT_ROOT, "data", "crowelm-unified", "DATASET_MANIFEST.json"
+    )
     if not os.path.exists(manifest_path):
         console.print("  [dim]No dataset manifest found[/dim]")
         return
@@ -1998,7 +2206,9 @@ def _show_data_telemetry():
     header.add_column("Key", style="#bfa669 bold", min_width=20)
     header.add_column("Value", style="white")
     header.add_row("Raw Samples", f"{summary.get('total_raw_samples', 0):,}")
-    header.add_row("Training Entries", f"{summary.get('crowelm_training_entries', 0):,}")
+    header.add_row(
+        "Training Entries", f"{summary.get('crowelm_training_entries', 0):,}"
+    )
     header.add_row("Dataset Size", f"{summary.get('total_size_gb', 0):.2f} GB")
     header.add_row("Domains", summary.get("domains", ""))
 
@@ -2027,7 +2237,9 @@ def _show_data_telemetry():
         domain_table.add_column("Count", style="white", min_width=8, justify="right")
         domain_table.add_column("Distribution", style="#8fa4bf", min_width=30)
 
-        sorted_domains = sorted(top_domains.items(), key=lambda x: x[1], reverse=True)[:10]
+        sorted_domains = sorted(top_domains.items(), key=lambda x: x[1], reverse=True)[
+            :10
+        ]
         max_count = sorted_domains[0][1] if sorted_domains else 1
 
         for domain, count in sorted_domains:
@@ -2041,6 +2253,7 @@ def _show_data_telemetry():
     # Curated examples count
     try:
         from tools.crowelm import _count_curated_examples
+
         curated = _count_curated_examples()
         if curated > 0:
             console.print(f"\n  [#bfa669]Curated examples:[/#bfa669] {curated:,}")
@@ -2089,7 +2302,9 @@ def _show_help():
     table.add_row("/exit", "Quit")
     table.add_row("", "")
     table.add_row("[dim]Ctrl+E[/dim]", "[dim]Multi-line editor[/dim]")
-    table.add_row("[dim]Ctrl+T[/dim]", "[dim]Open the last transcript in the pager[/dim]")
+    table.add_row(
+        "[dim]Ctrl+T[/dim]", "[dim]Open the last transcript in the pager[/dim]"
+    )
     table.add_row("[dim]Ctrl+C[/dim]", "[dim]Interrupt the current turn[/dim]")
     table.add_row("[dim]Tab[/dim]", "[dim]Complete / commands[/dim]")
     console.print()
@@ -2111,6 +2326,7 @@ def run(prompt: str):
     session_state["favicon"] = favicon
     orch = _get_orchestrator()
     import uuid
+
     synthetic_thread_id = f"local-{uuid.uuid4().hex[:16]}"
     session_state["session_id"] = synthetic_thread_id
     _sync_session_runtime(session_state)
@@ -2173,7 +2389,10 @@ def run(prompt: str):
 
         provider.add_user_message(prompt)
         provider.stream_response(
-            console, render_tool_card, session_state, _get_orchestrator,
+            console,
+            render_tool_card,
+            session_state,
+            _get_orchestrator,
         )
         _clear_provider_health(provider_kind)
     except Exception as e:
@@ -2224,21 +2443,30 @@ def deploy():
     """Verify all CroweLM providers and run health checks."""
     from openai import OpenAI
     from config.agent_config import (
-        MODEL_CHAIN, OLLAMA_BASE_URL, NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY,
-        OPENROUTER_API_KEY, OPENROUTER_BASE_URL, NEON_DATABASE_URL,
-        AGENT_NAME, AGENT_VERSION,
-        AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
-        AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
-        AZURE_ANTHROPIC_ENDPOINT, AZURE_ANTHROPIC_API_KEY,
+        MODEL_CHAIN,
+        OLLAMA_BASE_URL,
+        NVIDIA_NIM_ENDPOINT,
+        NVIDIA_API_KEY,
+        OPENROUTER_API_KEY,
+        OPENROUTER_BASE_URL,
+        NEON_DATABASE_URL,
+        AGENT_NAME,
+        AGENT_VERSION,
+        AZURE_CORE_ENDPOINT,
+        AZURE_CORE_API_KEY,
+        AZURE_GLM_ENDPOINT,
+        AZURE_GLM_API_KEY,
+        AZURE_ANTHROPIC_ENDPOINT,
+        AZURE_ANTHROPIC_API_KEY,
         provider_model_name,
     )
     import requests
 
-    console.print(f"\n{'='*60}")
+    console.print(f"\n{'=' * 60}")
     console.print(f"  CROWE LOGIC — DEPLOY HEALTH CHECK")
     console.print(f"  {AGENT_NAME} v{AGENT_VERSION}")
     console.print(f"  request timeout {int(_deploy_timeout_seconds())}s")
-    console.print(f"{'='*60}\n")
+    console.print(f"{'=' * 60}\n")
 
     test_msg = [
         {"role": "system", "content": "You are helpful. Be brief."},
@@ -2267,6 +2495,7 @@ def deploy():
 
         try:
             import time
+
             start = time.monotonic()
 
             if provider == "azure_openai":
@@ -2295,10 +2524,16 @@ def deploy():
                             input="Reply with exactly: OK",
                             max_output_tokens=50,
                         )
-                        status = "live" if getattr(resp, "output_text", "").strip() else "empty"
+                        status = (
+                            "live"
+                            if getattr(resp, "output_text", "").strip()
+                            else "empty"
+                        )
                     else:
                         resp = client.chat.completions.create(
-                            model=name, messages=test_msg, **_token_limit_kwargs(name),
+                            model=name,
+                            messages=test_msg,
+                            **_token_limit_kwargs(name),
                         )
                         status = "live" if resp.choices else "empty"
 
@@ -2320,7 +2555,9 @@ def deploy():
                         max_retries=0,
                     )
                     resp = client.chat.completions.create(
-                        model=name, messages=test_msg, **_token_limit_kwargs(name),
+                        model=name,
+                        messages=test_msg,
+                        **_token_limit_kwargs(name),
                     )
                     content = (resp.choices[0].message.content or "").strip()
                     status = "live" if resp.choices else "empty"
@@ -2338,11 +2575,15 @@ def deploy():
                     base_url = endpoint.rstrip("/")
                     if not base_url.endswith("/anthropic"):
                         base_url += "/anthropic"
-                    client = Anthropic(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
+                    client = Anthropic(
+                        api_key=api_key, base_url=base_url, timeout=timeout_seconds
+                    )
                     resp = client.messages.create(
                         model=name,
                         max_tokens=50,
-                        messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+                        messages=[
+                            {"role": "user", "content": "Reply with exactly: OK"}
+                        ],
                     )
                     status = "live" if getattr(resp, "content", None) else "empty"
 
@@ -2357,7 +2598,9 @@ def deploy():
                         max_retries=0,
                     )
                     resp = client.chat.completions.create(
-                        model=name, messages=test_msg, **_token_limit_kwargs(name),
+                        model=name,
+                        messages=test_msg,
+                        **_token_limit_kwargs(name),
                     )
                     content = (resp.choices[0].message.content or "").strip()
                     status = "live" if resp.choices else "empty"
@@ -2370,7 +2613,9 @@ def deploy():
                     max_retries=0,
                 )
                 resp = client.chat.completions.create(
-                    model=name, messages=test_msg, max_tokens=50,
+                    model=name,
+                    messages=test_msg,
+                    max_tokens=50,
                 )
                 content = (resp.choices[0].message.content or "").strip()
                 status = "live" if resp.choices else "empty"
@@ -2386,20 +2631,27 @@ def deploy():
                         max_retries=0,
                     )
                     resp = client.chat.completions.create(
-                        model=name, messages=test_msg, **_token_limit_kwargs(name),
+                        model=name,
+                        messages=test_msg,
+                        **_token_limit_kwargs(name),
                     )
                     content = (resp.choices[0].message.content or "").strip()
                     status = "live" if resp.choices else "empty"
 
             elif provider == "watsonx":
                 from pathlib import Path as _P
+
                 if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
                     status = "no credentials"
                 else:
                     from providers.watsonx import WatsonxProvider
+
                     wx = WatsonxProvider(
-                        model=name, system_instructions="ping",
-                        label=label, max_tokens=8, temperature=0.0,
+                        model=name,
+                        system_instructions="ping",
+                        label=label,
+                        max_tokens=8,
+                        temperature=0.0,
                     )
                     wx.add_user_message("Reply with exactly: OK")
                     data = wx._call_watsonx(tools=None)
@@ -2451,9 +2703,13 @@ def deploy():
         try:
             resp = requests.head(NEON_DATABASE_URL, timeout=timeout_seconds)
             if resp.status_code < 500:
-                console.print("  [#6fbf73]Neon Postgres[/#6fbf73]  [dim]connected[/dim]")
+                console.print(
+                    "  [#6fbf73]Neon Postgres[/#6fbf73]  [dim]connected[/dim]"
+                )
             else:
-                console.print(f"  [#bf6f6f]Neon Postgres[/#bf6f6f]  [dim]HTTP {resp.status_code}[/dim]")
+                console.print(
+                    f"  [#bf6f6f]Neon Postgres[/#bf6f6f]  [dim]HTTP {resp.status_code}[/dim]"
+                )
         except Exception:
             console.print("  [#bf6f6f]Neon Postgres[/#bf6f6f]  [dim]unreachable[/dim]")
     else:
@@ -2471,11 +2727,13 @@ def deploy():
     console.print(f"\n  {live_count}/{total} models online")
 
     if live_count > 0:
-        console.print(f"\n{'='*60}")
+        console.print(f"\n{'=' * 60}")
         console.print(f"  READY -- Run: crowe-logic chat")
-        console.print(f"{'='*60}\n")
+        console.print(f"{'=' * 60}\n")
     else:
-        console.print(f"\n  [bold red]No models available. Check credentials and connectivity.[/bold red]\n")
+        console.print(
+            f"\n  [bold red]No models available. Check credentials and connectivity.[/bold red]\n"
+        )
 
 
 @main.group()
@@ -2515,7 +2773,9 @@ def models_sync(
     )
 
     if input_path is None and not (account and resource_group):
-        raise click.UsageError("Provide either --input or both --account and --resource-group")
+        raise click.UsageError(
+            "Provide either --input or both --account and --resource-group"
+        )
 
     try:
         deployments = parse_sync_source(
@@ -2538,7 +2798,9 @@ def models_sync(
     )
     for warning in sync_output_warnings(destination, project_root=Path(PROJECT_ROOT)):
         console.print(f"  [yellow]{_rich_escape(warning)}[/yellow]")
-    console.print("  [dim]The updated registry will be picked up on the next crowe-logic run.[/dim]\n")
+    console.print(
+        "  [dim]The updated registry will be picked up on the next crowe-logic run.[/dim]\n"
+    )
 
 
 @main.command()
@@ -2554,9 +2816,17 @@ def tools():
 
 
 @main.command(name="headless")
-@click.option("--input", "input_path", help="Read headless JSON input from this file instead of stdin")
-@click.option("--model", default="auto", show_default=True,
-              help="Model id from MODEL_CHAIN to run in headless mode")
+@click.option(
+    "--input",
+    "input_path",
+    help="Read headless JSON input from this file instead of stdin",
+)
+@click.option(
+    "--model",
+    default="auto",
+    show_default=True,
+    help="Model id from MODEL_CHAIN to run in headless mode",
+)
 def headless_cmd(input_path: str | None, model: str):
     """Run one headless JSON-streaming turn for external hosts."""
     from cli.headless import main as headless_main
@@ -2674,7 +2944,9 @@ def resume():
         return
     last = sessions[0]
     thread_id = last["thread_id"]
-    console.print(f"  [#bfa669]Resuming session:[/#bfa669] {last.get('summary', 'no summary')}")
+    console.print(
+        f"  [#bfa669]Resuming session:[/#bfa669] {last.get('summary', 'no summary')}"
+    )
     console.print(f"  [dim]Thread: {thread_id}[/dim]")
 
     # Resume is inherently tied to a legacy Azure Agents thread. Synthetic
@@ -2746,7 +3018,9 @@ def resume():
         if user_input.lower() == "/clear":
             console.clear()
             show_welcome(AGENT_VERSION)
-            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="resume")
+            render_session_hud(
+                console, state=session_state, cwd=os.getcwd(), meta="resume"
+            )
             console.print()
             continue
         if user_input.lower() == "/status":
@@ -2763,7 +3037,9 @@ def resume():
         try:
             _cancel_active_runs(client, thread_id)
             client.messages.create(thread_id=thread_id, role="user", content=user_input)
-            render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="turn")
+            render_session_hud(
+                console, state=session_state, cwd=os.getcwd(), meta="turn"
+            )
             console.print()
 
             last_error = None
@@ -2787,14 +3063,18 @@ def resume():
                 except KeyboardInterrupt:
                     _cancel_active_runs(client, thread_id)
                     session_state["api_status"] = "ok"
-                    console.print("\n  [dim]Interrupted current turn. You can steer or ask a new question.[/dim]\n")
+                    console.print(
+                        "\n  [dim]Interrupted current turn. You can steer or ask a new question.[/dim]\n"
+                    )
                     last_error = None
                     break
             if last_error:
                 session_state["api_status"] = "down"
                 _render_error(last_error, "Run Failed (after 3 attempts)")
 
-            console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+            console.print(
+                f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]"
+            )
         except Exception as e:
             error_msg = str(e)
             if "while a run" in error_msg and "is active" in error_msg:
@@ -2803,7 +3083,9 @@ def resume():
                 time.sleep(1)
                 try:
                     stream_response(client, thread_id, agent_id)
-                    console.print(f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]")
+                    console.print(
+                        f"  [dim #bfa669]{'─' * min(60, console.width)}[/dim #bfa669]"
+                    )
                 except Exception as retry_err:
                     _render_error(str(retry_err))
             else:
@@ -2825,7 +3107,9 @@ def install():
     else:
         console.print(f"\n  [bold red]{msg}[/bold red]\n")
         if "Python API" in msg:
-            console.print("  [dim]Enable at: Preferences > General > Magic > Enable Python API[/dim]\n")
+            console.print(
+                "  [dim]Enable at: Preferences > General > Magic > Enable Python API[/dim]\n"
+            )
 
 
 @iterm.command()
@@ -2871,6 +3155,7 @@ def iterm_status_cmd():
 
 # ── Substrate Album Commands ──────────────────────────────────────────────────
 
+
 @main.group()
 def substrate():
     """Substrate album engine — render, mix, and manage the 8-track concept album."""
@@ -2882,10 +3167,13 @@ def substrate_tracks_cmd():
     """List all 8 Substrate tracks with builder and render status."""
     from tools.substrate import substrate_list_tracks
     import json as _json
+
     data = _json.loads(substrate_list_tracks())
     table = Table(
         title="Substrate — Track Inventory",
-        box=box.ROUNDED, border_style="#6fbf73", show_lines=True,
+        box=box.ROUNDED,
+        border_style="#6fbf73",
+        show_lines=True,
     )
     table.add_column("#", style="bold", width=3)
     table.add_column("Title", style="#bfa669 bold", min_width=20)
@@ -2899,8 +3187,14 @@ def substrate_tracks_cmd():
         builder_ok = "[#6fbf73]✓[/]" if t["builder_exists"] else "[#bf6f6f]✗[/]"
         render_ok = "[#6fbf73]✓[/]" if t["rendered"] else "[dim]—[/]"
         table.add_row(
-            str(t["track_number"]), t["title"], t["key"], str(t["bpm"]),
-            t["duration"], str(t["instruments"]), builder_ok, render_ok,
+            str(t["track_number"]),
+            t["title"],
+            t["key"],
+            str(t["bpm"]),
+            t["duration"],
+            str(t["instruments"]),
+            builder_ok,
+            render_ok,
         )
     console.print()
     console.print(table)
@@ -2909,19 +3203,25 @@ def substrate_tracks_cmd():
 
 @substrate.command(name="render")
 @click.argument("track", default="all")
-@click.option("--vocals/--no-vocals", default=False, help="Include ElevenLabs vocal generation")
+@click.option(
+    "--vocals/--no-vocals", default=False, help="Include ElevenLabs vocal generation"
+)
 def substrate_render_cmd(track, vocals):
     """Render a track (or 'all') using abletonctl builders."""
     from tools.substrate import substrate_render_track, substrate_render_album
     import json as _json
 
-    console.print(f"\n[#bfa669 bold]Substrate Render[/] — {'full album' if track == 'all' else track}")
+    console.print(
+        f"\n[#bfa669 bold]Substrate Render[/] — {'full album' if track == 'all' else track}"
+    )
     console.print(f"[dim]Mode: {'with vocals' if vocals else 'instrumental'}[/dim]\n")
 
     if track == "all":
         result = _json.loads(substrate_render_album(instrumental=not vocals))
         for t in result["tracks"]:
-            status_icon = "[#6fbf73]✓[/]" if t["status"] == "success" else "[#bf6f6f]✗[/]"
+            status_icon = (
+                "[#6fbf73]✓[/]" if t["status"] == "success" else "[#bf6f6f]✗[/]"
+            )
             elapsed = f"{t.get('elapsed_seconds', 0):.0f}s"
             console.print(f"  {status_icon} {t['track']}  [dim]{elapsed}[/dim]")
         console.print(f"\n[dim]Total: {result['total_elapsed_seconds']:.0f}s[/dim]\n")
@@ -2941,10 +3241,12 @@ def substrate_status_cmd():
     """Check render status for all tracks."""
     from tools.substrate import substrate_render_status
     import json as _json
+
     data = _json.loads(substrate_render_status())
     table = Table(
         title="Substrate — Render Status",
-        box=box.ROUNDED, border_style="#6fbf73",
+        box=box.ROUNDED,
+        border_style="#6fbf73",
     )
     table.add_column("#", width=3)
     table.add_column("Title", style="#bfa669 bold", min_width=18)
@@ -2955,9 +3257,14 @@ def substrate_status_cmd():
     for t in data["tracks"]:
         wav_ok = "[#6fbf73]✓[/]" if t["has_master_wav"] else "[dim]—[/]"
         mp3_ok = "[#6fbf73]✓[/]" if t["has_master_mp3"] else "[dim]—[/]"
-        size = f"{t['master_size_mb']} MB" if t['master_size_mb'] > 0 else "—"
+        size = f"{t['master_size_mb']} MB" if t["master_size_mb"] > 0 else "—"
         table.add_row(
-            str(t["track_number"]), t["title"], wav_ok, mp3_ok, size, str(t["stem_count"]),
+            str(t["track_number"]),
+            t["title"],
+            wav_ok,
+            mp3_ok,
+            size,
+            str(t["stem_count"]),
         )
     console.print()
     console.print(table)
@@ -2969,8 +3276,11 @@ def substrate_vocals_cmd():
     """Check vocal clip inventory."""
     from tools.substrate import substrate_vocal_status
     import json as _json
+
     data = _json.loads(substrate_vocal_status())
-    console.print(f"\n[#bfa669 bold]Substrate Vocals[/] — {data['total_clips']} clips total\n")
+    console.print(
+        f"\n[#bfa669 bold]Substrate Vocals[/] — {data['total_clips']} clips total\n"
+    )
     for t in data["inventory"]:
         count = t["clip_count"]
         icon = "[#6fbf73]✓[/]" if count > 0 else "[dim]—[/]"
@@ -2984,6 +3294,7 @@ def substrate_open_cmd(track):
     """Open a rendered track (or 'all') in the default audio player."""
     from tools.substrate import substrate_open_track
     import json as _json
+
     result = _json.loads(substrate_open_track(track))
     if "error" in result:
         console.print(f"  [#bf6f6f]{result['error']}[/]")
@@ -2998,6 +3309,7 @@ def substrate_dna_cmd():
     """Display the Substrate DNA specification."""
     from tools.substrate import substrate_dna
     from rich.markdown import Markdown
+
     content = substrate_dna()
     if content.startswith("{"):
         console.print(f"  [#bf6f6f]{content}[/]")
@@ -3014,6 +3326,16 @@ def substrate_dna_cmd():
 from cli.cluster_cli import register as _register_cluster_cli  # noqa: E402
 
 _register_cluster_cli(main)
+
+
+# ── synapse subgroup ─────────────────────────────────────────────────────
+# Runs agents through the synapse runtime with AICL emission:
+#   crowe-logic synapse run <agent> "<prompt>"
+#   crowe-logic synapse list
+#   crowe-logic synapse show <session-id>
+from cli.synapse_cli import register as _register_synapse_cli  # noqa: E402
+
+_register_synapse_cli(main)
 
 
 if __name__ == "__main__":

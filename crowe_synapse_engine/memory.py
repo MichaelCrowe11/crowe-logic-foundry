@@ -5,6 +5,7 @@ Stores session history, tool execution logs, pipeline checkpoints,
 and project knowledge. Portable across machines via ~/.crowe-logic/memory.db.
 """
 
+import json
 import os
 import sqlite3
 import re
@@ -13,7 +14,9 @@ import uuid
 from datetime import datetime, timezone
 
 
-_MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "migrations")
+_MIGRATIONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "migrations"
+)
 _SQLITE_INCOMPATIBLE_PATTERNS = (
     re.compile(r"\bTIMESTAMPTZ\b", re.IGNORECASE),
     re.compile(r"\bJSONB\b", re.IGNORECASE),
@@ -210,8 +213,13 @@ class MemoryStore:
             self._run_migrations()
 
     def _run_migrations(self):
-        self.conn.execute("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP)")
-        applied = {row[0] for row in self.conn.execute("SELECT name FROM _migrations").fetchall()}
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP)"
+        )
+        applied = {
+            row[0]
+            for row in self.conn.execute("SELECT name FROM _migrations").fetchall()
+        }
         if os.path.isdir(_MIGRATIONS_DIR):
             for filename in sorted(os.listdir(_MIGRATIONS_DIR)):
                 if filename.endswith(".down.sql"):
@@ -223,19 +231,58 @@ class MemoryStore:
                     if not _is_sqlite_compatible(sql):
                         continue
                     self.conn.executescript(sql)
-                    self.conn.execute("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", (filename, _now()))
+                    self.conn.execute(
+                        "INSERT INTO _migrations (name, applied_at) VALUES (?, ?)",
+                        (filename, _now()),
+                    )
                     self.conn.commit()
         self._ensure_core_schema()
 
     def _ensure_core_schema(self):
         """Guarantee the portable Synapse schema even in slim packages."""
         if _CORE_TABLES.issubset(set(self._get_tables())):
+            self._ensure_aicl_schema()
             return
         self.conn.executescript(_CORE_SCHEMA)
         self.conn.commit()
+        self._ensure_aicl_schema()
+
+    def _ensure_aicl_schema(self):
+        """Create the aicl_messages table on stores that predate it.
+
+        Idempotent. Runs every startup so existing memory stores gain the
+        table without an explicit migration. The schema mirrors AICLMessage
+        fields verbatim; JSON-typed columns hold the list/dict fields.
+        """
+        self.conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS aicl_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT REFERENCES sessions(id),
+                timestamp TEXT NOT NULL,
+                act TEXT NOT NULL,
+                from_agent TEXT NOT NULL,
+                to_agent TEXT,
+                subject TEXT NOT NULL,
+                confidence REAL DEFAULT 1.0,
+                parent_message_id TEXT,
+                evidence TEXT,
+                constraints TEXT,
+                requires_human INTEGER DEFAULT 0,
+                payload TEXT,
+                dialect TEXT DEFAULT 'core',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_aicl_session ON aicl_messages(session_id);
+            CREATE INDEX IF NOT EXISTS idx_aicl_parent ON aicl_messages(parent_message_id);
+            """
+        )
+        self.conn.commit()
 
     def _get_tables(self) -> list[str]:
-        rows = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        rows = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
         return [r[0] for r in rows]
 
     # -- Sessions --
@@ -257,7 +304,9 @@ class MemoryStore:
         self.conn.commit()
 
     def get_session(self, session_id: str) -> dict | None:
-        row = self.conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        row = self.conn.execute(
+            "SELECT * FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
         return dict(row) if row else None
 
     def get_recent_sessions(self, limit: int = 10) -> list[dict]:
@@ -266,19 +315,97 @@ class MemoryStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    # -- Tool Executions --
+    # -- AICL Messages --
 
-    def record_tool_execution(self, session_id: str | None, tool_name: str,
-                              arguments: str = "", output: str = "",
-                              duration_ms: int = 0, status: str = "success",
-                              pipeline_run_id: str | None = None):
+    def record_aicl_message(self, session_id: str | None, message) -> None:
+        """Persist one AICLMessage. ``message`` is an aicl.AICLMessage."""
+        d = message.to_dict()
         self.conn.execute(
-            "INSERT INTO tool_executions (session_id, pipeline_run_id, tool_name, arguments, output, duration_ms, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (session_id, pipeline_run_id, tool_name, arguments, output, duration_ms, status),
+            """
+            INSERT INTO aicl_messages (
+                id, session_id, timestamp, act, from_agent, to_agent, subject,
+                confidence, parent_message_id, evidence, constraints,
+                requires_human, payload, dialect
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                d["id"],
+                session_id,
+                d["timestamp"],
+                d["act"],
+                d["from_agent"],
+                d["to_agent"],
+                d["subject"],
+                d["confidence"],
+                d["parent_message_id"],
+                json.dumps(d["evidence"]),
+                json.dumps(d["constraints"]),
+                int(d["requires_human"]),
+                json.dumps(d["payload"]),
+                d["dialect"],
+            ),
         )
         self.conn.commit()
 
-    def get_tool_executions(self, session_id: str | None = None, limit: int = 100) -> list[dict]:
+    def get_aicl_messages(self, session_id: str) -> list[dict]:
+        """Load the AICL messages for one session as plain dicts."""
+        rows = self.conn.execute(
+            "SELECT * FROM aicl_messages WHERE session_id = ? ORDER BY timestamp ASC, rowid ASC",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_aicl_conversation(self, session_id: str):
+        """Load a session's AICL messages as a ``Conversation`` object."""
+        from crowe_synapse_engine.aicl import AICLMessage, Conversation
+
+        conv = Conversation(topic=f"session:{session_id}")
+        for row in self.get_aicl_messages(session_id):
+            data = dict(row)
+            for jcol in ("evidence", "constraints", "payload"):
+                raw = data.get(jcol)
+                if isinstance(raw, str):
+                    try:
+                        data[jcol] = (
+                            json.loads(raw)
+                            if raw
+                            else ({} if jcol == "payload" else [])
+                        )
+                    except json.JSONDecodeError:
+                        data[jcol] = {} if jcol == "payload" else []
+            data["requires_human"] = bool(data.get("requires_human", 0))
+            conv.append(AICLMessage.from_dict(data))
+        return conv
+
+    # -- Tool Executions --
+
+    def record_tool_execution(
+        self,
+        session_id: str | None,
+        tool_name: str,
+        arguments: str = "",
+        output: str = "",
+        duration_ms: int = 0,
+        status: str = "success",
+        pipeline_run_id: str | None = None,
+    ):
+        self.conn.execute(
+            "INSERT INTO tool_executions (session_id, pipeline_run_id, tool_name, arguments, output, duration_ms, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                pipeline_run_id,
+                tool_name,
+                arguments,
+                output,
+                duration_ms,
+                status,
+            ),
+        )
+        self.conn.commit()
+
+    def get_tool_executions(
+        self, session_id: str | None = None, limit: int = 100
+    ) -> list[dict]:
         if session_id:
             rows = self.conn.execute(
                 "SELECT * FROM tool_executions WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -293,7 +420,9 @@ class MemoryStore:
 
     # -- Pipeline Runs --
 
-    def start_pipeline_run(self, session_id: str, pipeline_name: str, steps: str) -> str:
+    def start_pipeline_run(
+        self, session_id: str, pipeline_name: str, steps: str
+    ) -> str:
         run_id = str(uuid.uuid4())
         self.conn.execute(
             "INSERT INTO pipeline_runs (id, session_id, pipeline_name, steps) VALUES (?, ?, ?, ?)",
@@ -302,7 +431,9 @@ class MemoryStore:
         self.conn.commit()
         return run_id
 
-    def complete_pipeline_run(self, run_id: str, status: str = "completed", result: str = ""):
+    def complete_pipeline_run(
+        self, run_id: str, status: str = "completed", result: str = ""
+    ):
         self.conn.execute(
             "UPDATE pipeline_runs SET status = ?, result = ?, duration_ms = 0 WHERE id = ?",
             (status, result, run_id),
@@ -310,12 +441,16 @@ class MemoryStore:
         self.conn.commit()
 
     def get_pipeline_run(self, run_id: str) -> dict | None:
-        row = self.conn.execute("SELECT * FROM pipeline_runs WHERE id = ?", (run_id,)).fetchone()
+        row = self.conn.execute(
+            "SELECT * FROM pipeline_runs WHERE id = ?", (run_id,)
+        ).fetchone()
         return dict(row) if row else None
 
     # -- Checkpoints --
 
-    def save_checkpoint(self, pipeline_run_id: str, step_index: int, state_snapshot: str):
+    def save_checkpoint(
+        self, pipeline_run_id: str, step_index: int, state_snapshot: str
+    ):
         self.conn.execute(
             "INSERT INTO checkpoints (pipeline_run_id, step_index, state_snapshot) VALUES (?, ?, ?)",
             (pipeline_run_id, step_index, state_snapshot),
@@ -339,17 +474,27 @@ class MemoryStore:
         self.conn.commit()
 
     def get_knowledge(self, key: str) -> str | None:
-        row = self.conn.execute("SELECT value FROM project_knowledge WHERE key = ?", (key,)).fetchone()
+        row = self.conn.execute(
+            "SELECT value FROM project_knowledge WHERE key = ?", (key,)
+        ).fetchone()
         return row[0] if row else None
 
     def get_all_knowledge(self) -> list[dict]:
-        rows = self.conn.execute("SELECT * FROM project_knowledge ORDER BY updated_at DESC").fetchall()
+        rows = self.conn.execute(
+            "SELECT * FROM project_knowledge ORDER BY updated_at DESC"
+        ).fetchall()
         return [dict(r) for r in rows]
 
     # -- Agent Delegations --
 
-    def record_delegation(self, session_id: str, agent_name: str, task: str,
-                          result: str = "", duration_ms: int = 0):
+    def record_delegation(
+        self,
+        session_id: str,
+        agent_name: str,
+        task: str,
+        result: str = "",
+        duration_ms: int = 0,
+    ):
         self.conn.execute(
             "INSERT INTO agent_delegations (session_id, agent_name, task, result, duration_ms) VALUES (?, ?, ?, ?, ?)",
             (session_id, agent_name, task, result, duration_ms),
@@ -368,4 +513,7 @@ def _is_sqlite_compatible(sql: str) -> bool:
     sql_without_line_comments = "\n".join(
         line for line in sql.splitlines() if not line.lstrip().startswith("--")
     )
-    return not any(pattern.search(sql_without_line_comments) for pattern in _SQLITE_INCOMPATIBLE_PATTERNS)
+    return not any(
+        pattern.search(sql_without_line_comments)
+        for pattern in _SQLITE_INCOMPATIBLE_PATTERNS
+    )
