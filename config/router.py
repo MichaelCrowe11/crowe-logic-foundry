@@ -41,6 +41,13 @@ from typing import Callable, Iterable
 from config.agent_config import MODEL_CHAIN, resolve_model_config
 
 
+# ── Confidence threshold ─────────────────────────────────────────────
+
+LOW_CONFIDENCE_THRESHOLD: float = 0.55
+"""Prompts classified below this confidence are candidates for the
+Synapse Phase 2 DeepParallel fallback (when env flag is on)."""
+
+
 # ── Intent classification ─────────────────────────────────────────────
 
 _CAPABILITY_PATTERNS = (
@@ -113,10 +120,48 @@ def _contains_any(text: str, keywords: Iterable[str]) -> bool:
     return any(k in text for k in keywords)
 
 
+# Per-intent confidence ceilings. The classifier returns the highest score
+# in this table for which all signals fired. Lower-confidence intents
+# represent ambiguous inputs the router should flag for promotion review.
+_INTENT_CONFIDENCE: dict[str, float] = {
+    "arithmetic": 0.99,           # regex unambiguous
+    "trivial": 0.98,              # exact phrase match
+    "vision": 0.92,               # explicit image keyword
+    "capability_question": 0.85,  # pattern + length cap
+    "code": 0.85,                 # code fence or strong keyword
+    "domain": 0.80,               # domain keyword present
+    "deep": 0.78,                 # explicit "architecture/strategy"
+    "general": 0.65,              # default for medium prompts
+    "ambiguous": 0.40,            # short, unclear shape
+}
+
+# Confidence threshold below which the router decision is logged as a
+# low-confidence dispatch. Used by adaptive-promotion logic and by the
+# auto-route badge to highlight uncertain routes.
+LOW_CONFIDENCE_THRESHOLD: float = 0.60
+
+
 def classify_prompt(text: str) -> str:
     """Return a single intent label for ``text``. Order: specific → general."""
+    intent, _ = classify_with_confidence(text)
+    return intent
+
+
+def classify_with_confidence(text: str) -> tuple[str, float]:
+    """Return (intent, confidence in [0, 1]).
+
+    Confidence is calibrated per signal:
+    - Regex/exact-match intents (arithmetic, trivial) score near 1.0.
+    - Keyword-density intents (domain) score higher when multiple
+      keywords fire than when only one does.
+    - Length-gated intents (capability_question) lose confidence as the
+      prompt gets longer (long capability questions are often disguised
+      domain prompts).
+    - Default fallthroughs (general, ambiguous) carry intrinsically low
+      confidence so the auto-router knows to escalate or surface.
+    """
     if not text or not text.strip():
-        return "ambiguous"
+        return ("ambiguous", _INTENT_CONFIDENCE["ambiguous"])
 
     raw = text.strip()
     lower = raw.lower()
@@ -125,32 +170,128 @@ def classify_prompt(text: str) -> str:
     padded = f" {lower} "
 
     if _ARITHMETIC_PATTERN.match(raw) or _ARITHMETIC_INLINE_PATTERN.match(raw):
-        return "arithmetic"
+        return ("arithmetic", _INTENT_CONFIDENCE["arithmetic"])
 
     if lower in _TRIVIAL_PHRASES:
-        return "trivial"
+        return ("trivial", _INTENT_CONFIDENCE["trivial"])
     if len(lower) <= 4 and lower.isalpha():
-        return "trivial"
+        return ("trivial", 0.85)  # short alpha words less certain than exact matches
 
     if _matches_any(lower, _CAPABILITY_PATTERNS) and len(raw) < 200:
-        return "capability_question"
+        # Short capability questions are highly confident; longer ones drift
+        # toward "this might really be a domain ask in disguise."
+        if len(raw) < 80:
+            return ("capability_question", _INTENT_CONFIDENCE["capability_question"])
+        return ("capability_question", 0.65)
 
     if _contains_any(padded, _VISION_KEYWORDS):
-        return "vision"
+        return ("vision", _INTENT_CONFIDENCE["vision"])
 
-    if _contains_any(padded, _CODE_KEYWORDS) or _CODE_FENCES.search(raw):
-        return "code"
+    if _CODE_FENCES.search(raw):
+        return ("code", _INTENT_CONFIDENCE["code"])  # fenced code is strong signal
+    if _contains_any(padded, _CODE_KEYWORDS):
+        return ("code", 0.72)  # keyword-only is weaker than fence
 
-    if _contains_any(padded, _DOMAIN_KEYWORDS):
-        return "domain"
+    domain_hits = sum(1 for k in _DOMAIN_KEYWORDS if k in lower)
+    if domain_hits >= 2:
+        return ("domain", _INTENT_CONFIDENCE["domain"])
+    if domain_hits == 1:
+        return ("domain", 0.62)
 
     if _contains_any(padded, _DEEP_KEYWORDS):
-        return "deep"
+        return ("deep", _INTENT_CONFIDENCE["deep"])
 
     if len(raw) < 25:
-        return "ambiguous"
+        return ("ambiguous", _INTENT_CONFIDENCE["ambiguous"])
 
-    return "general"
+    return ("general", _INTENT_CONFIDENCE["general"])
+
+
+# ── Confidence scoring ────────────────────────────────────────────────
+
+# Base confidence per intent. More specific intents get higher base
+# confidence because their pattern match is more discriminating.
+_INTENT_BASE_CONFIDENCE: dict[str, float] = {
+    "arithmetic": 0.97,
+    "trivial": 0.95,
+    "capability_question": 0.85,
+    "vision": 0.90,
+    "code": 0.88,
+    "domain": 0.80,
+    "deep": 0.82,
+    "ambiguous": 0.30,
+    "general": 0.60,
+}
+
+# Bonus per distinct keyword group matched (domain and code prompts only).
+_DOMAIN_KEYWORD_GROUPS = (
+    ("mushroom", "mycology", "myceli", "fruiting", "substrate", "spawn",
+     "lion's mane", "lions mane", "oyster", "shiitake", "reishi",
+     "grow log", "grow tent", "incubation", "pinhead", "primordia"),
+    ("psilocybin", "psilocin", "tryptamine", "serotonin receptor",
+     "drug discovery", "lead optimization", "ic50", "binding affinity",
+     "docking", "smiles", "compound", "scaffold"),
+    ("assay", "ph", "agar", "sterilization", "autoclave", "petri",
+     "fermentation", "extract", "potency"),
+)
+
+_CODE_KEYWORD_GROUPS = (
+    (" refactor", " rewrite", " implement", " function ", " class ", " method "),
+    (" bug ", " stack trace", " compile", " lint", " test ", " unit test"),
+    (" regex", " snippet", " endpoint", " schema", " migration", " diff "),
+)
+
+
+def _count_keyword_groups(text: str, groups: tuple[tuple[str, ...], ...]) -> int:
+    """Count how many distinct keyword groups contain at least one match."""
+    count = 0
+    lower = text.lower()
+    padded = f" {lower} "
+    for group in groups:
+        if any(k in padded for k in group):
+            count += 1
+    return count
+
+
+def classify_with_confidence(text: str) -> tuple[str, float]:
+    """Classify ``text`` and return ``(intent, confidence)``.
+
+    Confidence is a heuristic score in [0.0, 1.0]:
+    - Specific pattern matches (arithmetic, trivial) start near 1.0.
+    - Keyword-driven intents (domain, code) scale with keyword density.
+    - Ambiguous prompts score low (below LOW_CONFIDENCE_THRESHOLD).
+    - General prompts score moderate (~0.60).
+    """
+    if not text or not text.strip():
+        return ("ambiguous", 0.10)
+
+    intent = classify_prompt(text)
+    base = _INTENT_BASE_CONFIDENCE.get(intent, 0.50)
+
+    # Boost domain confidence for keyword density.
+    if intent == "domain":
+        matched = _count_keyword_groups(text, _DOMAIN_KEYWORD_GROUPS)
+        bonus = min(matched * 0.05, 0.15)
+        base = min(base + bonus, 0.97)
+
+    # Boost code confidence for keyword density and fence presence.
+    if intent == "code":
+        matched = _count_keyword_groups(text, _CODE_KEYWORD_GROUPS)
+        bonus = min(matched * 0.04, 0.10)
+        if _CODE_FENCES.search(text):
+            bonus += 0.05
+        base = min(base + bonus, 0.97)
+
+    # Capability questions with short prompts are more certain.
+    if intent == "capability_question" and len(text.strip()) < 50:
+        base = min(base + 0.08, 0.97)
+
+    # Long capability questions that contain domain keywords are less
+    # certain as capability questions (they might really be domain prompts).
+    if intent == "capability_question" and len(text.strip()) >= 200:
+        base = max(base - 0.20, 0.40)
+
+    return (intent, round(base, 3))
 
 
 # ── Intent → tier preference ──────────────────────────────────────────

@@ -2,14 +2,14 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile.control-plane"
+    "dockerfilePath": "Dockerfile.studio"
   },
   "deploy": {
-    "startCommand": "./scripts/control_plane_entrypoint.sh",
-    "healthcheckPath": "/health",
-    "healthcheckTimeout": 60,
+    "startCommand": "python -m cli.openai_bridge",
+    "healthcheckPath": "/healthz",
+    "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5,
+    "restartPolicyMaxRetries": 3,
     "numReplicas": 1
   }
 }

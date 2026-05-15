@@ -35,6 +35,13 @@ if str(_FOUNDRY_ROOT) not in sys.path:
 
 app = FastAPI(title="Crowe Logic OpenAI Bridge", version="0.1.0")
 
+# Mount dashboard routes (Substrate Studio, etc.)
+try:
+    from dashboard import router as dashboard_router
+    app.include_router(dashboard_router)
+except Exception:
+    pass  # Dashboard is optional
+
 MODELS = [
     {"id": "crowelm-auto",    "label": "CroweLM Auto"},
     {"id": "crowelm-supreme", "label": "CroweLM Supreme"},
@@ -229,8 +236,8 @@ async def chat_completions(req: Request):
 
 def main() -> int:
     import uvicorn
-    host = os.environ.get("CROWE_BRIDGE_HOST", "127.0.0.1")
-    port = int(os.environ.get("CROWE_BRIDGE_PORT", "8011"))
+    host = os.environ.get("CROWE_BRIDGE_HOST", "0.0.0.0")
+    port = int(os.environ.get("CROWE_BRIDGE_PORT", os.environ.get("PORT", "8011")))
     uvicorn.run("cli.openai_bridge:app", host=host, port=port, log_level="info")
     return 0
 

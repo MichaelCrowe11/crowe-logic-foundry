@@ -3342,5 +3342,41 @@ def substrate_dna_cmd():
         console.print(Markdown(content))
 
 
+@main.command()
+@click.option("--port", default=8011, help="Port for the Foundry dashboard server")
+@click.option("--open/--no-open", default=True, help="Open browser automatically")
+def studio(port, open):
+    """Launch the Crowe Studio Control Center in your browser."""
+    import subprocess
+    import time
+    import socket
+
+    # Check if Foundry API is already running
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    foundry_running = sock.connect_ex(("127.0.0.1", port)) == 0
+    sock.close()
+
+    if not foundry_running:
+        console.print(f"[dim]Foundry API not detected on port {port}. Starting dev server...[/dim]")
+        # Start the Foundry bridge using the venv python
+        py = sys.executable
+        subprocess.Popen(
+            [py, "-m", "cli.openai_bridge"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(3)
+
+    url = f"http://127.0.0.1:{port}/dashboard/substrate"
+    console.print(f"\n[#bfa669 bold]Talon Studio[/] — Substrate Album Engine")
+    console.print(f"[dim]URL: {url}[/dim]\n")
+
+    if open:
+        subprocess.run(["open", url], check=False)
+        console.print("[dim]Browser opened.[/dim]\n")
+    else:
+        console.print(f"[dim]Open: {url}[/dim]\n")
+
+
 if __name__ == "__main__":
     main()
