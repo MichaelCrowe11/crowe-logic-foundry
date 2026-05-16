@@ -870,15 +870,54 @@ _TIER_RUNTIME_PARAMS: dict[str, dict] = {
 }
 
 
+# Backend deployments that use the OpenAI Responses-style reasoning API
+# semantics on chat/completions: they accept max_completion_tokens (not
+# max_tokens) and consume hidden reasoning tokens before producing visible
+# content. Calling them with the chat-completions defaults yields empty
+# `content` because the entire budget is spent on internal reasoning. The
+# match is by ``backend_name`` (deployment name), not display name, so this
+# tracks what's actually deployed regardless of the friendly label.
+_REASONING_BACKENDS = frozenset({
+    # OpenAI gpt-5.4 family (all reasoning).
+    "gpt-5.4", "gpt-5.4-pro", "gpt-5.4-nano", "gpt-5.4-mini",
+    # MoonshotAI Kimi on Azure Foundry MaaS.
+    "Kimi-K2.6", "Kimi-K2-6", "Kimi-K2.5",
+    # DeepSeek-R1 series; V3/V4 are chat models, not reasoning.
+    "DeepSeek-R1-0528", "DeepSeek-R1",
+    # Grok reasoning variants only.
+    "grok-4-1-fast-reasoning", "grok-4-20-reasoning",
+})
+
+
+def _is_reasoning_backend(backend_name: str) -> bool:
+    return backend_name in _REASONING_BACKENDS
+
+
 def tier_runtime_params(model_cfg: dict | None) -> dict:
     """Return API params (temperature, top_p, max_tokens) for a model's tier.
 
+    For reasoning-class deployments (gpt-5.4 family, Kimi-K2.x, DeepSeek-R1,
+    grok-reasoning variants), the params are rewritten to use
+    ``max_completion_tokens`` instead of ``max_tokens`` and to set
+    ``reasoning_effort="low"``. Without this rewrite, those deployments burn
+    the entire token budget on hidden reasoning and return empty content.
+
     Returns an empty dict if the cfg is None or the type has no tier
-    profile defined — providers should treat that as "use defaults".
+    profile defined - providers should treat that as "use defaults".
     """
     if not model_cfg:
         return {}
-    return dict(_TIER_RUNTIME_PARAMS.get(model_cfg.get("type", ""), {}))
+    params = dict(_TIER_RUNTIME_PARAMS.get(model_cfg.get("type", ""), {}))
+    backend_name = model_cfg.get("backend_name", "") or model_cfg.get("name", "")
+    if params and _is_reasoning_backend(backend_name):
+        # Convert max_tokens semantics. Reasoning models need a larger ceiling
+        # because the hidden reasoning tokens count against this budget.
+        max_tokens = params.pop("max_tokens", 4096)
+        params["max_completion_tokens"] = max(max_tokens, 8192)
+        params["reasoning_effort"] = "low"
+        # Temperature is ignored by reasoning models on the responses path
+        # but accepted on chat-completions; leave it for non-strict backends.
+    return params
 
 
 def tier_runtime_params_for_model(selector: str) -> dict:
