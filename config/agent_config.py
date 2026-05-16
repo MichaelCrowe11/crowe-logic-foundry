@@ -628,6 +628,18 @@ def _merge_model_chain(base_chain: list[dict], extra_models: list[dict]) -> list
             }
             if extra_keys & existing_keys:
                 combined = dict(existing)
+                # If the override declares a ``name`` and does not carry an
+                # explicit ``backend_name``, the override's intent is "use
+                # this name as the deployment identifier" — so the existing
+                # backend_name (tied to the previous routing intent) must
+                # be dropped. Otherwise the old vendor/model path leaks
+                # through and the actual deployment never gets called.
+                # Auto-synced entries from ``crowe-logic models sync`` are
+                # the common case; they bring real Azure deployment names
+                # forward but no backend_name, so dropping the existing one
+                # lets ``provider_model_name`` fall back to ``name``.
+                if extra.get("name") and "backend_name" not in extra:
+                    combined.pop("backend_name", None)
                 combined.update(extra)
                 combined["aliases"] = list(dict.fromkeys([
                     *existing.get("aliases", []),
