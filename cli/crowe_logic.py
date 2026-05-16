@@ -2558,6 +2558,25 @@ def _classify_deploy_error(error: Exception) -> str:
     return "error"
 
 
+def _classify_deployment_kind(model_name: str) -> str:
+    """Identify the API surface a deployment expects based on its name.
+
+    Foundry MaaS hosts non-chat deployments (embedding, rerank, image,
+    video) under the same resource as chat models. The deploy health check
+    must use the right OpenAI SDK method for each — calling
+    chat.completions.create against an embedding deployment fails with
+    DeploymentNotFound, hiding what is in fact a live model.
+    """
+    lname = model_name.lower()
+    if "rerank" in lname:
+        return "rerank"
+    if "embed" in lname or "embedding" in lname:
+        return "embedding"
+    if lname.startswith("sora") or "sora-" in lname:
+        return "image"
+    return "chat"
+
+
 @main.command()
 def deploy():
     """Verify all CroweLM providers and run health checks."""
@@ -2587,11 +2606,16 @@ def deploy():
 
     def _token_limit_kwargs(model_name: str) -> dict:
         """
-        GPT-5 and o-series reasoning models reject `max_tokens` and require
-        `max_completion_tokens`. Everything else still uses `max_tokens`.
+        Newer OpenAI-family deployments (gpt-5+, o-series, gpt-chat-latest)
+        reject `max_tokens` and require `max_completion_tokens`. Everything
+        else still uses `max_tokens`.
         """
         lname = model_name.lower()
-        if lname.startswith(("gpt-5", "o1", "o3", "o4")) or "gpt-5" in lname:
+        if (
+            lname.startswith(("gpt-5", "o1", "o3", "o4"))
+            or "gpt-5" in lname
+            or "gpt-chat-latest" in lname
+        ):
             return {"max_completion_tokens": 50}
         return {"max_tokens": 50}
 
@@ -2629,6 +2653,7 @@ def deploy():
                         timeout=timeout_seconds,
                         max_retries=0,
                     )
+                    kind = _classify_deployment_kind(name)
                     if model.get("surface") == "responses":
                         resp = client.responses.create(
                             model=name,
@@ -2636,6 +2661,52 @@ def deploy():
                             max_output_tokens=50,
                         )
                         status = "live" if getattr(resp, "output_text", "").strip() else "empty"
+                    elif kind == "embedding":
+                        # Cohere Embed v4 on Azure rejects bare-string input —
+                        # the ``input`` must be a list, and the request must
+                        # carry an ``input_type`` from {'text', 'query',
+                        # 'document'} (not Cohere's standard search_document
+                        # / classification / clustering / image values). The
+                        # OpenAI text-embedding-* family accepts list-form
+                        # ``input`` and ignores extra_body, so the same call
+                        # path is safe for both deployment families.
+                        resp = client.embeddings.create(
+                            model=name, input=["ping"],
+                            extra_body={"input_type": "document"},
+                        )
+                        status = "live" if resp.data else "empty"
+                    elif kind == "image":
+                        # Image / video deployments (sora-2): a real generation
+                        # call costs money and seconds. The cheapest health
+                        # probe is to list the deployment's metadata via the
+                        # generic models endpoint — if the deployment isn't
+                        # reachable we'll see 404; otherwise the deployment
+                        # is callable and we mark live without paying for a
+                        # real generation.
+                        client.models.retrieve(name)
+                        status = "live"
+                    elif kind == "rerank":
+                        # Cohere Rerank V4 on Azure exposes a non-OpenAI-shaped
+                        # endpoint at /openai/v1/rerank — the OpenAI SDK has no
+                        # client.rerank, so fall back to a raw HTTP POST. A
+                        # one-document rerank costs essentially nothing.
+                        import httpx
+                        rerank_url = f"{base_url}/rerank"
+                        rerank_resp = httpx.post(
+                            rerank_url,
+                            headers={"api-key": api_key, "Content-Type": "application/json"},
+                            json={"model": name, "query": "ping", "documents": ["pong"]},
+                            timeout=timeout_seconds,
+                        )
+                        if rerank_resp.status_code == 200:
+                            status = "live"
+                        elif rerank_resp.status_code == 404:
+                            status = "not found"
+                        else:
+                            raise RuntimeError(
+                                f"rerank probe HTTP {rerank_resp.status_code}: "
+                                f"{rerank_resp.text[:200]}"
+                            )
                     else:
                         resp = client.chat.completions.create(
                             model=name, messages=test_msg, **_token_limit_kwargs(name),
@@ -2753,6 +2824,10 @@ def deploy():
 
         except Exception as e:
             status = _classify_deploy_error(e)
+            # Surface the underlying exception when DEPLOY_VERBOSE is set, so
+            # triage runs can see WHY a tier shows the generic "error" status.
+            if os.environ.get("DEPLOY_VERBOSE", "").lower() in {"1", "true", "yes"}:
+                console.print(f"    [dim red]{label}: {type(e).__name__}: {e!s:.300}[/dim red]")
 
         results.append((label, status, latency))
 
