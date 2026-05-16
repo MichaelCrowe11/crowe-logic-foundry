@@ -184,6 +184,11 @@ def _auto_route_enabled() -> bool:
     return val in ("1", "true", "yes", "on")
 
 
+def _auto_route_available(model_cfg: dict) -> bool:
+    """Return True when a routed model is usable in the current environment."""
+    return _model_switch_error(model_cfg) is None
+
+
 def _apply_route_decision(decision, session_state: dict, prompt: str = "") -> bool:
     """Switch the active chain index to the routed tier when it differs.
 
@@ -325,26 +330,30 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
 
 def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a NvidiaProvider for the given model."""
-    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, provider_model_name
+    from config.agent_config import provider_model_name
     from providers.nvidia import NvidiaProvider
 
     model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
+    endpoint_var = model_cfg.get("endpoint_env", "NVIDIA_NIM_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "NVIDIA_API_KEY")
+    endpoint = os.environ.get(endpoint_var, "")
+    api_key = os.environ.get(api_key_var, "")
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
         return _apply_provider_instructions(current, system_instructions, model_cfg)
-    if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
+    if not endpoint or not api_key:
         raise RuntimeError(
             f"NVIDIA model '{label}' is missing credentials — "
-            "set NVIDIA_NIM_ENDPOINT and NVIDIA_API_KEY in .env"
+            f"set {endpoint_var} and {api_key_var} in .env"
         )
 
     provider = NvidiaProvider(
         model=model_name,
         system_instructions=system_instructions,
-        endpoint=NVIDIA_NIM_ENDPOINT,
-        api_key=NVIDIA_API_KEY,
+        endpoint=endpoint,
+        api_key=api_key,
         label=label,
     )
     _model_state["nvidia_provider"] = provider
@@ -353,16 +362,17 @@ def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = N
 
 def _get_watsonx_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a WatsonxProvider for the given model."""
+    from config.agent_config import provider_model_name
     from providers.watsonx import WatsonxProvider
 
     # The brand_id (model name) is the canonical identifier for the watsonx
     # adapter; backend_name (upstream model id) is also accepted by resolve().
-    model_name = model_cfg.get("name") or model_cfg.get("backend_name") or ""
+    model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("watsonx_provider")
     if current and current.model == model_name:
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
 
     from pathlib import Path as _P
     if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
@@ -425,23 +435,20 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
     entry — so multiple Azure Foundry resources can coexist in the same chain.
     The provider is cached by (model, endpoint) since both determine identity.
     """
+    from config.agent_config import azure_openai_runtime_config
     from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
 
-    from config.agent_config import provider_model_name
-
-    model_name = provider_model_name(model_cfg)
+    runtime = azure_openai_runtime_config(model_cfg)
+    model_name = runtime["model"]
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
-    endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-    api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+    endpoint = runtime["endpoint"]
+    api_key = runtime["api_key"]
 
-    endpoint = os.environ.get(endpoint_var, "")
-    api_key = os.environ.get(api_key_var, "")
-
-    if not endpoint or not api_key:
+    if runtime["missing"]:
         raise RuntimeError(
             f"Azure model '{label}' is missing credentials — "
-            f"set {endpoint_var} and {api_key_var} in .env"
+            f"set {' and '.join(runtime['missing'])} in .env"
         )
 
     current = _model_state.get("azure_openai_provider")
@@ -1421,7 +1428,7 @@ def chat():
         if _auto_route_enabled():
             from config.router import route_prompt
             from config.quality import assess_response
-            decision = route_prompt(user_input)
+            decision = route_prompt(user_input, availability=_auto_route_available)
             swapped = _apply_route_decision(decision, session_state, user_input)
             if swapped or decision.low_confidence:
                 _render_route_badge(console, decision)
@@ -1727,7 +1734,6 @@ def chat():
                     last = provider.messages[-1]
                     if last.get("role") == "assistant":
                         from config.quality import assess_response
-                        from config.telemetry import telemetry
                         signal = assess_response(
                             last.get("content") or "",
                             prompt=user_input,
@@ -1944,16 +1950,12 @@ def _model_switch_error(model_cfg: dict) -> str | None:
         )
 
     if provider == "azure_openai":
-        endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-        api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
-        missing = [
-            var for var in (endpoint_var, api_key_var)
-            if not os.environ.get(var, "").strip()
-        ]
-        if missing:
+        from config.agent_config import azure_openai_runtime_config
+        runtime = azure_openai_runtime_config(model_cfg)
+        if runtime["missing"]:
             return (
                 f"Cannot switch to {label} — missing "
-                + ", ".join(missing)
+                + ", ".join(runtime["missing"])
                 + " in .env"
             )
 
@@ -2449,7 +2451,7 @@ def run(prompt: str):
     # model gets instantiated.
     if _auto_route_enabled():
         from config.router import route_prompt
-        decision = route_prompt(prompt)
+        decision = route_prompt(prompt, availability=_auto_route_available)
         _apply_route_decision(decision, session_state, prompt)
         _render_route_badge(console, decision)
 
@@ -2567,6 +2569,7 @@ def deploy():
         AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
         AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
         AZURE_ANTHROPIC_ENDPOINT, AZURE_ANTHROPIC_API_KEY,
+        azure_openai_runtime_config,
         provider_model_name,
     )
     import requests
@@ -2607,11 +2610,11 @@ def deploy():
             start = time.monotonic()
 
             if provider == "azure_openai":
-                endpoint_var = model.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-                api_key_var = model.get("api_key_env", "AZURE_CORE_API_KEY")
-                endpoint = os.environ.get(endpoint_var, "")
-                api_key = os.environ.get(api_key_var, "")
-                if not endpoint or not api_key:
+                runtime = azure_openai_runtime_config(model)
+                name = runtime["model"]
+                endpoint = runtime["endpoint"]
+                api_key = runtime["api_key"]
+                if runtime["missing"]:
                     status = "no credentials"
                 else:
                     base_url = endpoint.rstrip("/")

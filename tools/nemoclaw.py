@@ -15,7 +15,8 @@ operator's host.
 Env contract:
     NEMOCLAW_SANDBOX_URL          Base URL of the OpenShell sandbox
                                   (e.g. https://<vm>.brevlab.com). No
-                                  default; unset disables nemoclaw_shell.
+                                  default; when unset, legacy NEMOCLAW_ENDPOINT
+                                  is accepted for older deployments.
     NEMOCLAW_API_KEY              Bearer token for the sandbox (often the
                                   Brev access token). Unset sends no auth
                                   header, which works for VMs that expose
@@ -46,13 +47,13 @@ DEFAULT_HEALTH_PATH = "/openshell/v1/health"
 
 
 def _sandbox_base_url() -> str:
-    # NEMOCLAW_SANDBOX_URL is the sole source of truth for the OpenShell
-    # sandbox. The legacy fallback to NEMOCLAW_ENDPOINT was removed when
-    # Talon moved to a hybrid deployment: inference URL and sandbox URL
-    # now live on different hosts (NVIDIA hosted NIM vs. self-hosted
-    # OpenShell VM), so falling back would POST shell commands at the
-    # inference endpoint and silently 404.
-    return os.environ.get("NEMOCLAW_SANDBOX_URL", "").rstrip("/")
+    # Prefer the explicit sandbox URL. Keep NEMOCLAW_ENDPOINT as a legacy
+    # fallback for older VM deployments and tests that used one URL for both
+    # OpenAI-compatible inference and OpenShell.
+    return (
+        os.environ.get("NEMOCLAW_SANDBOX_URL", "")
+        or os.environ.get("NEMOCLAW_ENDPOINT", "")
+    ).rstrip("/")
 
 
 def _auth_headers() -> dict:

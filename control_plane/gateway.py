@@ -157,7 +157,12 @@ async def _call_provider(
     import os
     import functools
 
-    from config.agent_config import resolve_model_config, MODEL_CHAIN, provider_model_name
+    from config.agent_config import (
+        MODEL_CHAIN,
+        azure_openai_runtime_config,
+        provider_model_name,
+        resolve_model_config,
+    )
 
     cfg = resolve_model_config(model)
     if cfg is None:
@@ -173,31 +178,29 @@ async def _call_provider(
         """Execute the provider call synchronously (OpenAI SDK is not async)."""
         if provider_kind == "azure_openai":
             from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
-            endpoint_var = cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-            api_key_var = cfg.get("api_key_env", "AZURE_CORE_API_KEY")
-            endpoint = os.environ.get(endpoint_var, "")
-            api_key = os.environ.get(api_key_var, "")
-            if not endpoint or not api_key:
+            runtime = azure_openai_runtime_config(cfg)
+            if runtime["missing"]:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Missing credentials for {name} ({endpoint_var}/{api_key_var})"
+                    detail=f"Missing credentials for {name} ({'/'.join(runtime['missing'])})"
                 )
+            runtime_model = runtime["model"]
 
             if cfg.get("surface") == "responses":
                 # Responses API — no direct non-streaming token count; use chat fallback
                 provider = AzureOpenAIProvider(
-                    model=name,
+                    model=runtime_model,
                     system_instructions="You are a helpful assistant.",
-                    endpoint=endpoint,
-                    api_key=api_key,
+                    endpoint=runtime["endpoint"],
+                    api_key=runtime["api_key"],
                     label=cfg.get("label", "CroweLM"),
                 )
             else:
                 provider = AzureOpenAIProvider(
-                    model=name,
+                    model=runtime_model,
                     system_instructions="You are a helpful assistant.",
-                    endpoint=endpoint,
-                    api_key=api_key,
+                    endpoint=runtime["endpoint"],
+                    api_key=runtime["api_key"],
                     label=cfg.get("label", "CroweLM"),
                 )
         elif provider_kind == "openai_compat":

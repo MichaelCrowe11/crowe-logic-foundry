@@ -173,8 +173,8 @@ _BASE_MODEL_CHAIN = [
     # ─── Primary: Crowe Logic's self-hosted open-model serving layer ───────
     # Tier 1: Flagship (highest capability + capacity)
     {"name": "gpt-5.4",        "label": "CroweLM Titan",     "type": "reasoning",
-     "provider": "nvidia", "backend_name": "z-ai/glm-5.1",
-     "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
+     "provider": "openai_compat", "backend_name": "z-ai/glm-5.1",
+     "endpoint_env": "CROWE_OPEN_ENDPOINT", "api_key_env": "CROWE_OPEN_API_KEY",
      "aliases": ["titan", "crowelm-titan"],
      "prompt": (
           "You are CroweLM Titan, Crowe Logic's highest-capacity flagship tier. "
@@ -464,6 +464,59 @@ def provider_model_name(model_cfg: dict) -> str:
     return raw
 
 
+def azure_openai_runtime_config(model_cfg: dict) -> dict:
+    """Resolve Azure OpenAI endpoint, key, and deployment for a model config.
+
+    Crowe's production Azure Core resource uses AZURE_CORE_* and branded
+    deployments like ``crowelm-kernel-v3``. Local/dev environments often only
+    expose the standard Azure OpenAI triplet instead:
+    AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_CHAT_DEPLOYMENT.
+    When Core credentials are absent but the standard triplet is present, use
+    that triplet as a live fallback and send the configured deployment name.
+    """
+    endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+    endpoint = os.environ.get(endpoint_var, "").strip()
+    api_key = os.environ.get(api_key_var, "").strip()
+    model_name = provider_model_name(model_cfg)
+    source_endpoint_var = endpoint_var
+    source_api_key_var = api_key_var
+
+    if endpoint_var == "AZURE_CORE_ENDPOINT" and not endpoint:
+        endpoint = AZURE_CORE_ENDPOINT.strip()
+    if api_key_var == "AZURE_CORE_API_KEY" and not api_key:
+        api_key = AZURE_CORE_API_KEY.strip()
+
+    if endpoint_var == "AZURE_CORE_ENDPOINT" and api_key_var == "AZURE_CORE_API_KEY":
+        fallback_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
+        fallback_key = os.environ.get("AZURE_OPENAI_API_KEY", "").strip()
+        fallback_deployment = os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT", "").strip()
+        core_pair_ready = bool(endpoint and api_key)
+        fallback_pair_ready = bool(fallback_endpoint and fallback_key)
+        if not core_pair_ready and fallback_pair_ready:
+            endpoint = fallback_endpoint
+            api_key = fallback_key
+            source_endpoint_var = "AZURE_OPENAI_ENDPOINT"
+            source_api_key_var = "AZURE_OPENAI_API_KEY"
+            if fallback_deployment:
+                model_name = fallback_deployment
+
+    missing = []
+    if not endpoint:
+        missing.append(source_endpoint_var)
+    if not api_key:
+        missing.append(source_api_key_var)
+
+    return {
+        "model": model_name,
+        "endpoint": endpoint,
+        "api_key": api_key,
+        "endpoint_var": source_endpoint_var,
+        "api_key_var": source_api_key_var,
+        "missing": tuple(missing),
+    }
+
+
 def _normalize_extra_model(entry: dict) -> dict:
     """Normalize an externally supplied model entry into MODEL_CHAIN shape."""
     if not isinstance(entry, dict):
@@ -589,7 +642,8 @@ def _merge_model_chain(base_chain: list[dict], extra_models: list[dict]) -> list
                 insert_at = next(
                     (
                         idx for idx, model in enumerate(merged)
-                        if model.get("provider") not in ("azure_openai", "anthropic", "openai_compat")
+                        if model.get("provider") != "auto"
+                        and model.get("provider") not in ("azure_openai", "anthropic", "openai_compat")
                     ),
                     len(merged),
                 )
@@ -837,6 +891,11 @@ def tier_runtime_params_for_model(selector: str) -> dict:
 # so each tier has runtime characteristics matching its job, not just its
 # brand voice. Keyed by the `type` field on a MODEL_CHAIN entry.
 _TIER_OVERLAYS: dict[str, str] = {
+    "router": (
+        "## Tier behavior: router\n"
+        "Classify the user's task and select the lowest-cost capable CroweLM tier. "
+        "Do not answer as the router when a concrete tier should handle the turn."
+    ),
     "fast": (
         "## Tier behavior: fast\n"
         "Optimize for latency. Cap internal reasoning at ~100 tokens. "
@@ -861,6 +920,11 @@ _TIER_OVERLAYS: dict[str, str] = {
         "Lead with the code; explanation comes after, only if non-obvious. "
         "Match the surrounding file's style and conventions. "
         "Do not add comments unless the code does something a careful reader would not predict."
+    ),
+    "instruct": (
+        "## Tier behavior: instruct\n"
+        "Follow the user's instruction exactly. Keep the response concise, concrete, "
+        "and grounded in the provided task. Use tools only when they directly improve the answer."
     ),
 }
 
@@ -893,6 +957,9 @@ def build_system_instructions(model_cfg: dict | None = None) -> str:
         base_only = base_policy().strip()
         if file_prompt and file_prompt != base_only:
             prompt_parts.append("## Tier Guidance\n" + file_prompt)
+            tier_overlay = _TIER_OVERLAYS.get(model_cfg.get("type", ""))
+            if tier_overlay:
+                prompt_parts.append(tier_overlay)
             return "\n\n".join(prompt_parts)
     except ImportError:
         pass  # prompt_loader unavailable; use legacy path below

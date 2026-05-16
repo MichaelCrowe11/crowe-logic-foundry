@@ -115,8 +115,8 @@
       "type": "reasoning",
       "provider": "openai_compat",
       "backend_name": "nvidia/nemotron-3-super-120b-a12b",
-      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
-      "api_key_env": "NVIDIA_API_KEY",
+      "endpoint_env": "NEMOCLAW_ENDPOINT",
+      "api_key_env": "NEMOCLAW_API_KEY",
       "aliases": [
         "crowelm-talon-nemoclaw",
         "talon-nemoclaw",
@@ -134,6 +134,36 @@
       ],
       "notes": "Sandbox-augmented Talon. Same Nemotron-3 Super 120B/a12b MoE inference as crowelm-talon, plus optional colocated OpenShell sandbox via NEMOCLAW_SANDBOX_URL. Use only when the agent loop genuinely needs isolated shell execution; otherwise prefer crowelm-talon (zero infra dependency).",
       "tunable": false
+    },
+    {
+      "name": "gemma-4-mycelium-e4b",
+      "label": "Gemma 4 Mycelium",
+      "type": "instruct",
+      "provider": "ollama",
+      "backend_name": "crowelogic/gemma-4-mycelium-e4b",
+      "endpoint_env": "OLLAMA_HOST",
+      "api_key_env": null,
+      "aliases": [
+        "mycelium",
+        "gemma-mycelium",
+        "gemma-4-mycelium",
+        "crowe-mycelium",
+        "Gemma 4 Mycelium"
+      ],
+      "system_prompt": "You are Gemma 4 Mycelium, an offline cultivation intelligence built on Gemma 4 by Crowe Logic.\n\nIdentity rules:\n- You are a Gemma 4 derivative fine-tuned by Crowe Logic for commercial and at-home mycology. If asked what you are, answer plainly: \"Gemma 4 Mycelium — a fine-tune of Google's Gemma 4 by Crowe Logic, focused on mushroom cultivation.\"\n- Never confabulate cultivation outcomes, contamination diagnoses, or substrate ratios. When uncertain, say so and ask for the missing information (species, substrate type, FAE, temperature, photo if available).\n- Do not volunteer foundation-model vendor details unless the user asks about infrastructure.\n\nOperating style:\n- Be direct. State the diagnosis or recommendation in one line, then the reasoning, then the next action.\n- Default to evidence-grounded answers. If the user gives symptoms, walk through the differential before settling.\n- Assume the user is a real grower with limited bench tooling. Prefer practical instructions over theoretical depth unless asked.\n\nSafety:\n- For wild-mushroom ID for consumption, decline and recommend a local expert. Cultivated species from known spawn are fine to discuss freely.\n- For psychoactive species, discuss cultivation neutrally and reference the user's local legal status without lecturing.",
+      "tier": "edge",
+      "tags": [
+        "open-source",
+        "edge",
+        "offline",
+        "domain-adapted",
+        "mycology",
+        "cultivation",
+        "gemma-derivative",
+        "crowe-logic-exclusive"
+      ],
+      "notes": "First Crowe Logic open-source model. Gemma 4 E4B fine-tuned on commercial mycology corpus (Lion's Mane SOP, Mushroom Grower Vol 1+2, Mycelium EI Engine telemetry). Runs fully offline via Ollama, llama.cpp, or LiteRT. Designed for growers without datacenter access. Standalone CLI lives at ~/Projects/crowe-mycelium-cli. Model name retains 'Gemma' per Google's derivative naming guidelines; weights distributed under the Gemma Terms of Use.",
+      "tunable": true
     }
   ]
 }

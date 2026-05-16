@@ -335,9 +335,8 @@ def _is_provider_credentialed(cfg: dict) -> bool:
         endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
         return bool(os.environ.get(endpoint_var, ""))
     if kind == "azure_openai":
-        endpoint_var = cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-        api_key_var = cfg.get("api_key_env", "AZURE_CORE_API_KEY")
-        return bool(os.environ.get(endpoint_var, "")) and bool(os.environ.get(api_key_var, ""))
+        from config.agent_config import azure_openai_runtime_config
+        return not azure_openai_runtime_config(cfg)["missing"]
     if kind == "anthropic":
         endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
         api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
@@ -461,21 +460,19 @@ def _build_provider(model_id: str, *, session_id: str = ""):
 
     if provider_kind == "azure_openai":
         from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
-        endpoint_var = cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-        api_key_var = cfg.get("api_key_env", "AZURE_CORE_API_KEY")
-        endpoint = os.environ.get(endpoint_var, "")
-        api_key = os.environ.get(api_key_var, "")
-        if not endpoint or not api_key:
+        from config.agent_config import azure_openai_runtime_config
+        runtime = azure_openai_runtime_config(cfg)
+        if runtime["missing"]:
             raise RuntimeError(
                 f"Azure model '{label}' is missing credentials "
-                f"({endpoint_var} / {api_key_var})"
+                f"({' / '.join(runtime['missing'])})"
             )
         provider_cls = AzureResponsesProvider if cfg.get("surface") == "responses" else AzureOpenAIProvider
         return provider_cls(
-            model=name,
+            model=runtime["model"],
             system_instructions=system_instructions,
-            endpoint=endpoint,
-            api_key=api_key,
+            endpoint=runtime["endpoint"],
+            api_key=runtime["api_key"],
             label=label,
         )
 

@@ -57,6 +57,24 @@ def test_model_switch_error_allows_hosted_models_with_endpoint_only(monkeypatch)
     assert cli_mod._model_switch_error(cfg) is None
 
 
+def test_kernel_uses_standard_azure_openai_triplet_when_core_missing(monkeypatch):
+    from config.agent_config import azure_openai_runtime_config
+
+    monkeypatch.delenv("AZURE_CORE_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_CORE_API_KEY", raising=False)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://fallback.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fallback-key")
+    monkeypatch.setenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-5.4-mini")
+
+    cfg = resolve_model_config("kernel")
+    runtime = azure_openai_runtime_config(cfg)
+
+    assert cli_mod._model_switch_error(cfg) is None
+    assert runtime["endpoint"] == "https://fallback.openai.azure.com"
+    assert runtime["api_key"] == "fallback-key"
+    assert runtime["model"] == "gpt-5.4-mini"
+
+
 def test_provider_wide_error_detects_watsonx_quota_exhaustion():
     err = (
         'watsonx HTTP 403: {"errors":[{"code":"token_quota_reached",'

@@ -38,7 +38,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-from config.agent_config import MODEL_CHAIN, resolve_model_config
+from config.agent_config import MODEL_CHAIN
 
 
 # ── Intent classification ─────────────────────────────────────────────
@@ -104,6 +104,20 @@ _DEEP_KEYWORDS = (
     "trade-off", "tradeoff", "evaluate options", "analyze in depth",
 )
 
+LOW_CONFIDENCE_THRESHOLD = 0.60
+
+_INTENT_CONFIDENCE: dict[str, float] = {
+    "arithmetic": 0.99,
+    "trivial": 0.92,
+    "vision": 0.90,
+    "code": 0.86,
+    "capability_question": 0.88,
+    "domain": 0.76,
+    "deep": 0.78,
+    "general": 0.65,
+    "ambiguous": 0.40,
+}
+
 
 def _matches_any(text: str, patterns: Iterable[str]) -> bool:
     return any(re.search(p, text) for p in patterns)
@@ -153,6 +167,55 @@ def classify_prompt(text: str) -> str:
     return "general"
 
 
+def _keyword_density_confidence(
+    text: str,
+    keywords: Iterable[str],
+    *,
+    base: float,
+    step: float = 0.04,
+    ceiling: float = 0.95,
+) -> float:
+    padded = f" {text.lower()} "
+    hits = sum(1 for keyword in keywords if keyword in padded)
+    return min(ceiling, base + max(0, hits - 1) * step)
+
+
+def classify_with_confidence(text: str) -> tuple[str, float]:
+    """Return ``(intent, confidence)`` for the heuristic prompt classifier."""
+    intent = classify_prompt(text)
+    confidence = _INTENT_CONFIDENCE.get(intent, 0.50)
+
+    raw = (text or "").strip()
+    lower = raw.lower()
+
+    if intent == "capability_question":
+        # Long "can you..." prompts often carry the real task after the opener.
+        if len(raw) > 120 or _contains_any(f" {lower} ", _DOMAIN_KEYWORDS):
+            confidence = 0.72
+    elif intent == "domain":
+        confidence = _keyword_density_confidence(
+            lower,
+            _DOMAIN_KEYWORDS,
+            base=_INTENT_CONFIDENCE["domain"],
+        )
+    elif intent == "code":
+        confidence = _keyword_density_confidence(
+            lower,
+            _CODE_KEYWORDS,
+            base=_INTENT_CONFIDENCE["code"],
+            step=0.03,
+        )
+    elif intent == "vision":
+        confidence = _keyword_density_confidence(
+            lower,
+            _VISION_KEYWORDS,
+            base=_INTENT_CONFIDENCE["vision"],
+            step=0.03,
+        )
+
+    return (intent, max(0.0, min(1.0, confidence)))
+
+
 # ── Intent → tier preference ──────────────────────────────────────────
 
 # Ordered selectors per intent. The router walks each list and picks the
@@ -190,19 +253,76 @@ class RouteDecision:
     fallbacks: tuple[dict, ...]     # ordered same-turn fallbacks
     companions: tuple[dict, ...]    # parallel-dispatch companions (may be empty)
     reason: str
+    confidence: float = 0.50
 
     @property
     def primary_label(self) -> str:
         return str(self.primary.get("label", self.primary.get("name", "?")))
 
+    @property
+    def selected_label(self) -> str:
+        return self.primary_label
+
+    @property
+    def selected_name(self) -> str:
+        return str(self.primary.get("name", ""))
+
+    @property
+    def selected_type(self) -> str:
+        return str(self.primary.get("type", ""))
+
+    @property
+    def low_confidence(self) -> bool:
+        return self.confidence < LOW_CONFIDENCE_THRESHOLD
+
     def to_dict(self) -> dict:
         return {
             "intent": self.intent,
             "primary": self.primary_label,
+            "selected_label": self.selected_label,
+            "selected_name": self.selected_name,
+            "selected_type": self.selected_type,
             "fallbacks": [str(c.get("label", c.get("name", ""))) for c in self.fallbacks],
             "companions": [str(c.get("label", c.get("name", ""))) for c in self.companions],
+            "confidence": self.confidence,
+            "low_confidence": self.low_confidence,
             "reason": self.reason,
         }
+
+
+def _maybe_apply_deepparallel_fallback(
+    text: str,
+    intent: str,
+    confidence: float,
+) -> tuple[str, float, str]:
+    """Return possibly overridden classifier output plus a reason suffix."""
+    if confidence >= LOW_CONFIDENCE_THRESHOLD:
+        return (intent, confidence, "")
+
+    try:
+        from config import synapse_fallback
+    except Exception:
+        return (intent, confidence, "")
+
+    if not synapse_fallback.fallback_enabled():
+        return (intent, confidence, "")
+
+    result = synapse_fallback.classify_with_deepparallel(text)
+    if result is None:
+        return (intent, confidence, "")
+
+    fallback_intent, fallback_confidence = result
+    if fallback_confidence <= confidence:
+        return (intent, confidence, "")
+
+    return (
+        fallback_intent,
+        fallback_confidence,
+        (
+            f"; DeepParallel override {intent}:{confidence:.2f} -> "
+            f"{fallback_intent}:{fallback_confidence:.2f}"
+        ),
+    )
 
 
 def _resolve_all(
@@ -211,20 +331,43 @@ def _resolve_all(
     availability: Callable[[dict], bool] | None,
 ) -> list[dict]:
     """Resolve every selector in order to a model in ``chain`` that passes availability."""
-    chain_ids = {id(cfg) for cfg in chain}
     seen: set[int] = set()
     out: list[dict] = []
     for selector in selectors:
-        cfg = resolve_model_config(selector)
+        cfg = _resolve_in_chain(selector, chain)
         if not cfg or id(cfg) in seen:
-            continue
-        if id(cfg) not in chain_ids:
             continue
         seen.add(id(cfg))
         if availability is not None and not availability(cfg):
             continue
         out.append(cfg)
     return out
+
+
+def _selector_key(value: str) -> str:
+    return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+def _model_selectors(model_cfg: dict) -> list[str]:
+    selectors = [model_cfg.get("name", ""), model_cfg.get("label", "")]
+    selectors.extend(model_cfg.get("aliases", []))
+    return [str(selector) for selector in selectors if selector]
+
+
+def _resolve_in_chain(selector: str, chain: list[dict]) -> dict | None:
+    needle = _selector_key(selector or "")
+    if not needle:
+        return None
+
+    for model_cfg in chain:
+        if any(_selector_key(candidate) == needle for candidate in _model_selectors(model_cfg)):
+            return model_cfg
+
+    for model_cfg in chain:
+        if any(needle in _selector_key(candidate) for candidate in _model_selectors(model_cfg)):
+            return model_cfg
+
+    return None
 
 
 def route_prompt(
@@ -240,8 +383,15 @@ def route_prompt(
     at runtime, so degraded environments still produce a route instead of
     falling all the way through to the chain head.
     """
-    chain = chain if chain is not None else MODEL_CHAIN
-    intent = classify_prompt(text)
+    if chain is None:
+        from config.agent_config import MODEL_CHAIN as active_chain
+        chain = active_chain
+    heuristic_intent, heuristic_confidence = classify_with_confidence(text)
+    intent, confidence, fallback_reason = _maybe_apply_deepparallel_fallback(
+        text,
+        heuristic_intent,
+        heuristic_confidence,
+    )
 
     preferences = _INTENT_PREFERENCES.get(intent, ())
     backstop = ("CroweLM Nexus", "CroweLM Apex", "CroweLM Titan")
@@ -260,7 +410,9 @@ def route_prompt(
             reason=(
                 f"intent={intent}; no preferred tier resolved; "
                 f"fell back to chain head ({primary.get('label', '?')})"
+                f"{fallback_reason}"
             ),
+            confidence=confidence,
         )
 
     primary = available[0]
@@ -280,12 +432,16 @@ def route_prompt(
         reason=(
             f"intent={intent}; primary={primary.get('label', '?')}; "
             f"{len(fallbacks)} fallback(s); {len(companions)} companion(s)"
+            f"{fallback_reason}"
         ),
+        confidence=confidence,
     )
 
 
 __all__ = [
+    "LOW_CONFIDENCE_THRESHOLD",
     "RouteDecision",
     "classify_prompt",
+    "classify_with_confidence",
     "route_prompt",
 ]
