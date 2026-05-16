@@ -2743,11 +2743,20 @@ def deploy():
                 api_key_var = model.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
                 endpoint = os.environ.get(endpoint_var, "")
                 api_key = os.environ.get(api_key_var, "")
+                # Fallback to direct Anthropic API when no Azure-Anthropic
+                # surface is configured but a public ANTHROPIC_API_KEY is
+                # available. The Azure-Anthropic surface lives at
+                # <resource>.openai.azure.com/anthropic; the public API at
+                # api.anthropic.com — different URL conventions, so detect
+                # by hostname and skip the /anthropic suffix for the latter.
+                if (not endpoint or not api_key) and os.environ.get("ANTHROPIC_API_KEY"):
+                    endpoint = "https://api.anthropic.com"
+                    api_key = os.environ["ANTHROPIC_API_KEY"]
                 if not endpoint or not api_key:
                     status = "no credentials"
                 else:
                     base_url = endpoint.rstrip("/")
-                    if not base_url.endswith("/anthropic"):
+                    if "api.anthropic.com" not in base_url and not base_url.endswith("/anthropic"):
                         base_url += "/anthropic"
                     client = Anthropic(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
                     resp = client.messages.create(
