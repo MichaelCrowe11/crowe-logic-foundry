@@ -174,18 +174,22 @@ def subscription_monthly_cost(provider: str, backend_name: str) -> float:
 # ---- Customer credit accounting -----------------------------------------
 
 def tier_for_model(model_cfg: dict) -> str:
-    """Classify a model config into 'fast', 'balanced', or 'flagship'.
+    """Classify a model config into 'fast', 'balanced', 'flagship', or 'deepparallel'.
 
     Matches against both ``backend_name`` and ``label`` so local rebrands
     (CroweLM Supreme vs claude-opus-4-7) and aliased NIM entries all
     resolve. Returns 'balanced' as the conservative default so an
     unknown model doesn't get free flagship billing.
+
+    Order matters: ``deepparallel`` is checked first so a DeepParallel tier
+    (which lists ``crowelm-deepparallel`` and ``CroweLM DeepParallel`` in its
+    bucket) doesn't accidentally also match the flagship bucket.
     """
     classification = customer_pricing().get("tier_classification", {})
     label = model_cfg.get("label", "")
     backend = model_cfg.get("backend_name") or model_cfg.get("name", "")
 
-    for tier in ("flagship", "balanced", "fast"):
+    for tier in ("deepparallel", "flagship", "balanced", "fast"):
         bucket = classification.get(tier, [])
         if label in bucket or backend in bucket:
             return tier

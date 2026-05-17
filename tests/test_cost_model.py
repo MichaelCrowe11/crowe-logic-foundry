@@ -135,6 +135,11 @@ def test_wildcard_provider_rate_is_respected():
     ("CroweLM Nano", "claude-haiku-4-5-20251001", "fast"),
     ("CroweLM Talon (NemoClaw)", "nvidia/llama-3.1-nemotron-ultra-253b-v1", "balanced"),
     ("Something Unknown", "unknown/model", "balanced"),
+    # DeepParallel tier — premium per-query pricing, distinct from flagship.
+    # tier_for_model must check "deepparallel" before "flagship" so DeepParallel
+    # entries don't accidentally fall through to the cheaper flagship bucket.
+    ("CroweLM DeepParallel", "crowelm-cluster-multilineage-v1", "deepparallel"),
+    ("CroweLM DeepParallel", "crowelm-cluster-v1", "deepparallel"),
 ])
 def test_tier_for_model(label, backend, expected):
     assert tier_for_model({"label": label, "backend_name": backend}) == expected
@@ -152,6 +157,14 @@ def test_single_flagship_turn_costs_5_credits():
 def test_single_fast_turn_costs_1_credit():
     cfg = {"label": "CroweLM Nano", "backend_name": "claude-haiku-4-5-20251001"}
     assert estimate_turn_credits(cfg).credits == 1
+
+
+def test_single_deepparallel_turn_costs_15_credits():
+    """DeepParallel tier is a premium per-query rate covering the cluster fan-out."""
+    cfg = {"label": "CroweLM DeepParallel", "backend_name": "crowelm-cluster-multilineage-v1"}
+    cc = estimate_turn_credits(cfg)
+    assert cc.credits == 15
+    assert cc.breakdown == {"primary": 15}
 
 
 def test_dual_mode_sums_both_sides():
