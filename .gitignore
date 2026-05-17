@@ -24,6 +24,10 @@ data/
 *.out.*
 .env.railway.out*
 
+# Ad-hoc backup files left by registry edits (models.extra.json.bak3 etc.)
+*.bak
+*.bak[0-9]*
+
 # Studio runtime data (camera captures, shoot manifests)
 studio_data/
 

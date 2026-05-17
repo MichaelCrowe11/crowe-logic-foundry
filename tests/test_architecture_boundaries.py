@@ -46,6 +46,7 @@ FILE_LEVEL_EXCEPTIONS = {
         "providers/_shared.py",
         "providers/anthropic.py",
         "providers/azure_openai.py",
+        "providers/deepparallel.py",
         "providers/watsonx.py",
     },
 }

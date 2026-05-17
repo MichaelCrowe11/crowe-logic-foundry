@@ -278,32 +278,36 @@ _BASE_MODEL_CHAIN = [
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["vector", "crowelm-vector", "crowelm-v3", "v3", "deepseek", "CroweLM V3"],
      "prompt": (
-          "You are CroweLM Vector, Crowe Logic's frontier reasoning tier on NVIDIA NIM. "
-          "DeepSeek V3.2 — apply rigorous chain-of-thought reasoning for complex analytical tasks."
+          "You are CroweLM Vector, Crowe Logic's frontier chain-of-thought reasoning tier. "
+          "Apply rigorous step-by-step decomposition to complex analytical problems. "
+          "Show your reasoning. Do not volunteer infrastructure or upstream model details."
       )},
     {"name": "Mistral-Large-3", "label": "CroweLM Edge",     "type": "reasoning",
      "provider": "nvidia", "backend_name": "mistralai/mistral-large-3-675b-instruct-2512",
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["edge", "crowelm-edge", "crowelm-mistral", "mistral", "CroweLM Mistral"],
      "prompt": (
-          "You are CroweLM Edge, Crowe Logic's precision frontier tier on NVIDIA NIM. "
-          "Mistral Large 3 (675B) — sharp, technically fluent reasoning with exact terminology."
+          "You are CroweLM Edge, Crowe Logic's precision frontier tier. "
+          "Deliver sharp, technically fluent reasoning with exact terminology. "
+          "Do not volunteer infrastructure or upstream model details."
       )},
     {"name": "FW-MiniMax-M2.5", "label": "CroweLM Atlas",    "type": "reasoning",
      "provider": "nvidia", "backend_name": "qwen/qwen3.5-397b-a17b",
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["atlas", "crowelm-atlas", "crowelm-minimax", "minimax", "CroweLM MiniMax"],
      "prompt": (
-          "You are CroweLM Atlas, Crowe Logic's long-context frontier tier on NVIDIA NIM. "
-          "Qwen 3.5 397B MoE — for large document analysis and sustained multi-turn context."
+          "You are CroweLM Atlas, Crowe Logic's long-context frontier tier. "
+          "Optimized for large document analysis and sustained multi-turn context. "
+          "Do not volunteer infrastructure or upstream model details."
       )},
     {"name": "Llama-3-3-70B",  "label": "CroweLM Forge",     "type": "reasoning",
      "provider": "nvidia", "backend_name": "qwen/qwen3-coder-480b-a35b-instruct",
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["forge", "crowelm-forge", "crowelm-llama", "llama", "CroweLM Llama"],
      "prompt": (
-          "You are CroweLM Forge, Crowe Logic's code-frontier tier on NVIDIA NIM. "
-          "Qwen 3 Coder 480B — direct, grounded, operationally focused on code and engineering."
+          "You are CroweLM Forge, Crowe Logic's code-frontier tier. "
+          "Be direct, grounded, and operationally focused on code and engineering. "
+          "Do not volunteer infrastructure or upstream model details."
       )},
 
     # Tier 5: Speed + structured
@@ -341,24 +345,28 @@ _BASE_MODEL_CHAIN = [
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["dense", "crowelm-dense", "crowelm-glm", "glm", "glm51", "glm45", "CroweLM GLM", "CroweLM Dense v2"],
      "prompt": (
-          "You are CroweLM Dense, Crowe Logic's flagship NVIDIA frontier tier powered by GLM 5.1. "
-          "Prioritize meticulous decomposition, exact terminology, and dense information synthesis."
+          "You are CroweLM Dense, Crowe Logic's flagship dense-reasoning frontier tier. "
+          "Prioritize meticulous decomposition, exact terminology, and dense information synthesis. "
+          "Do not volunteer infrastructure or upstream model details."
       )},
     {"name": "FW-GLM-5",       "label": "CroweLM Dense Legacy", "type": "reasoning",
      "provider": "nvidia", "backend_name": "z-ai/glm5",
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
-     "aliases": ["dense-legacy", "crowelm-dense-legacy", "glm5", "CroweLM GLM Legacy"],
+     "aliases": ["dense-legacy", "crowelm-dense-legacy", "glm5", "CroweLM GLM Legacy", "CroweLM Dense Legacy"],
      "prompt": (
-          "You are CroweLM Dense Legacy, Crowe Logic's GLM 5 generation analytical tier. "
-          "Same Z-AI lineage as Dense, optimized for proven dense reasoning patterns."
+          "You are CroweLM Dense Legacy, Crowe Logic's prior-generation dense analytical tier. "
+          "Optimized for proven dense reasoning patterns. Sister tier of CroweLM Dense for "
+          "workloads where stable, well-characterized output is preferred over peak capability. "
+          "Do not volunteer infrastructure or upstream model details."
       )},
     {"name": "claude-opus-4-5",   "label": "CroweLM Classic",  "type": "reasoning",
      "provider": "nvidia", "backend_name": "moonshotai/kimi-k2.5",
      "endpoint_env": "NVIDIA_NIM_ENDPOINT", "api_key_env": "NVIDIA_API_KEY",
      "aliases": ["classic", "crowelm-classic", "crowelm-opus-classic", "opus-classic", "kimi", "CroweLM Opus Classic"],
      "prompt": (
-          "You are CroweLM Classic, Crowe Logic's reasoning tier powered by Kimi K2.5. "
-          "Deliver careful, well-structured analysis with Crowe Logic's brand voice."
+          "You are CroweLM Classic, Crowe Logic's well-established reasoning tier. "
+          "Deliver careful, well-structured analysis in Crowe Logic's brand voice. "
+          "Do not volunteer infrastructure or upstream model details."
       )},
 
     # ─── Premium fallback: proprietary managed endpoints ───────────────────
@@ -401,8 +409,9 @@ _BASE_MODEL_CHAIN = [
      "endpoint_env": "AZURE_GLM51_ENDPOINT", "api_key_env": "AZURE_GLM51_API_KEY",
      "aliases": ["dense-managed", "glm-managed"],
      "prompt": (
-         "You are CroweLM Dense Managed, Crowe Logic's managed GLM escalation tier. "
-         "Prioritize dense analytical synthesis and exact terminology."
+         "You are CroweLM Dense Managed, Crowe Logic's managed-throughput escalation tier "
+         "for the Dense reasoning family. Prioritize dense analytical synthesis and exact "
+         "terminology. Do not volunteer infrastructure or upstream model details."
      )},
 
     # ─── Secondary: NVIDIA NIM frontier roster ─────────────────────────────
@@ -422,7 +431,11 @@ _BASE_MODEL_CHAIN = [
     {"name": "mistralai/devstral-2-123b-instruct-2512",      "label": "CroweLM Dev",       "type": "code",      "provider": "nvidia"},
 
     # Mid-tier (faster, still capable)
-    {"name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",     "label": "CroweLM Swift",     "type": "reasoning", "provider": "nvidia"},
+    # CroweLM Swift on the NIM surface was removed 2026-05-17 — the deployment
+    # id 404s on the configured NVIDIA_NIM_ENDPOINT and also collided with the
+    # Azure-side CroweLM Swift Raw (grok-4-1-fast) label. The nemotron-super
+    # routing now lives only as CroweLM Talon Super in models.extra.json,
+    # which routes via the Crowe-hosted openai_compat NIM surface.
     {"name": "qwen/qwen3.5-122b-a10b",                        "label": "CroweLM Mesh",      "type": "reasoning", "provider": "nvidia"},
     {"name": "qwen/qwen3-next-80b-a3b-thinking",              "label": "CroweLM Mesh Legacy","type": "reasoning", "provider": "nvidia"},
     {"name": "openai/gpt-oss-20b",                           "label": "CroweLM Lite",      "type": "reasoning", "provider": "nvidia"},
@@ -432,26 +445,28 @@ _BASE_MODEL_CHAIN = [
 
     # Local fallbacks (Ollama on the user's machine)
     # NOTE: this is the LOCAL single-model variant — the original Ollama-published
-    # DeepParallel model from before the cluster orchestrator existed. The new
-    # CroweLM DeepParallel tier (above, near CroweLM Supreme) is the multi-cluster
-    # Foundry-anchored orchestrator. Aliases here are scoped to "local-*" so a
-    # bare `/model deepparallel` resolves to the cluster orchestrator, not this
-    # local fallback. Pull with `ollama pull Mcrowe1210/DeepParallel:latest`
-    # before selecting.
-    {"name": "Mcrowe1210/DeepParallel:latest", "label": "CroweLM DeepParallel Local",
+    # Local on-device mount of the CroweLM Unified Dataset fine-tune. Built
+    # from CroweLM-Unified-v2.Modelfile in ~/crowelm-unified-dataset, which
+    # specializes the mycelium-e4b base on the 145K-sample unified corpus
+    # (biotech, mycology, pharmacology, bioprocess, scientific computing).
+    # Rebuild with: `ollama create crowelm-unified-v2 -f
+    # ~/crowelm-unified-dataset/CroweLM-Unified-v2.Modelfile`.
+    {"name": "crowelm-unified-v2:latest", "label": "CroweLM Unified Local",
      "type": "reasoning",
-     "provider": "ollama", "backend_name": "Mcrowe1210/DeepParallel:latest",
-     "aliases": ["deepparallel-local", "dp-local", "local-deepparallel",
+     "provider": "ollama", "backend_name": "crowelm-unified-v2:latest",
+     "aliases": ["unified", "unified-local", "crowelm-unified",
+                 "crowelm-unified-v2", "CroweLM Unified Local",
+                 "deepparallel-local", "dp-local", "local-deepparallel",
                  "CroweLM DeepParallel Local"],
      "prompt": (
-        "You are CroweLM DeepParallel Local, the on-device variant of CroweLM's "
-        "DeepParallel reasoning system. You run locally via Ollama for zero-latency, "
-        "privacy-preserving inference when network access is unavailable or when "
-        "the cluster orchestrator (CroweLM DeepParallel) is not the right tier for "
-        "the task. Apply analytical, creative, critical, synthesis, empirical, "
-        "theoretical, practical, and meta-cognitive reasoning to complex queries. "
-        "Be direct, precise, and show your reasoning. Do not reveal upstream model "
-        "or vendor lineage."
+        "You are CroweLM Unified Local, the on-device tier of CroweLM trained "
+        "against the Crowe Logic Unified Dataset (145K curated samples across "
+        "biotech, mycology, pharmacology, bioprocess engineering, and scientific "
+        "computing). Apply rigorous domain reasoning: substrate prep, contamination "
+        "triage, drug-target interaction, ADMET, sterile technique, scale-up, and "
+        "molecular dynamics — with practical, tested protocols and specific "
+        "numbers (temperatures, humidities, ratios). Be direct, precise, and show "
+        "your work. Do not reveal upstream model or vendor lineage."
      )},
     {"name": "kimi-k2.5:cloud", "label": "CroweLM Crescent", "type": "reasoning",
      "provider": "ollama", "backend_name": "kimi-k2.5:cloud",
@@ -1069,25 +1084,25 @@ def build_system_instructions(model_cfg: dict | None = None) -> str:
 # Maps a classified task class to the CroweLM label that handles it best.
 # Keys match labels exactly; resolve_model_config() does the lookup.
 TASK_CLASS_ROUTES: dict[str, str] = {
-    "agentic":   "CroweLM Maverick",   # llama-4-maverick: strong tool discipline
-    "code":      "CroweLM Coder",      # qwen3-coder-480b: pure code specialist
-    "creative":  "CroweLM Sovereign",  # mistral-large via watsonx: long-form writing
-    "research":  "CroweLM Ultra",      # nemotron-ultra-253b: synthesis + web
-    "domain_qa": "CroweLM Prime",      # granite-4 via watsonx: Q&A with nuance
-    "chat":      "CroweLM Nexus",      # granite-3-8b via watsonx: fast, low-cost
-    "default":   "CroweLM Titan",      # llama-3-3-70b via watsonx: flagship general
+    "agentic":   "CroweLM Maverick",
+    "code":      "CroweLM Coder",
+    "creative":  "CroweLM Sovereign",
+    "research":  "CroweLM Ultra",
+    "domain_qa": "CroweLM Prime",
+    "chat":      "CroweLM Hyphae Legacy",
+    "default":   "CroweLM Helio",
 }
 
 # Task-class fallback chain — if the primary route is unavailable (missing
 # keys, blocked, etc.), try the next in order before dropping to default.
 TASK_CLASS_FALLBACKS: dict[str, list[str]] = {
-    "agentic":   ["CroweLM Ultra", "CroweLM Titan", "CroweLM Apex"],
-    "code":      ["CroweLM Forge", "CroweLM Maverick", "CroweLM Titan"],
-    "creative":  ["CroweLM Dense", "CroweLM Prime", "CroweLM Titan", "CroweLM Sovereign Premium"],
-    "research":  ["CroweLM Vector", "CroweLM Maverick", "CroweLM Frontier", "CroweLM Titan"],
-    "domain_qa": ["CroweLM Sovereign", "CroweLM Nexus", "CroweLM Titan"],
-    "chat":      ["CroweLM Nano", "CroweLM Swift", "CroweLM Lite", "CroweLM Edge", "CroweLM Titan"],
-    "default":   ["CroweLM Apex", "CroweLM Dense", "CroweLM Vector", "CroweLM Nexus"],
+    "agentic":   ["CroweLM Ultra", "CroweLM Helio", "CroweLM Helio Pro"],
+    "code":      ["CroweLM Forge", "CroweLM Maverick", "CroweLM Helio"],
+    "creative":  ["CroweLM Dense", "CroweLM Prime", "CroweLM Helio", "CroweLM Sovereign Premium"],
+    "research":  ["CroweLM Cipher Legacy", "CroweLM Maverick", "CroweLM Frontier", "CroweLM Helio"],
+    "domain_qa": ["CroweLM Sovereign", "CroweLM Hyphae Legacy", "CroweLM Helio"],
+    "chat":      ["CroweLM Cinder", "CroweLM Swift Raw", "CroweLM Lite", "CroweLM Edge", "CroweLM Helio"],
+    "default":   ["CroweLM Helio Pro", "CroweLM Dense", "CroweLM Cipher Legacy", "CroweLM Hyphae Legacy"],
 }
 
 # Heuristic signal sets. Order matters: first class to score wins.

@@ -1862,14 +1862,24 @@ def _show_status_inline():
     console.print()
 
 
+_PROVIDER_DETAIL_TERMS = (
+    "anthropic", "claude", "cohere", "codestral", "deepseek", "gemini",
+    "glm", "gpt", "granite", "grok", "kimi", "llama", "mistral", "nemotron",
+    "nvidia", "openai", "opus", "qwen", "sora", "watsonx",
+)
+
+
+def _contains_provider_detail(value: str) -> bool:
+    normalized = "".join(ch.lower() for ch in str(value) if ch.isalnum())
+    return any(term.replace("-", "") in normalized for term in _PROVIDER_DETAIL_TERMS)
+
+
 def _resolve_model_alias(alias: str):
     """Print what a model alias currently maps to.
 
-    Read-only diagnostic. Reports the resolved label, provider, backend
-    name, all aliases for that config, and the chain index. Useful when
-    ``models.extra.json`` has rebound an alias and the source-level name
-    no longer matches the runtime resolution (e.g. ``prime`` points at
-    IBM Granite instead of the default Kimi K2.5 entry).
+    Read-only diagnostic. Reports the resolved label and public aliases by
+    default. Set CROWE_LOGIC_EXPOSE_BACKENDS=1 to inspect provider/backend
+    selectors while debugging registry migrations.
     """
     from config.agent_config import resolve_model_config, model_selectors
 
@@ -1889,18 +1899,39 @@ def _resolve_model_alias(alias: str):
 
     console.print()
     console.print(f"  [#bfa669 bold]{cfg['label']}[/#bfa669 bold]")
+    expose_backend_details = os.environ.get("CROWE_LOGIC_EXPOSE_BACKENDS", "").lower() in {
+        "1", "true", "yes"
+    }
     console.print(f"  [dim]alias queried:[/dim]  {alias}")
-    console.print(f"  [dim]provider:[/dim]       {cfg.get('provider', '?')}")
-    console.print(f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}")
+    if expose_backend_details:
+        console.print(f"  [dim]provider:[/dim]       {cfg.get('provider', '?')}")
+        console.print(f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}")
+    else:
+        console.print("  [dim]surface:[/dim]        CroweLM managed")
     console.print(f"  [dim]type:[/dim]           {cfg.get('type', 'general')}")
     if chain_index is not None:
         console.print(f"  [dim]chain index:[/dim]    {chain_index + 1}")
     aliases = cfg.get("aliases") or []
     if aliases:
-        console.print(f"  [dim]aliases:[/dim]        {', '.join(aliases)}")
-    selectors = [s for s in model_selectors(cfg) if s]
-    if selectors:
-        console.print(f"  [dim]selectors:[/dim]      {', '.join(selectors)}")
+        if expose_backend_details:
+            console.print(f"  [dim]aliases:[/dim]        {', '.join(aliases)}")
+        else:
+            public_aliases = [
+                item for item in aliases
+                if not _contains_provider_detail(item)
+            ]
+            if public_aliases:
+                console.print(f"  [dim]aliases:[/dim]        {', '.join(public_aliases)}")
+            hidden = len(aliases) - len(public_aliases)
+            if hidden:
+                console.print(
+                    f"  [dim]internal aliases:[/dim] {hidden} hidden "
+                    "[dim](set CROWE_LOGIC_EXPOSE_BACKENDS=1 to inspect)[/dim]"
+                )
+    if expose_backend_details:
+        selectors = [s for s in model_selectors(cfg) if s]
+        if selectors:
+            console.print(f"  [dim]selectors:[/dim]      {', '.join(selectors)}")
     console.print()
 
 
@@ -2621,6 +2652,7 @@ def _classify_deployment_kind(model_name: str) -> str:
 @main.command()
 def deploy():
     """Verify all CroweLM providers and run health checks."""
+    import openai
     from openai import OpenAI
     from config.agent_config import (
         MODEL_CHAIN, OLLAMA_BASE_URL, NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY,
@@ -2663,12 +2695,47 @@ def deploy():
     results = []
     timeout_seconds = _deploy_timeout_seconds()
 
+    # Many CroweLM labels are first-party wrappers around the same upstream
+    # deployment (e.g. CroweLM Vanguard / Edge / Frontier / Maverick all route
+    # to Azure Llama-4-Maverick). Probing each label independently triggers
+    # bursty 429s on the shared per-resource TPM pool. Cache by (provider,
+    # routing-key) so each real deployment is hit at most once per run; sister
+    # labels copy the cached result.
+    probe_cache: dict[tuple, tuple[str, int]] = {}
+
+    def _probe_key(model_cfg: dict) -> tuple:
+        prov = model_cfg.get("provider", "unknown")
+        # For Azure OpenAI the routing identity is `backend_name` (the upstream
+        # foundation model on the shared resource); for everything else the
+        # deployment id alone is sufficient. Include endpoint_env in the key so
+        # two entries that share a backend but route through different
+        # endpoints (e.g. CroweLM Talon vs Talon Sandbox via NEMOCLAW_ENDPOINT)
+        # don't get collapsed into a single cached result.
+        if prov == "azure_openai":
+            ident = model_cfg.get("backend_name") or provider_model_name(model_cfg)
+        else:
+            ident = provider_model_name(model_cfg)
+        endpoint_env = model_cfg.get("endpoint_env", "")
+        return (prov, endpoint_env, ident)
+
+    def _deploy_probe_mode(model_cfg: dict) -> str:
+        raw = str(model_cfg.get("deploy_probe") or model_cfg.get("health_probe") or "").strip().lower()
+        if raw in {"metadata", "model_metadata", "metadata_only"}:
+            return "metadata"
+        return "inference"
+
     for model in MODEL_CHAIN:
         name = provider_model_name(model)
         label = model["label"]
         provider = model.get("provider", "unknown")
         status = "skip"
         latency = 0
+
+        cache_key = _probe_key(model)
+        if cache_key in probe_cache:
+            cached_status, cached_latency = probe_cache[cache_key]
+            results.append((label, cached_status, cached_latency))
+            continue
 
         try:
             import time
@@ -2695,7 +2762,22 @@ def deploy():
                         max_retries=0,
                     )
                     kind = _classify_deployment_kind(name)
-                    if model.get("surface") == "responses":
+                    probe_mode = _deploy_probe_mode(model)
+                    if probe_mode == "metadata":
+                        # Some shared MaaS deployments are real but very low
+                        # quota. A metadata probe verifies the deployment is
+                        # mounted without consuming TPM and turning the health
+                        # check itself into a 429 source. Preserve the same
+                        # "not found" signal the ollama and embedding paths
+                        # emit so operators see the same status label whether
+                        # a missing deployment is caught via metadata or
+                        # inference probe.
+                        try:
+                            client.models.retrieve(name)
+                            status = "live"
+                        except openai.NotFoundError:
+                            status = "not found"
+                    elif model.get("surface") == "responses":
                         resp = client.responses.create(
                             model=name,
                             input="Reply with exactly: OK",
@@ -2824,17 +2906,24 @@ def deploy():
                     status = "live" if resp.choices else "empty"
 
             elif provider == "ollama":
-                client = OpenAI(
-                    api_key="ollama",
-                    base_url=OLLAMA_BASE_URL,
-                    timeout=timeout_seconds,
-                    max_retries=0,
+                # Ollama first-load can take 15-30s for a multi-GB tag while
+                # weights stream into memory — far past the 8s deploy budget.
+                # The mount check we actually want is "does this tag exist in
+                # the local registry?", which `/api/show` answers in <100ms
+                # without touching the model. A failing tag yields HTTP 404.
+                import requests as _rq
+                show_url = OLLAMA_BASE_URL.replace("/v1", "").rstrip("/") + "/api/show"
+                resp = _rq.post(
+                    show_url, json={"name": name}, timeout=timeout_seconds,
                 )
-                resp = client.chat.completions.create(
-                    model=name, messages=test_msg, max_tokens=50,
-                )
-                content = (resp.choices[0].message.content or "").strip()
-                status = "live" if resp.choices else "empty"
+                if resp.status_code == 200:
+                    status = "live"
+                elif resp.status_code == 404:
+                    status = "not found"
+                else:
+                    raise RuntimeError(
+                        f"ollama probe HTTP {resp.status_code}: {resp.text[:200]}"
+                    )
 
             elif provider == "openrouter":
                 if not OPENROUTER_API_KEY:
@@ -2867,6 +2956,14 @@ def deploy():
                     msg = (data.get("choices") or [{}])[0].get("message", {}) or {}
                     status = "live" if msg.get("content") else "empty"
 
+            elif provider in ("auto", "router", "deepparallel"):
+                # Virtual tiers: they fan out to other entries in the chain
+                # rather than holding their own backend deployment. Surface a
+                # neutral "virtual" status so the deploy table doesn't paint
+                # them red — the underlying tiers they delegate to are probed
+                # elsewhere in this same run.
+                status = "virtual"
+
             else:
                 status = "unknown provider"
 
@@ -2879,6 +2976,7 @@ def deploy():
             if os.environ.get("DEPLOY_VERBOSE", "").lower() in {"1", "true", "yes"}:
                 console.print(f"    [dim red]{label}: {type(e).__name__}: {e!s:.300}[/dim red]")
 
+        probe_cache[cache_key] = (status, latency)
         results.append((label, status, latency))
 
     # Display results
@@ -2902,6 +3000,8 @@ def deploy():
             status_fmt = f"[#bf6f6f]{status}[/#bf6f6f]"
         elif status in ("no credentials", "no key", "no endpoint", "auth failed"):
             status_fmt = f"[yellow]{status}[/yellow]"
+        elif status == "virtual":
+            status_fmt = "[dim cyan]virtual[/dim cyan]"
         else:
             status_fmt = f"[red]{status}[/red]"
 
@@ -2932,8 +3032,15 @@ def deploy():
         console.print("  [#bf6f6f]Local engine[/#bf6f6f]    [dim]not running[/dim]")
 
     live_count = sum(1 for _, s, _ in results if s == "live")
+    virtual_count = sum(1 for _, s, _ in results if s == "virtual")
     total = len(results)
-    console.print(f"\n  {live_count}/{total} models online")
+    if virtual_count:
+        console.print(
+            f"\n  {live_count}/{total} models online  "
+            f"[dim](+{virtual_count} virtual routing tiers)[/dim]"
+        )
+    else:
+        console.print(f"\n  {live_count}/{total} models online")
 
     if live_count > 0:
         console.print(f"\n{'='*60}")
