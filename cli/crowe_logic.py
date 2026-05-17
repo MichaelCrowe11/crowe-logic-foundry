@@ -1586,6 +1586,19 @@ def chat():
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
+                        elif model_cfg.get("provider") == "deepparallel":
+                            # ── CroweLM DeepParallel (cluster orchestrator) ──
+                            # Built fresh per turn rather than cached because
+                            # DeepParallelProvider tracks per-session message
+                            # history internally and the cluster runtime is
+                            # single-turn — no shared state to preserve.
+                            from providers.runtime_factory import build_provider
+                            provider = build_provider(model_cfg.get("name"))
+                            provider.system_instructions = runtime_instructions
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
                         else:
                             # ── Legacy Azure AI Agents Service path (provider="azure") ──
                             # Lazy-init the Agents client/thread/agent only when this
