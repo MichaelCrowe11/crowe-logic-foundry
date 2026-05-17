@@ -122,10 +122,11 @@
     "_note": "User pays their own provider bills directly. Crowe Logic collects the flat $19 for orchestration, routing, dual mode, synthesis, tool ecosystem, HUD, and updates. Targets devs who already have provider API accounts and want the CLI without re-subscribing through us."
   },
   "credit_costs": {
-    "_comment": "Credits per action. Mapped to models by internal tier classification (see cost_model.tier_for_model). Lower-tier models are cheaper per turn so the pricing tracks the Opus/Sonnet/Haiku cost ratio with a slight flagship subsidy.",
+    "_comment": "Credits per action. Mapped to models by internal tier classification (see cost_model.tier_for_model). Lower-tier models are cheaper per turn so the pricing tracks the Opus/Sonnet/Haiku cost ratio with a slight flagship subsidy. The deepparallel tier is a premium per-query rate covering the 30-50 internal model calls per cluster-mode invocation; sized so a Pro plan ($99/mo, 3000 credits) gives 200 DeepParallel queries/month.",
     "turn_fast": 1,
     "turn_balanced": 2,
     "turn_flagship": 5,
+    "turn_deepparallel": 15,
     "dual_mode_multiplier": "sum_of_both_sides",
     "synthesis_addition": 5,
     "tool_call_free_budget_per_turn": 10,
@@ -135,6 +136,10 @@
   },
   "tier_classification": {
     "_comment": "Maps internal model config 'backend_name' or 'label' to a tier key for credit_costs lookup. Kept separate from upstream_costs so a price change on the vendor side doesn't force a customer-facing credit reshuffle.",
+    "deepparallel": [
+      "crowelm-deepparallel", "CroweLM DeepParallel",
+      "crowelm-cluster-v1", "crowelm-cluster-multilineage-v1"
+    ],
     "flagship": [
       "claude-opus-4-7", "claude-opus-4-6", "claude-opus",
       "moonshotai/kimi-k2.6", "kimi-k2.6:cloud",

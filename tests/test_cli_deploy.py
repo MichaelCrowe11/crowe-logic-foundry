@@ -105,3 +105,59 @@ def test_deploy_reports_timeout_status(monkeypatch):
     assert result.exit_code == 0
     assert "timeout" in result.output
     assert "No models available" in result.output
+
+
+def test_deploy_metadata_probe_avoids_chat_for_marked_azure_models(monkeypatch):
+    from click.testing import CliRunner
+    import openai
+    import requests
+
+    runner = CliRunner()
+    captured: dict[str, list[str]] = {"retrieved": []}
+
+    monkeypatch.setenv("AZURE_CORE_ENDPOINT", "https://example.openai.azure.com")
+    monkeypatch.setenv("AZURE_CORE_API_KEY", "core-key")
+    monkeypatch.setattr(
+        agent_config,
+        "MODEL_CHAIN",
+        [
+            {
+                "name": "crowelm-dense",
+                "label": "CroweLM Dense",
+                "provider": "azure_openai",
+                "backend_name": "Cohere-Command-A",
+                "deploy_probe": "metadata",
+            },
+            {
+                "name": "crowelm-grower",
+                "label": "CroweLM Grower",
+                "provider": "azure_openai",
+                "backend_name": "Cohere-Command-A",
+                "deploy_probe": "metadata",
+            },
+        ],
+    )
+    monkeypatch.setattr(agent_config, "NEON_DATABASE_URL", "")
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.models = SimpleNamespace(
+                retrieve=lambda model: captured["retrieved"].append(model)
+            )
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_: (_ for _ in ()).throw(
+                        AssertionError("metadata probes must not call chat completions")
+                    )
+                )
+            )
+
+    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(requests, "head", lambda *_, **__: SimpleNamespace(status_code=200))
+    monkeypatch.setattr(requests, "get", lambda *_, **__: SimpleNamespace(status_code=200))
+
+    result = runner.invoke(cli_mod.main, ["deploy"])
+
+    assert result.exit_code == 0
+    assert captured["retrieved"] == ["Cohere-Command-A"]
+    assert "2/2 models online" in result.output

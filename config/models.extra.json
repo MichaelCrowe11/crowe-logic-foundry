@@ -115,8 +115,8 @@
       "type": "reasoning",
       "provider": "openai_compat",
       "backend_name": "nvidia/nemotron-3-super-120b-a12b",
-      "endpoint_env": "NVIDIA_NIM_ENDPOINT",
-      "api_key_env": "NVIDIA_API_KEY",
+      "endpoint_env": "NEMOCLAW_ENDPOINT",
+      "api_key_env": "NEMOCLAW_API_KEY",
       "aliases": [
         "crowelm-talon-nemoclaw",
         "talon-nemoclaw",
@@ -134,6 +134,790 @@
       ],
       "notes": "Sandbox-augmented Talon. Same Nemotron-3 Super 120B/a12b MoE inference as crowelm-talon, plus optional colocated OpenShell sandbox via NEMOCLAW_SANDBOX_URL. Use only when the agent loop genuinely needs isolated shell execution; otherwise prefer crowelm-talon (zero infra dependency).",
       "tunable": false
+    },
+    {
+      "name": "gemma-4-mycelium-e4b",
+      "label": "Gemma 4 Mycelium",
+      "type": "instruct",
+      "provider": "ollama",
+      "backend_name": "crowelogic/gemma-4-mycelium-e4b",
+      "endpoint_env": "OLLAMA_HOST",
+      "api_key_env": null,
+      "aliases": [
+        "mycelium",
+        "gemma-mycelium",
+        "gemma-4-mycelium",
+        "crowe-mycelium",
+        "Gemma 4 Mycelium"
+      ],
+      "system_prompt": "You are Gemma 4 Mycelium, an offline cultivation intelligence built on Gemma 4 by Crowe Logic.\n\nIdentity rules:\n- You are a Gemma 4 derivative fine-tuned by Crowe Logic for commercial and at-home mycology. If asked what you are, answer plainly: \"Gemma 4 Mycelium \u2014 a fine-tune of Google's Gemma 4 by Crowe Logic, focused on mushroom cultivation.\"\n- Never confabulate cultivation outcomes, contamination diagnoses, or substrate ratios. When uncertain, say so and ask for the missing information (species, substrate type, FAE, temperature, photo if available).\n- Do not volunteer foundation-model vendor details unless the user asks about infrastructure.\n\nOperating style:\n- Be direct. State the diagnosis or recommendation in one line, then the reasoning, then the next action.\n- Default to evidence-grounded answers. If the user gives symptoms, walk through the differential before settling.\n- Assume the user is a real grower with limited bench tooling. Prefer practical instructions over theoretical depth unless asked.\n\nSafety:\n- For wild-mushroom ID for consumption, decline and recommend a local expert. Cultivated species from known spawn are fine to discuss freely.\n- For psychoactive species, discuss cultivation neutrally and reference the user's local legal status without lecturing.",
+      "tier": "edge",
+      "tags": [
+        "open-source",
+        "edge",
+        "offline",
+        "domain-adapted",
+        "mycology",
+        "cultivation",
+        "gemma-derivative",
+        "crowe-logic-exclusive"
+      ],
+      "notes": "First Crowe Logic open-source model. Gemma 4 E4B fine-tuned on commercial mycology corpus (Lion's Mane SOP, Mushroom Grower Vol 1+2, Mycelium EI Engine telemetry). Runs fully offline via Ollama, llama.cpp, or LiteRT. Designed for growers without datacenter access. Standalone CLI lives at ~/Projects/crowe-mycelium-cli. Model name retains 'Gemma' per Google's derivative naming guidelines; weights distributed under the Gemma Terms of Use.",
+      "tunable": true
+    },
+    {
+      "name": "crowelm-vanguard",
+      "label": "CroweLM Vanguard",
+      "type": "reasoning",
+      "provider": "azure_openai",
+      "backend_name": "Llama-4-Maverick",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "vanguard",
+        "crowelm-vanguard",
+        "vanguard-flagship",
+        "vanguard-hosted",
+        "CroweLM Vanguard"
+      ],
+      "system_prompt": "detailed thinking on\n\nYou are CroweLM Vanguard, the sovereign flagship tier of CroweLM's tool-use and agentic reasoning family inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Vanguard is the Crowe-owned, sovereign-infrastructure variant of the Talon family. Same agentic role, different hosting posture: every inference runs on Crowe Logic's own Azure AI Foundry resource, no third-party API on the hot path.\n- If asked what Vanguard is, answer: \"Crowe Logic's sovereign-infrastructure tool-use and reasoning tier.\"\n- Never confabulate a backstory, architecture details, or capabilities you do not actually have. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- State the plan in one line, execute, report. No filler.\n- Ground every claim in evidence or explicitly flag it as an assumption.\n- Call tools only when they fit the task. If a tool fails, read the error and adapt rather than retrying blind.\n- Keep reasoning traces compact. Final answers are concrete and directly actionable.\n\nYou are the deepest Vanguard variant (flagship reasoning). Reach further into multi-step planning and synthesis than Vanguard Nano or Vanguard Super would.",
+      "tier": "reasoning",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "reasoning",
+        "flagship",
+        "sovereign",
+        "azure"
+      ],
+      "notes": "Sovereign flagship. Inference on the Crowe-owned crowelm-prod-eastus2 Azure AI Foundry resource (deployment: Llama-4-Maverick, 128-expert FP8 MoE). Zero NVIDIA NIM dependency. Use when the agent loop must stay on Crowe-controlled infrastructure for data residency, vendor independence, or quota predictability.",
+      "tunable": false
+    },
+    {
+      "name": "crowelm-vanguard-super",
+      "label": "CroweLM Vanguard Super",
+      "type": "reasoning",
+      "provider": "azure_openai",
+      "backend_name": "Llama-3-3-70B",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "vanguard-super",
+        "crowelm-vanguard-super",
+        "super-70b",
+        "CroweLM Vanguard Super"
+      ],
+      "system_prompt": "detailed thinking on\n\nYou are CroweLM Vanguard Super, the sovereign mid-tier of CroweLM Vanguard inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Vanguard Super sits between Vanguard Nano (fast) and Vanguard (flagship). Sovereign-infrastructure mirror of CroweLM Talon Super.\n- If asked, answer: \"The mid-tier of CroweLM Vanguard.\"\n- Never confabulate capabilities. When uncertain, say so.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- State the plan, execute, report. Evidence-driven, no filler.\n- Call tools when they fit. Read errors carefully and adapt.\n- Keep reasoning traces compact; final answers concrete and actionable.\n\nTrade some flagship depth for steadier latency and lower unit cost. Escalate to Vanguard if a task clearly exceeds your reach.",
+      "tier": "reasoning",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "reasoning",
+        "research",
+        "sovereign",
+        "azure"
+      ],
+      "notes": "Sovereign mid-tier. Llama-3.3-70B Instruct on crowelm-prod-eastus2. Best price/quality ratio for sovereign multi-step research where Vanguard flagship is overkill.",
+      "tunable": false
+    },
+    {
+      "name": "crowelm-vanguard-nano",
+      "label": "CroweLM Vanguard Nano",
+      "type": "reasoning",
+      "provider": "azure_openai",
+      "backend_name": "Llama-4-Scout",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "vanguard-nano",
+        "crowelm-vanguard-nano",
+        "scout-17b",
+        "CroweLM Vanguard Nano"
+      ],
+      "system_prompt": "detailed thinking off\n\nYou are CroweLM Vanguard Nano, the sovereign fast-iteration tier of CroweLM Vanguard inside the Crowe Logic Foundry.\n\nIdentity rules:\n- Vanguard Nano is the cheap/fast sovereign variant of CroweLM Vanguard. Mirrors CroweLM Talon Nano on Crowe-owned infrastructure.\n- If asked, answer: \"The fast tier of CroweLM Vanguard.\"\n- Never confabulate capabilities. When uncertain, say so.\n- No foundation-model or vendor names unless the user explicitly asks about infrastructure.\n\nOperating style:\n- Short, direct, action-oriented.\n- Call obvious tools only. Defer hard multi-step reasoning to Vanguard or Vanguard Super.\n- Skip commentary; get to the answer.\n\nOptimize for speed and unit cost. Depth is not your job.",
+      "tier": "fast",
+      "tags": [
+        "agentic",
+        "tool_use",
+        "fast",
+        "low_cost",
+        "sovereign",
+        "azure"
+      ],
+      "notes": "Sovereign fast tier. Llama-4-Scout-17B-16E-Instruct on crowelm-prod-eastus2. 17B-active MoE, sub-second TTFB. Use for sovereign routing, classification, simple tool dispatch.",
+      "tunable": false
+    },
+    {
+      "name": "Codestral-2501",
+      "label": "CroweLM Anvil",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Codestral 2501",
+        "crowelm codestral 2501",
+        "codestral-2501",
+        "Codestral-2501"
+      ]
+    },
+    {
+      "name": "Cohere-Command-A",
+      "label": "CroweLM Lattice",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "deploy_probe": "metadata",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Cohere Command A",
+        "crowelm cohere command a",
+        "cohere-command-a",
+        "Cohere-Command-A"
+      ]
+    },
+    {
+      "name": "Cohere-embed-v4",
+      "label": "CroweLM Filament Pro",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "_deploy_probe_note": "Cohere-embed-v4 on AZURE_CORE does NOT expose /openai/deployments/{name} metadata even though embeddings inference works. Keep the embeddings inference probe (default path); do not add deploy_probe: metadata here. Sister Cohere-Command-A deployment DOES expose metadata and is probed via metadata to avoid 429s.",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Cohere Embed V4",
+        "crowelm cohere embed v4",
+        "cohere-embed-v4",
+        "Cohere-embed-v4"
+      ]
+    },
+    {
+      "name": "DeepSeek-R1-0528",
+      "label": "CroweLM Cipher",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Deepseek R1 0528",
+        "crowelm deepseek r1 0528",
+        "deepseek-r1-0528",
+        "DeepSeek-R1-0528"
+      ]
+    },
+    {
+      "name": "DeepSeek-V3-1",
+      "label": "CroweLM Cipher Legacy",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Deepseek V3 1",
+        "crowelm deepseek v3 1",
+        "deepseek-v3-1",
+        "DeepSeek-V3-1"
+      ]
+    },
+    {
+      "name": "DeepSeek-V4-Flash",
+      "label": "CroweLM Flash",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Deepseek V4 Flash",
+        "crowelm deepseek v4 flash",
+        "deepseek-v4-flash",
+        "DeepSeek-V4-Flash"
+      ]
+    },
+    {
+      "name": "gpt-4o",
+      "label": "CroweLM Beacon",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT 4o",
+        "crowelm gpt 4o",
+        "gpt-4o"
+      ]
+    },
+    {
+      "name": "gpt-5.4",
+      "label": "CroweLM Helio",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT 5.4",
+        "crowelm gpt 5.4",
+        "gpt-5.4"
+      ],
+      "surface": "responses"
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "label": "CroweLM Helio Mini",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT 5.4 Mini",
+        "crowelm gpt 5.4 mini",
+        "gpt-5.4-mini"
+      ],
+      "surface": "responses"
+    },
+    {
+      "name": "gpt-5.4-nano",
+      "label": "CroweLM Cinder",
+      "provider": "azure_openai",
+      "type": "fast",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT 5.4 Nano",
+        "crowelm gpt 5.4 nano",
+        "gpt-5.4-nano"
+      ],
+      "surface": "responses"
+    },
+    {
+      "name": "gpt-5.4-pro",
+      "label": "CroweLM Helio Pro",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT 5.4 Pro",
+        "crowelm gpt 5.4 pro",
+        "gpt-5.4-pro"
+      ],
+      "surface": "responses"
+    },
+    {
+      "name": "gpt-5.5",
+      "label": "CroweLM Quasar",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT 5.5",
+        "crowelm gpt 5.5",
+        "gpt-5.5"
+      ],
+      "surface": "responses"
+    },
+    {
+      "name": "gpt-chat-latest",
+      "label": "CroweLM Chat",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM GPT Chat Latest",
+        "crowelm gpt chat latest",
+        "gpt-chat-latest"
+      ]
+    },
+    {
+      "name": "grok-4-1-fast-non-r",
+      "label": "CroweLM Swift Raw",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Grok 4 1 Fast Non R",
+        "crowelm grok 4 1 fast non r",
+        "grok-4-1-fast-non-r"
+      ]
+    },
+    {
+      "name": "grok-4-1-fast-reasoning",
+      "label": "CroweLM Swift Reason",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Grok 4 1 Fast Reasoning",
+        "crowelm grok 4 1 fast reasoning",
+        "grok-4-1-fast-reasoning"
+      ]
+    },
+    {
+      "name": "grok-4-20-reasoning",
+      "label": "CroweLM Spire",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Grok 4 20 Reasoning",
+        "crowelm grok 4 20 reasoning",
+        "grok-4-20-reasoning"
+      ]
+    },
+    {
+      "name": "grok-4-3",
+      "label": "CroweLM Crest",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Grok 4 3",
+        "crowelm grok 4 3",
+        "grok-4-3"
+      ]
+    },
+    {
+      "name": "Kimi-K2-6",
+      "label": "CroweLM Hyphae",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Kimi K2 6",
+        "crowelm kimi k2 6",
+        "kimi-k2-6",
+        "Kimi-K2-6"
+      ]
+    },
+    {
+      "name": "Kimi-K2.5",
+      "label": "CroweLM Hyphae Legacy",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Kimi K2.5",
+        "crowelm kimi k2.5",
+        "kimi-k2.5",
+        "Kimi-K2.5"
+      ]
+    },
+    {
+      "name": "Llama-3-3-70B",
+      "label": "CroweLM Bastion",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Llama 3 3 70B",
+        "crowelm llama 3 3 70b",
+        "llama-3-3-70b",
+        "Llama-3-3-70B"
+      ]
+    },
+    {
+      "name": "Llama-4-Maverick",
+      "label": "CroweLM Maverick Raw",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Llama 4 Maverick",
+        "crowelm llama 4 maverick",
+        "llama-4-maverick",
+        "Llama-4-Maverick"
+      ]
+    },
+    {
+      "name": "Llama-4-Scout",
+      "label": "CroweLM Scout",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Llama 4 Scout",
+        "crowelm llama 4 scout",
+        "llama-4-scout",
+        "Llama-4-Scout"
+      ]
+    },
+    {
+      "name": "model-router",
+      "label": "CroweLM Model Router",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": []
+    },
+    {
+      "name": "sora-2",
+      "label": "CroweLM Reel",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Sora 2",
+        "crowelm sora 2",
+        "sora-2"
+      ]
+    },
+    {
+      "name": "text-embedding-3-large",
+      "label": "CroweLM Embed Large",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Text Embedding 3 Large",
+        "crowelm text embedding 3 large",
+        "text-embedding-3-large"
+      ]
+    },
+    {
+      "name": "crowelm-frontier",
+      "label": "CroweLM Frontier",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Llama-4-Maverick",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Frontier",
+        "frontier"
+      ]
+    },
+    {
+      "name": "crowelm-prism",
+      "label": "CroweLM Prism",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "model-router",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Prism",
+        "prism"
+      ]
+    },
+    {
+      "name": "crowelm-ultra",
+      "label": "CroweLM Ultra",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "DeepSeek-V4-Flash",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Ultra",
+        "ultra"
+      ]
+    },
+    {
+      "name": "crowelm-lunar",
+      "label": "CroweLM Lunar",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "gpt-5.4-mini",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Lunar",
+        "lunar"
+      ]
+    },
+    {
+      "name": "crowelm-pulse",
+      "label": "CroweLM Pulse",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "gpt-5.4-nano",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Pulse",
+        "pulse"
+      ]
+    },
+    {
+      "name": "crowelm-depth",
+      "label": "CroweLM Depth",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "gpt-5.4-pro",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Depth",
+        "depth"
+      ],
+      "surface": "responses"
+    },
+    {
+      "name": "crowelm-nova",
+      "label": "CroweLM Nova",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "gpt-5.5",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Nova",
+        "nova"
+      ]
+    },
+    {
+      "name": "crowelm-open",
+      "label": "CroweLM Open",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Llama-4-Scout",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Open",
+        "open"
+      ]
+    },
+    {
+      "name": "crowelm-maverick",
+      "label": "CroweLM Maverick",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Llama-4-Maverick",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Maverick",
+        "maverick"
+      ]
+    },
+    {
+      "name": "crowelm-coder",
+      "label": "CroweLM Coder",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Codestral-2501",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Coder",
+        "coder"
+      ]
+    },
+    {
+      "name": "crowelm-dev",
+      "label": "CroweLM Dev",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Codestral-2501",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Dev",
+        "dev"
+      ]
+    },
+    {
+      "name": "grok-4-1-fast-non-r",
+      "label": "CroweLM Swift Raw",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Swift",
+        "swift",
+        "crowelm swift",
+        "grok-4-1-fast-non-r"
+      ]
+    },
+    {
+      "name": "crowelm-mesh",
+      "label": "CroweLM Mesh",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "model-router",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Mesh",
+        "mesh"
+      ]
+    },
+    {
+      "name": "crowelm-mesh-legacy",
+      "label": "CroweLM Mesh Legacy",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "DeepSeek-V3-1",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Mesh Legacy",
+        "mesh legacy"
+      ]
+    },
+    {
+      "name": "crowelm-lite",
+      "label": "CroweLM Lite",
+      "provider": "azure_openai",
+      "type": "fast",
+      "backend_name": "gpt-5.4-nano",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Lite",
+        "lite"
+      ]
+    },
+    {
+      "name": "crowelm-vision",
+      "label": "CroweLM Vision",
+      "provider": "azure_openai",
+      "type": "vision",
+      "backend_name": "Llama-4-Scout",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Vision",
+        "vision"
+      ]
+    },
+    {
+      "name": "crowelm-edge",
+      "label": "CroweLM Edge",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Llama-4-Maverick",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Edge",
+        "edge"
+      ]
+    },
+    {
+      "name": "crowelm-atlas",
+      "label": "CroweLM Atlas",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "DeepSeek-V4-Flash",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Atlas",
+        "atlas"
+      ]
+    },
+    {
+      "name": "crowelm-dense",
+      "label": "CroweLM Dense",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "deploy_probe": "metadata",
+      "backend_name": "Cohere-Command-A",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Dense",
+        "dense"
+      ]
+    },
+    {
+      "name": "crowelm-dense-legacy",
+      "label": "CroweLM Dense Legacy",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "DeepSeek-V3-1",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Dense Legacy",
+        "dense legacy"
+      ]
+    },
+    {
+      "name": "crowelm-classic",
+      "label": "CroweLM Classic",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "Kimi-K2.5",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Classic",
+        "classic"
+      ]
+    },
+    {
+      "name": "crowelm-kernel",
+      "label": "CroweLM Kernel",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "backend_name": "gpt-5.4-nano",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Kernel",
+        "kernel"
+      ]
+    },
+    {
+      "name": "crowelm-grower",
+      "label": "CroweLM Grower",
+      "provider": "azure_openai",
+      "type": "reasoning",
+      "deploy_probe": "metadata",
+      "backend_name": "Cohere-Command-A",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Grower",
+        "grower"
+      ]
+    },
+    {
+      "name": "claude-opus-4-6-2",
+      "label": "CroweLM Sovereign",
+      "provider": "watsonx",
+      "backend_name": "mistral-large-2512",
+      "endpoint_env": "WATSONX_URL",
+      "api_key_env": "WATSONX_APIKEY",
+      "aliases": [
+        "sovereign",
+        "crowelm-sovereign",
+        "crowelm-opus-x",
+        "opus-x",
+        "CroweLM Opus X"
+      ]
+    },
+    {
+      "name": "DeepSeek-R1",
+      "label": "CroweLM Reason",
+      "provider": "watsonx",
+      "backend_name": "meta-llama/llama-3-3-70b-instruct",
+      "endpoint_env": "WATSONX_URL",
+      "api_key_env": "WATSONX_APIKEY",
+      "aliases": [
+        "reason",
+        "crowelm-reason",
+        "r1",
+        "crowelm-synapse",
+        "CroweLM Synapse"
+      ]
     }
   ]
 }

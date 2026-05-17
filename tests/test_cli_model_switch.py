@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import config.agent_config as agent_config
 from cli import crowe_logic as cli_mod
 from config.agent_config import resolve_model_config
 
@@ -40,13 +41,20 @@ def test_model_status_note_marks_blocked_models(monkeypatch):
 
 def test_model_status_note_prefers_failures_over_blocked(monkeypatch):
     monkeypatch.delenv("CROWE_OPEN_ENDPOINT", raising=False)
-    cli_mod._model_state["failures"]["FW-GLM-5.1"] = 2
+    cfg = resolve_model_config("crowelm-glm")
+    cli_mod._model_state["failures"][cfg["name"]] = 2
 
     try:
-        cfg = resolve_model_config("crowelm-glm")
         assert cli_mod._model_status_note(cfg) == "2 fails"
     finally:
-        cli_mod._model_state["failures"].pop("FW-GLM-5.1", None)
+        cli_mod._model_state["failures"].pop(cfg["name"], None)
+
+
+def test_provider_detail_filter_hides_legacy_backend_aliases():
+    assert cli_mod._contains_provider_detail("CroweLM Cohere Command A") is True
+    assert cli_mod._contains_provider_detail("gpt-5.4") is True
+    assert cli_mod._contains_provider_detail("lattice") is False
+    assert cli_mod._contains_provider_detail("CroweLM Dense") is False
 
 
 def test_model_switch_error_allows_hosted_models_with_endpoint_only(monkeypatch):
@@ -55,6 +63,26 @@ def test_model_switch_error_allows_hosted_models_with_endpoint_only(monkeypatch)
 
     cfg = resolve_model_config("titan")
     assert cli_mod._model_switch_error(cfg) is None
+
+
+def test_kernel_uses_standard_azure_openai_triplet_when_core_missing(monkeypatch):
+    from config.agent_config import azure_openai_runtime_config
+
+    monkeypatch.delenv("AZURE_CORE_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_CORE_API_KEY", raising=False)
+    monkeypatch.setattr(agent_config, "AZURE_CORE_ENDPOINT", "")
+    monkeypatch.setattr(agent_config, "AZURE_CORE_API_KEY", "")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://fallback.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fallback-key")
+    monkeypatch.setenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-5.4-mini")
+
+    cfg = resolve_model_config("kernel")
+    runtime = azure_openai_runtime_config(cfg)
+
+    assert cli_mod._model_switch_error(cfg) is None
+    assert runtime["endpoint"] == "https://fallback.openai.azure.com"
+    assert runtime["api_key"] == "fallback-key"
+    assert runtime["model"] == "gpt-5.4-mini"
 
 
 def test_provider_wide_error_detects_watsonx_quota_exhaustion():
@@ -157,9 +185,14 @@ def test_get_nvidia_provider_uses_backend_name(monkeypatch):
     monkeypatch.setattr(nvidia_mod, "NvidiaProvider", _FakeProvider)
     cli_mod._model_state["nvidia_provider"] = None
 
-    cfg = resolve_model_config("edge")
+    cfg = {
+        "name": "CroweLM Test",
+        "label": "CroweLM Test",
+        "provider": "nvidia",
+        "backend_name": "nvidia/test-backend",
+    }
     provider = cli_mod._get_nvidia_provider(cfg, system_instructions="system")
 
-    assert provider.model == "mistralai/mistral-large-3-675b-instruct-2512"
-    assert captured["model"] == "mistralai/mistral-large-3-675b-instruct-2512"
-    assert captured["label"] == "CroweLM Edge"
+    assert provider.model == "nvidia/test-backend"
+    assert captured["model"] == "nvidia/test-backend"
+    assert captured["label"] == "CroweLM Test"

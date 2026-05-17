@@ -38,7 +38,7 @@ def test_resolve_model_config_accepts_branded_aliases():
     Tests the alias resolver, not the specific backends behind each tier
     (backends migrate frequently; aliases are more stable).
     """
-    assert resolve_model_config("titan")["label"] == "CroweLM Titan"
+    assert resolve_model_config("titan")["label"] == "CroweLM Helio"
     assert resolve_model_config("CroweLM Sovereign")["label"] == "CroweLM Sovereign"
     assert resolve_model_config("supreme")["label"] == "CroweLM Supreme"
 
@@ -150,7 +150,7 @@ def test_route_for_auto_selects_correct_tier():
 
     cfg, cls = route_for_auto("hello")
     assert cls == "chat"
-    assert cfg["label"] == "CroweLM Nexus"
+    assert cfg["label"] == "CroweLM Hyphae Legacy"
 
 
 def test_route_for_auto_never_returns_auto():
@@ -175,7 +175,7 @@ def test_route_candidates_for_auto_returns_same_turn_fallbacks():
 
     assert cls == "chat"
     assert candidates
-    assert candidates[0]["label"] == "CroweLM Nexus"
+    assert candidates[0]["label"] == "CroweLM Hyphae Legacy"
     assert all(cfg["provider"] != "auto" for cfg in candidates)
 
 

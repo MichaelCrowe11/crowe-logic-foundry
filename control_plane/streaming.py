@@ -26,13 +26,7 @@ import time
 from typing import AsyncIterator, Optional
 
 
-# Reuse the provider construction logic the headless CLI already uses.
-# Keeping this in one place guarantees the CLI's headless mode and the
-# SSE endpoint can never drift on which models exist or how each
-# provider authenticates. The underscore prefix is a heads-up that this
-# is intra-foundry only; if a third surface wants the same factory we
-# promote it to a public name.
-from cli.headless import _build_provider, _NoopOrchestrator
+from providers.runtime_factory import NoopOrchestrator, build_provider
 
 
 class SseEventRenderer:
@@ -177,7 +171,7 @@ async def stream_agent_events(
     # errors surface as a single config error event rather than a
     # cryptic runtime error mid-stream.
     try:
-        provider = _build_provider(model_id, session_id=session_id)
+        provider = build_provider(model_id, session_id=session_id)
     except Exception as exc:  # noqa: BLE001 - intentional catch-all
         yield {"type": "error", "message": str(exc), "kind": "config"}
         return
@@ -216,7 +210,7 @@ async def stream_agent_events(
                 console=None,
                 render_tool_card=render_tool_card,
                 session_state=session_state,
-                _get_orchestrator=lambda: _NoopOrchestrator(),
+                _get_orchestrator=lambda: NoopOrchestrator(),
                 renderer=renderer,
             )
         except Exception as exc:  # noqa: BLE001

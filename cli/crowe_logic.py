@@ -184,6 +184,11 @@ def _auto_route_enabled() -> bool:
     return val in ("1", "true", "yes", "on")
 
 
+def _auto_route_available(model_cfg: dict) -> bool:
+    """Return True when a routed model is usable in the current environment."""
+    return _model_switch_error(model_cfg) is None
+
+
 def _apply_route_decision(decision, session_state: dict, prompt: str = "") -> bool:
     """Switch the active chain index to the routed tier when it differs.
 
@@ -325,26 +330,30 @@ def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = N
 
 def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a NvidiaProvider for the given model."""
-    from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY, provider_model_name
+    from config.agent_config import provider_model_name
     from providers.nvidia import NvidiaProvider
 
     model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
+    endpoint_var = model_cfg.get("endpoint_env", "NVIDIA_NIM_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "NVIDIA_API_KEY")
+    endpoint = os.environ.get(endpoint_var, "")
+    api_key = os.environ.get(api_key_var, "")
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("nvidia_provider")
     if current and current.model == model_name:
         return _apply_provider_instructions(current, system_instructions, model_cfg)
-    if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
+    if not endpoint or not api_key:
         raise RuntimeError(
             f"NVIDIA model '{label}' is missing credentials — "
-            "set NVIDIA_NIM_ENDPOINT and NVIDIA_API_KEY in .env"
+            f"set {endpoint_var} and {api_key_var} in .env"
         )
 
     provider = NvidiaProvider(
         model=model_name,
         system_instructions=system_instructions,
-        endpoint=NVIDIA_NIM_ENDPOINT,
-        api_key=NVIDIA_API_KEY,
+        endpoint=endpoint,
+        api_key=api_key,
         label=label,
     )
     _model_state["nvidia_provider"] = provider
@@ -353,16 +362,17 @@ def _get_nvidia_provider(model_cfg: dict, *, system_instructions: str | None = N
 
 def _get_watsonx_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create a WatsonxProvider for the given model."""
+    from config.agent_config import provider_model_name
     from providers.watsonx import WatsonxProvider
 
     # The brand_id (model name) is the canonical identifier for the watsonx
     # adapter; backend_name (upstream model id) is also accepted by resolve().
-    model_name = model_cfg.get("name") or model_cfg.get("backend_name") or ""
+    model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("watsonx_provider")
     if current and current.model == model_name:
-        return _apply_provider_instructions(current, system_instructions)
+        return _apply_provider_instructions(current, system_instructions, model_cfg)
 
     from pathlib import Path as _P
     if not (_P.home() / ".crowe-logic" / "ibm.env").exists():
@@ -425,23 +435,20 @@ def _get_azure_openai_provider(model_cfg: dict, *, system_instructions: str | No
     entry — so multiple Azure Foundry resources can coexist in the same chain.
     The provider is cached by (model, endpoint) since both determine identity.
     """
+    from config.agent_config import azure_openai_runtime_config
     from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
 
-    from config.agent_config import provider_model_name
-
-    model_name = provider_model_name(model_cfg)
+    runtime = azure_openai_runtime_config(model_cfg)
+    model_name = runtime["model"]
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
-    endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-    api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
+    endpoint = runtime["endpoint"]
+    api_key = runtime["api_key"]
 
-    endpoint = os.environ.get(endpoint_var, "")
-    api_key = os.environ.get(api_key_var, "")
-
-    if not endpoint or not api_key:
+    if runtime["missing"]:
         raise RuntimeError(
             f"Azure model '{label}' is missing credentials — "
-            f"set {endpoint_var} and {api_key_var} in .env"
+            f"set {' and '.join(runtime['missing'])} in .env"
         )
 
     current = _model_state.get("azure_openai_provider")
@@ -1421,7 +1428,7 @@ def chat():
         if _auto_route_enabled():
             from config.router import route_prompt
             from config.quality import assess_response
-            decision = route_prompt(user_input)
+            decision = route_prompt(user_input, availability=_auto_route_available)
             swapped = _apply_route_decision(decision, session_state, user_input)
             if swapped or decision.low_confidence:
                 _render_route_badge(console, decision)
@@ -1579,6 +1586,19 @@ def chat():
                             provider.stream_response(
                                 console, render_tool_card, session_state, _get_orchestrator,
                             )
+                        elif model_cfg.get("provider") == "deepparallel":
+                            # ── CroweLM DeepParallel (cluster orchestrator) ──
+                            # Built fresh per turn rather than cached because
+                            # DeepParallelProvider tracks per-session message
+                            # history internally and the cluster runtime is
+                            # single-turn — no shared state to preserve.
+                            from providers.runtime_factory import build_provider
+                            provider = build_provider(model_cfg.get("name"))
+                            provider.system_instructions = runtime_instructions
+                            provider.add_user_message(user_input)
+                            provider.stream_response(
+                                console, render_tool_card, session_state, _get_orchestrator,
+                            )
                         else:
                             # ── Legacy Azure AI Agents Service path (provider="azure") ──
                             # Lazy-init the Agents client/thread/agent only when this
@@ -1727,7 +1747,6 @@ def chat():
                     last = provider.messages[-1]
                     if last.get("role") == "assistant":
                         from config.quality import assess_response
-                        from config.telemetry import telemetry
                         signal = assess_response(
                             last.get("content") or "",
                             prompt=user_input,
@@ -1843,14 +1862,24 @@ def _show_status_inline():
     console.print()
 
 
+_PROVIDER_DETAIL_TERMS = (
+    "anthropic", "claude", "cohere", "codestral", "deepseek", "gemini",
+    "glm", "gpt", "granite", "grok", "kimi", "llama", "mistral", "nemotron",
+    "nvidia", "openai", "opus", "qwen", "sora", "watsonx",
+)
+
+
+def _contains_provider_detail(value: str) -> bool:
+    normalized = "".join(ch.lower() for ch in str(value) if ch.isalnum())
+    return any(term.replace("-", "") in normalized for term in _PROVIDER_DETAIL_TERMS)
+
+
 def _resolve_model_alias(alias: str):
     """Print what a model alias currently maps to.
 
-    Read-only diagnostic. Reports the resolved label, provider, backend
-    name, all aliases for that config, and the chain index. Useful when
-    ``models.extra.json`` has rebound an alias and the source-level name
-    no longer matches the runtime resolution (e.g. ``prime`` points at
-    IBM Granite instead of the default Kimi K2.5 entry).
+    Read-only diagnostic. Reports the resolved label and public aliases by
+    default. Set CROWE_LOGIC_EXPOSE_BACKENDS=1 to inspect provider/backend
+    selectors while debugging registry migrations.
     """
     from config.agent_config import resolve_model_config, model_selectors
 
@@ -1870,18 +1899,39 @@ def _resolve_model_alias(alias: str):
 
     console.print()
     console.print(f"  [#bfa669 bold]{cfg['label']}[/#bfa669 bold]")
+    expose_backend_details = os.environ.get("CROWE_LOGIC_EXPOSE_BACKENDS", "").lower() in {
+        "1", "true", "yes"
+    }
     console.print(f"  [dim]alias queried:[/dim]  {alias}")
-    console.print(f"  [dim]provider:[/dim]       {cfg.get('provider', '?')}")
-    console.print(f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}")
+    if expose_backend_details:
+        console.print(f"  [dim]provider:[/dim]       {cfg.get('provider', '?')}")
+        console.print(f"  [dim]backend_name:[/dim]   {cfg.get('backend_name') or cfg.get('name', '?')}")
+    else:
+        console.print("  [dim]surface:[/dim]        CroweLM managed")
     console.print(f"  [dim]type:[/dim]           {cfg.get('type', 'general')}")
     if chain_index is not None:
         console.print(f"  [dim]chain index:[/dim]    {chain_index + 1}")
     aliases = cfg.get("aliases") or []
     if aliases:
-        console.print(f"  [dim]aliases:[/dim]        {', '.join(aliases)}")
-    selectors = [s for s in model_selectors(cfg) if s]
-    if selectors:
-        console.print(f"  [dim]selectors:[/dim]      {', '.join(selectors)}")
+        if expose_backend_details:
+            console.print(f"  [dim]aliases:[/dim]        {', '.join(aliases)}")
+        else:
+            public_aliases = [
+                item for item in aliases
+                if not _contains_provider_detail(item)
+            ]
+            if public_aliases:
+                console.print(f"  [dim]aliases:[/dim]        {', '.join(public_aliases)}")
+            hidden = len(aliases) - len(public_aliases)
+            if hidden:
+                console.print(
+                    f"  [dim]internal aliases:[/dim] {hidden} hidden "
+                    "[dim](set CROWE_LOGIC_EXPOSE_BACKENDS=1 to inspect)[/dim]"
+                )
+    if expose_backend_details:
+        selectors = [s for s in model_selectors(cfg) if s]
+        if selectors:
+            console.print(f"  [dim]selectors:[/dim]      {', '.join(selectors)}")
     console.print()
 
 
@@ -1944,16 +1994,12 @@ def _model_switch_error(model_cfg: dict) -> str | None:
         )
 
     if provider == "azure_openai":
-        endpoint_var = model_cfg.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-        api_key_var = model_cfg.get("api_key_env", "AZURE_CORE_API_KEY")
-        missing = [
-            var for var in (endpoint_var, api_key_var)
-            if not os.environ.get(var, "").strip()
-        ]
-        if missing:
+        from config.agent_config import azure_openai_runtime_config
+        runtime = azure_openai_runtime_config(model_cfg)
+        if runtime["missing"]:
             return (
                 f"Cannot switch to {label} — missing "
-                + ", ".join(missing)
+                + ", ".join(runtime["missing"])
                 + " in .env"
             )
 
@@ -2028,6 +2074,28 @@ def _model_switch_error(model_cfg: dict) -> str | None:
             "Use a NVIDIA NIM or IBM watsonx model instead."
         )
 
+    if provider == "deepparallel":
+        # CroweLM DeepParallel routes through the crowe-deepparallel package
+        # which orchestrates Foundry-anchored cluster execution. Two prereqs:
+        try:
+            import crowe_deepparallel  # noqa: F401
+        except ImportError:
+            return (
+                f"Cannot switch to {label} — crowe-deepparallel package not installed. "
+                "Run: pip install -e ~/Projects/crowe-logic-foundry-deepparallel-impl"
+            )
+        # Foundry Kimi-K2.6 is the default judge + a primary cluster anchor.
+        missing = [
+            var for var in ("AZURE_KIMI_ENDPOINT", "AZURE_KIMI_API_KEY")
+            if not os.environ.get(var, "").strip()
+        ]
+        if missing:
+            return (
+                f"Cannot switch to {label} — missing "
+                + ", ".join(missing)
+                + " in .env (DeepParallel needs Foundry Kimi-K2.6 as the cluster anchor)"
+            )
+
     return None
 
 
@@ -2043,8 +2111,14 @@ def _switch_model(azure_state: dict, target: str):
 
         _model_state["chain_index"] = idx
         provider = model.get("provider")
-        if provider in ("anthropic", "azure_openai", "nvidia", "openai_compat", "openrouter", "ollama", "watsonx"):
-            # Reset cached provider so the next turn rebuilds with the new model
+        if provider in (
+            "anthropic", "azure_openai", "nvidia", "openai_compat",
+            "openrouter", "ollama", "watsonx", "deepparallel",
+        ):
+            # Reset cached provider so the next turn rebuilds with the new model.
+            # deepparallel doesn't use a shared client cache (each query builds
+            # its own cluster orchestration internally), so the cache_key write
+            # is a no-op for it but keeps the dispatch pattern uniform.
             cache_key = "hosted_openai_provider" if provider == "openai_compat" else f"{provider}_provider"
             _model_state[cache_key] = None
             session_state["active_model"] = model["label"]
@@ -2449,7 +2523,7 @@ def run(prompt: str):
     # model gets instantiated.
     if _auto_route_enabled():
         from config.router import route_prompt
-        decision = route_prompt(prompt)
+        decision = route_prompt(prompt, availability=_auto_route_available)
         _apply_route_decision(decision, session_state, prompt)
         _render_route_badge(console, decision)
 
@@ -2556,9 +2630,29 @@ def _classify_deploy_error(error: Exception) -> str:
     return "error"
 
 
+def _classify_deployment_kind(model_name: str) -> str:
+    """Identify the API surface a deployment expects based on its name.
+
+    Foundry MaaS hosts non-chat deployments (embedding, rerank, image,
+    video) under the same resource as chat models. The deploy health check
+    must use the right OpenAI SDK method for each — calling
+    chat.completions.create against an embedding deployment fails with
+    DeploymentNotFound, hiding what is in fact a live model.
+    """
+    lname = model_name.lower()
+    if "rerank" in lname:
+        return "rerank"
+    if "embed" in lname or "embedding" in lname:
+        return "embedding"
+    if lname.startswith("sora") or "sora-" in lname:
+        return "image"
+    return "chat"
+
+
 @main.command()
 def deploy():
     """Verify all CroweLM providers and run health checks."""
+    import openai
     from openai import OpenAI
     from config.agent_config import (
         MODEL_CHAIN, OLLAMA_BASE_URL, NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY,
@@ -2567,6 +2661,7 @@ def deploy():
         AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
         AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
         AZURE_ANTHROPIC_ENDPOINT, AZURE_ANTHROPIC_API_KEY,
+        azure_openai_runtime_config,
         provider_model_name,
     )
     import requests
@@ -2584,16 +2679,50 @@ def deploy():
 
     def _token_limit_kwargs(model_name: str) -> dict:
         """
-        GPT-5 and o-series reasoning models reject `max_tokens` and require
-        `max_completion_tokens`. Everything else still uses `max_tokens`.
+        Newer OpenAI-family deployments (gpt-5+, o-series, gpt-chat-latest)
+        reject `max_tokens` and require `max_completion_tokens`. Everything
+        else still uses `max_tokens`.
         """
         lname = model_name.lower()
-        if lname.startswith(("gpt-5", "o1", "o3", "o4")) or "gpt-5" in lname:
+        if (
+            lname.startswith(("gpt-5", "o1", "o3", "o4"))
+            or "gpt-5" in lname
+            or "gpt-chat-latest" in lname
+        ):
             return {"max_completion_tokens": 50}
         return {"max_tokens": 50}
 
     results = []
     timeout_seconds = _deploy_timeout_seconds()
+
+    # Many CroweLM labels are first-party wrappers around the same upstream
+    # deployment (e.g. CroweLM Vanguard / Edge / Frontier / Maverick all route
+    # to Azure Llama-4-Maverick). Probing each label independently triggers
+    # bursty 429s on the shared per-resource TPM pool. Cache by (provider,
+    # routing-key) so each real deployment is hit at most once per run; sister
+    # labels copy the cached result.
+    probe_cache: dict[tuple, tuple[str, int]] = {}
+
+    def _probe_key(model_cfg: dict) -> tuple:
+        prov = model_cfg.get("provider", "unknown")
+        # For Azure OpenAI the routing identity is `backend_name` (the upstream
+        # foundation model on the shared resource); for everything else the
+        # deployment id alone is sufficient. Include endpoint_env in the key so
+        # two entries that share a backend but route through different
+        # endpoints (e.g. CroweLM Talon vs Talon Sandbox via NEMOCLAW_ENDPOINT)
+        # don't get collapsed into a single cached result.
+        if prov == "azure_openai":
+            ident = model_cfg.get("backend_name") or provider_model_name(model_cfg)
+        else:
+            ident = provider_model_name(model_cfg)
+        endpoint_env = model_cfg.get("endpoint_env", "")
+        return (prov, endpoint_env, ident)
+
+    def _deploy_probe_mode(model_cfg: dict) -> str:
+        raw = str(model_cfg.get("deploy_probe") or model_cfg.get("health_probe") or "").strip().lower()
+        if raw in {"metadata", "model_metadata", "metadata_only"}:
+            return "metadata"
+        return "inference"
 
     for model in MODEL_CHAIN:
         name = provider_model_name(model)
@@ -2602,16 +2731,22 @@ def deploy():
         status = "skip"
         latency = 0
 
+        cache_key = _probe_key(model)
+        if cache_key in probe_cache:
+            cached_status, cached_latency = probe_cache[cache_key]
+            results.append((label, cached_status, cached_latency))
+            continue
+
         try:
             import time
             start = time.monotonic()
 
             if provider == "azure_openai":
-                endpoint_var = model.get("endpoint_env", "AZURE_CORE_ENDPOINT")
-                api_key_var = model.get("api_key_env", "AZURE_CORE_API_KEY")
-                endpoint = os.environ.get(endpoint_var, "")
-                api_key = os.environ.get(api_key_var, "")
-                if not endpoint or not api_key:
+                runtime = azure_openai_runtime_config(model)
+                name = runtime["model"]
+                endpoint = runtime["endpoint"]
+                api_key = runtime["api_key"]
+                if runtime["missing"]:
                     status = "no credentials"
                 else:
                     base_url = endpoint.rstrip("/")
@@ -2626,13 +2761,75 @@ def deploy():
                         timeout=timeout_seconds,
                         max_retries=0,
                     )
-                    if model.get("surface") == "responses":
+                    kind = _classify_deployment_kind(name)
+                    probe_mode = _deploy_probe_mode(model)
+                    if probe_mode == "metadata":
+                        # Some shared MaaS deployments are real but very low
+                        # quota. A metadata probe verifies the deployment is
+                        # mounted without consuming TPM and turning the health
+                        # check itself into a 429 source. Preserve the same
+                        # "not found" signal the ollama and embedding paths
+                        # emit so operators see the same status label whether
+                        # a missing deployment is caught via metadata or
+                        # inference probe.
+                        try:
+                            client.models.retrieve(name)
+                            status = "live"
+                        except openai.NotFoundError:
+                            status = "not found"
+                    elif model.get("surface") == "responses":
                         resp = client.responses.create(
                             model=name,
                             input="Reply with exactly: OK",
                             max_output_tokens=50,
                         )
                         status = "live" if getattr(resp, "output_text", "").strip() else "empty"
+                    elif kind == "embedding":
+                        # Cohere Embed v4 on Azure rejects bare-string input —
+                        # the ``input`` must be a list, and the request must
+                        # carry an ``input_type`` from {'text', 'query',
+                        # 'document'} (not Cohere's standard search_document
+                        # / classification / clustering / image values). The
+                        # OpenAI text-embedding-* family accepts list-form
+                        # ``input`` and ignores extra_body, so the same call
+                        # path is safe for both deployment families.
+                        resp = client.embeddings.create(
+                            model=name, input=["ping"],
+                            extra_body={"input_type": "document"},
+                        )
+                        status = "live" if resp.data else "empty"
+                    elif kind == "image":
+                        # Image / video deployments (sora-2): a real generation
+                        # call costs money and seconds. The cheapest health
+                        # probe is to list the deployment's metadata via the
+                        # generic models endpoint — if the deployment isn't
+                        # reachable we'll see 404; otherwise the deployment
+                        # is callable and we mark live without paying for a
+                        # real generation.
+                        client.models.retrieve(name)
+                        status = "live"
+                    elif kind == "rerank":
+                        # Cohere Rerank V4 on Azure exposes a non-OpenAI-shaped
+                        # endpoint at /openai/v1/rerank — the OpenAI SDK has no
+                        # client.rerank, so fall back to a raw HTTP POST. A
+                        # one-document rerank costs essentially nothing.
+                        import httpx
+                        rerank_url = f"{base_url}/rerank"
+                        rerank_resp = httpx.post(
+                            rerank_url,
+                            headers={"api-key": api_key, "Content-Type": "application/json"},
+                            json={"model": name, "query": "ping", "documents": ["pong"]},
+                            timeout=timeout_seconds,
+                        )
+                        if rerank_resp.status_code == 200:
+                            status = "live"
+                        elif rerank_resp.status_code == 404:
+                            status = "not found"
+                        else:
+                            raise RuntimeError(
+                                f"rerank probe HTTP {rerank_resp.status_code}: "
+                                f"{rerank_resp.text[:200]}"
+                            )
                     else:
                         resp = client.chat.completions.create(
                             model=name, messages=test_msg, **_token_limit_kwargs(name),
@@ -2669,11 +2866,20 @@ def deploy():
                 api_key_var = model.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
                 endpoint = os.environ.get(endpoint_var, "")
                 api_key = os.environ.get(api_key_var, "")
+                # Fallback to direct Anthropic API when no Azure-Anthropic
+                # surface is configured but a public ANTHROPIC_API_KEY is
+                # available. The Azure-Anthropic surface lives at
+                # <resource>.openai.azure.com/anthropic; the public API at
+                # api.anthropic.com — different URL conventions, so detect
+                # by hostname and skip the /anthropic suffix for the latter.
+                if (not endpoint or not api_key) and os.environ.get("ANTHROPIC_API_KEY"):
+                    endpoint = "https://api.anthropic.com"
+                    api_key = os.environ["ANTHROPIC_API_KEY"]
                 if not endpoint or not api_key:
                     status = "no credentials"
                 else:
                     base_url = endpoint.rstrip("/")
-                    if not base_url.endswith("/anthropic"):
+                    if "api.anthropic.com" not in base_url and not base_url.endswith("/anthropic"):
                         base_url += "/anthropic"
                     client = Anthropic(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
                     resp = client.messages.create(
@@ -2700,17 +2906,24 @@ def deploy():
                     status = "live" if resp.choices else "empty"
 
             elif provider == "ollama":
-                client = OpenAI(
-                    api_key="ollama",
-                    base_url=OLLAMA_BASE_URL,
-                    timeout=timeout_seconds,
-                    max_retries=0,
+                # Ollama first-load can take 15-30s for a multi-GB tag while
+                # weights stream into memory — far past the 8s deploy budget.
+                # The mount check we actually want is "does this tag exist in
+                # the local registry?", which `/api/show` answers in <100ms
+                # without touching the model. A failing tag yields HTTP 404.
+                import requests as _rq
+                show_url = OLLAMA_BASE_URL.replace("/v1", "").rstrip("/") + "/api/show"
+                resp = _rq.post(
+                    show_url, json={"name": name}, timeout=timeout_seconds,
                 )
-                resp = client.chat.completions.create(
-                    model=name, messages=test_msg, max_tokens=50,
-                )
-                content = (resp.choices[0].message.content or "").strip()
-                status = "live" if resp.choices else "empty"
+                if resp.status_code == 200:
+                    status = "live"
+                elif resp.status_code == 404:
+                    status = "not found"
+                else:
+                    raise RuntimeError(
+                        f"ollama probe HTTP {resp.status_code}: {resp.text[:200]}"
+                    )
 
             elif provider == "openrouter":
                 if not OPENROUTER_API_KEY:
@@ -2743,6 +2956,14 @@ def deploy():
                     msg = (data.get("choices") or [{}])[0].get("message", {}) or {}
                     status = "live" if msg.get("content") else "empty"
 
+            elif provider in ("auto", "router", "deepparallel"):
+                # Virtual tiers: they fan out to other entries in the chain
+                # rather than holding their own backend deployment. Surface a
+                # neutral "virtual" status so the deploy table doesn't paint
+                # them red — the underlying tiers they delegate to are probed
+                # elsewhere in this same run.
+                status = "virtual"
+
             else:
                 status = "unknown provider"
 
@@ -2750,7 +2971,12 @@ def deploy():
 
         except Exception as e:
             status = _classify_deploy_error(e)
+            # Surface the underlying exception when DEPLOY_VERBOSE is set, so
+            # triage runs can see WHY a tier shows the generic "error" status.
+            if os.environ.get("DEPLOY_VERBOSE", "").lower() in {"1", "true", "yes"}:
+                console.print(f"    [dim red]{label}: {type(e).__name__}: {e!s:.300}[/dim red]")
 
+        probe_cache[cache_key] = (status, latency)
         results.append((label, status, latency))
 
     # Display results
@@ -2774,6 +3000,8 @@ def deploy():
             status_fmt = f"[#bf6f6f]{status}[/#bf6f6f]"
         elif status in ("no credentials", "no key", "no endpoint", "auth failed"):
             status_fmt = f"[yellow]{status}[/yellow]"
+        elif status == "virtual":
+            status_fmt = "[dim cyan]virtual[/dim cyan]"
         else:
             status_fmt = f"[red]{status}[/red]"
 
@@ -2804,8 +3032,15 @@ def deploy():
         console.print("  [#bf6f6f]Local engine[/#bf6f6f]    [dim]not running[/dim]")
 
     live_count = sum(1 for _, s, _ in results if s == "live")
+    virtual_count = sum(1 for _, s, _ in results if s == "virtual")
     total = len(results)
-    console.print(f"\n  {live_count}/{total} models online")
+    if virtual_count:
+        console.print(
+            f"\n  {live_count}/{total} models online  "
+            f"[dim](+{virtual_count} virtual routing tiers)[/dim]"
+        )
+    else:
+        console.print(f"\n  {live_count}/{total} models online")
 
     if live_count > 0:
         console.print(f"\n{'='*60}")
