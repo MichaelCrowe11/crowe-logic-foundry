@@ -19,6 +19,7 @@ _SUPPORTED_PROVIDERS = frozenset({
     "openai_compat",
     "azure_openai",
     "anthropic",
+    "deepparallel",
 })
 
 
@@ -42,6 +43,19 @@ def _is_provider_credentialed(cfg: dict) -> bool:
         endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
         api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
         return bool(os.environ.get(endpoint_var, "")) and bool(os.environ.get(api_key_var, ""))
+    if kind == "deepparallel":
+        # DeepParallel runs cluster-mode through crowe_deepparallel, which
+        # itself dispatches to multiple Foundry deployments. Credentials are
+        # checked per-cluster at run time by the adapter layer; here we only
+        # confirm the package is importable and at least the primary Foundry
+        # anchor (Kimi) has env vars set.
+        try:
+            import crowe_deepparallel  # noqa: F401
+        except ImportError:
+            return False
+        return bool(os.environ.get("AZURE_KIMI_ENDPOINT", "")) and bool(
+            os.environ.get("AZURE_KIMI_API_KEY", "")
+        )
     return False
 
 
@@ -181,6 +195,29 @@ def build_provider(model_id: str, *, session_id: str = ""):
             endpoint=endpoint,
             api_key=api_key,
             label=label,
+        )
+
+    if provider_kind == "deepparallel":
+        from providers.deepparallel import DeepParallelProvider
+        # backend_name carries the cluster-preset name to load
+        # (e.g. "crowelm-cluster-multilineage-v1"). Falls back to the
+        # baseline single-anchor preset if not specified.
+        preset = cfg.get("backend_name") or "crowelm-cluster-v1"
+        judge_backend = cfg.get("judge_backend") or os.environ.get(
+            "MULTIMODEL_JUDGE_BACKEND",
+        )
+        try:
+            import crowe_deepparallel  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "DeepParallel tier requires the crowe-deepparallel package. "
+                "Install with: pip install -e ~/Projects/crowe-logic-foundry-deepparallel-impl"
+            ) from exc
+        return DeepParallelProvider(
+            preset=preset,
+            system_instructions=system_instructions,
+            label=label,
+            judge_backend=judge_backend,
         )
 
     raise RuntimeError(f"Runtime surface does not support provider kind '{provider_kind}'")
