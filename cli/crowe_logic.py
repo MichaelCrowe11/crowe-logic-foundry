@@ -2030,6 +2030,28 @@ def _model_switch_error(model_cfg: dict) -> str | None:
             "Use a NVIDIA NIM or IBM watsonx model instead."
         )
 
+    if provider == "deepparallel":
+        # CroweLM DeepParallel routes through the crowe-deepparallel package
+        # which orchestrates Foundry-anchored cluster execution. Two prereqs:
+        try:
+            import crowe_deepparallel  # noqa: F401
+        except ImportError:
+            return (
+                f"Cannot switch to {label} — crowe-deepparallel package not installed. "
+                "Run: pip install -e ~/Projects/crowe-logic-foundry-deepparallel-impl"
+            )
+        # Foundry Kimi-K2.6 is the default judge + a primary cluster anchor.
+        missing = [
+            var for var in ("AZURE_KIMI_ENDPOINT", "AZURE_KIMI_API_KEY")
+            if not os.environ.get(var, "").strip()
+        ]
+        if missing:
+            return (
+                f"Cannot switch to {label} — missing "
+                + ", ".join(missing)
+                + " in .env (DeepParallel needs Foundry Kimi-K2.6 as the cluster anchor)"
+            )
+
     return None
 
 
@@ -2045,8 +2067,14 @@ def _switch_model(azure_state: dict, target: str):
 
         _model_state["chain_index"] = idx
         provider = model.get("provider")
-        if provider in ("anthropic", "azure_openai", "nvidia", "openai_compat", "openrouter", "ollama", "watsonx"):
-            # Reset cached provider so the next turn rebuilds with the new model
+        if provider in (
+            "anthropic", "azure_openai", "nvidia", "openai_compat",
+            "openrouter", "ollama", "watsonx", "deepparallel",
+        ):
+            # Reset cached provider so the next turn rebuilds with the new model.
+            # deepparallel doesn't use a shared client cache (each query builds
+            # its own cluster orchestration internally), so the cache_key write
+            # is a no-op for it but keeps the dispatch pattern uniform.
             cache_key = "hosted_openai_provider" if provider == "openai_compat" else f"{provider}_provider"
             _model_state[cache_key] = None
             session_state["active_model"] = model["label"]

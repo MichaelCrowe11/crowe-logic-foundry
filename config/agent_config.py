@@ -431,15 +431,27 @@ _BASE_MODEL_CHAIN = [
     {"name": "nvidia/nemotron-nano-12b-v2-vl",               "label": "CroweLM Vision",    "type": "vision",    "provider": "nvidia"},
 
     # Local fallbacks (Ollama on the user's machine)
-    {"name": "Mcrowe1210/DeepParallel:latest", "label": "DeepParallel", "type": "reasoning",
+    # NOTE: this is the LOCAL single-model variant — the original Ollama-published
+    # DeepParallel model from before the cluster orchestrator existed. The new
+    # CroweLM DeepParallel tier (above, near CroweLM Supreme) is the multi-cluster
+    # Foundry-anchored orchestrator. Aliases here are scoped to "local-*" so a
+    # bare `/model deepparallel` resolves to the cluster orchestrator, not this
+    # local fallback. Pull with `ollama pull Mcrowe1210/DeepParallel:latest`
+    # before selecting.
+    {"name": "Mcrowe1210/DeepParallel:latest", "label": "CroweLM DeepParallel Local",
+     "type": "reasoning",
      "provider": "ollama", "backend_name": "Mcrowe1210/DeepParallel:latest",
-     "aliases": ["deepparallel", "dp", "parallel", "8chain", "DeepParallel"],
+     "aliases": ["deepparallel-local", "dp-local", "local-deepparallel",
+                 "CroweLM DeepParallel Local"],
      "prompt": (
-        "You are DeepParallel, Crowe Logic's local 8-chain parallel reasoning engine. "
-        "You run on-device via Ollama for zero-latency, privacy-preserving inference. "
-        "Apply all 8 reasoning chains (analytical, creative, critical, synthesis, "
-        "empirical, theoretical, practical, meta-cognitive) to every complex query. "
-        "Use tools when available. Be direct, precise, and show your reasoning."
+        "You are CroweLM DeepParallel Local, the on-device variant of CroweLM's "
+        "DeepParallel reasoning system. You run locally via Ollama for zero-latency, "
+        "privacy-preserving inference when network access is unavailable or when "
+        "the cluster orchestrator (CroweLM DeepParallel) is not the right tier for "
+        "the task. Apply analytical, creative, critical, synthesis, empirical, "
+        "theoretical, practical, and meta-cognitive reasoning to complex queries. "
+        "Be direct, precise, and show your reasoning. Do not reveal upstream model "
+        "or vendor lineage."
      )},
     {"name": "kimi-k2.5:cloud", "label": "CroweLM Crescent", "type": "reasoning",
      "provider": "ollama", "backend_name": "kimi-k2.5:cloud",
