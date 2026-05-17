@@ -155,21 +155,65 @@ class DeepParallelProvider:
 
         try:
             result = asyncio.run(_run_cluster_with_heartbeat())
-        except Exception as exc:  # noqa: BLE001 - surface clean error to user
-            renderer.stop_spinner()
-            err_msg = (
-                f"CroweLM DeepParallel encountered an unrecoverable error: "
-                f"{type(exc).__name__}: {exc}"
+        except Exception as exc:
+            # Don't embed errors as if they were the assistant's answer —
+            # doing so pollutes the conversation transcript (the bad text
+            # gets appended to self.messages on the next turn) and the
+            # foundry CLI's tier-fallback chain can't engage because the
+            # provider "succeeded" with a stringly-typed failure.
+            #
+            # Instead: log the failure with a correlation ID for support
+            # lookup, record it on session_state for telemetry, stop the
+            # renderer cleanly, and raise so the CLI dispatch layer can
+            # fall back to the next tier in MODEL_CHAIN.
+            import logging
+            import uuid
+            error_id = uuid.uuid4().hex[:12]
+            logging.getLogger(__name__).error(
+                "deepparallel.cluster_failure error_id=%s exc=%s: %s",
+                error_id, type(exc).__name__, exc,
             )
-            renderer.feed(err_msg)
-            renderer.end_segment()
-            renderer.finish(session_state=session_state)
-            return err_msg
+            if isinstance(session_state, dict):
+                session_state["deepparallel_last_error"] = {
+                    "error_id": error_id,
+                    "type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            renderer.stop_spinner()
+            renderer.abort(session_state=session_state) if hasattr(renderer, "abort") \
+                else renderer.finish(session_state=session_state)
+            # Re-raise so the foundry CLI's existing exception-handling
+            # path (tier fallback, error display, retry-with-different-model)
+            # can engage. The error_id is in the log for support correlation.
+            raise RuntimeError(
+                f"CroweLM DeepParallel cluster execution failed "
+                f"(error_id={error_id}): {type(exc).__name__}: {exc}"
+            ) from exc
 
         renderer.stop_spinner()
         renderer.begin_stream()
 
         text = result.synthesized_answer or "(CroweLM DeepParallel returned no synthesized answer.)"
+
+        # Surface synthesis-fallback signal: when the judge call failed and
+        # the orchestrator fell back to cluster concatenation (or single-
+        # cluster passthrough), the customer is seeing a degraded answer.
+        # Append a one-line footer so they know — and log + record in
+        # session_state for operator-side observability.
+        fallback_active = bool(result.synthesis_metadata.get("fallback"))
+        synthesis_mode = result.synthesis_metadata.get("synthesis")
+        if fallback_active or synthesis_mode == "single_cluster_passthrough":
+            import logging
+            reason = result.synthesis_metadata.get("fallback_reason") or synthesis_mode
+            logging.getLogger(__name__).warning(
+                "deepparallel.synthesis_fallback ledger_id=%s reason=%s",
+                result.ledger_id, reason,
+            )
+            text = text + (
+                "\n\n---\n*CroweLM DeepParallel synthesis backstop engaged; "
+                "final answer reflects degraded synthesis path.*"
+            )
+
         for chunk in self._chunk_for_stream(text):
             renderer.feed(chunk)
             if self._STREAM_PACE_S > 0:
@@ -190,6 +234,7 @@ class DeepParallelProvider:
                 "dropped_personas": list(result.dropped_cluster_personas),
                 "judge_model": result.synthesis_metadata.get("judge_model"),
                 "ledger_id": result.ledger_id,
+                "synthesis_fallback": fallback_active,
             })
 
         renderer.end_segment()
