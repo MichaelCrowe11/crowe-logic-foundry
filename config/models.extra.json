@@ -281,7 +281,7 @@
       "label": "CroweLM Filament Pro",
       "provider": "azure_openai",
       "type": "reasoning",
-      "deploy_probe": "metadata",
+      "_deploy_probe_note": "Cohere-embed-v4 on AZURE_CORE does NOT expose /openai/deployments/{name} metadata even though embeddings inference works. Keep the embeddings inference probe (default path); do not add deploy_probe: metadata here. Sister Cohere-Command-A deployment DOES expose metadata and is probed via metadata to avoid 429s.",
       "endpoint_env": "AZURE_CORE_ENDPOINT",
       "api_key_env": "AZURE_CORE_API_KEY",
       "aliases": [
