@@ -160,6 +160,12 @@ from tools.iterm2_control import (
     iterm_set_variable, iterm_get_variable,
 )
 
+# YouTube engagement (SWM channel today, multi-tenant tomorrow)
+from tools.youtube_engagement import (
+    youtube_pull_recent_comments, youtube_pull_video_comments,
+    youtube_apply_triage, youtube_post_top_level_comment,
+)
+
 # Crowe Terminal proxy is imported AFTER user_functions is defined below,
 # so the proxy can mutate the set in place at import time.
 
@@ -232,6 +238,9 @@ user_functions = {
     iterm_broadcast, iterm_stop_broadcast,
     iterm_alert, iterm_prompt_input,
     iterm_set_variable, iterm_get_variable,
+    # YouTube engagement (SWM today; multi-tenant once OAuth wired per brand)
+    youtube_pull_recent_comments, youtube_pull_video_comments,
+    youtube_apply_triage, youtube_post_top_level_comment,
 }
 
 # Crowe Terminal control plane (active when CROWE_AGENT_TOOLS=1 and the
