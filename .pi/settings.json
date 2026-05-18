@@ -1,0 +1,42 @@
+{
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-6",
+  "defaultThinkingLevel": "medium",
+  "theme": "dark",
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
+  },
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
+  "transport": "auto",
+  "terminal": {
+    "showImages": true,
+    "imageWidthCells": 60,
+    "clearOnShrink": false
+  },
+  "images": {
+    "autoResize": true,
+    "blockImages": false
+  },
+  "enableSkillCommands": true,
+  "extensions": [
+    "./extensions/crowe-logic-tools.ts"
+  ],
+  "skills": [
+    "./skills"
+  ],
+  "prompts": [
+    "./prompts"
+  ],
+  "packages": [],
+  "warnings": {
+    "anthropicExtraUsage": true
+  }
+}

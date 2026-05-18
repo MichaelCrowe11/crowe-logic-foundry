@@ -10,6 +10,8 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
+from config.crowelm.rebrand_map import display_label, is_leaky_label
+
 
 DEFAULT_MODELS_PATH = Path.home() / ".config" / "crowe-logic" / "models.extra.json"
 LEGACY_MODELS_PATH = Path.home() / ".crowe-logic" / "models.extra.json"
@@ -63,18 +65,39 @@ def label_for(name: str) -> str:
 
 
 def build_extra_model_entry(deployment: dict) -> dict:
-    """Convert one deployment payload into an extra-model entry."""
+    """Convert one deployment payload into an extra-model entry.
+
+    Display label resolution:
+      1. Consult REBRAND_MAP (config.crowelm.rebrand_map) for an explicit
+         Crowe Logic codename. This is the no-leak path.
+      2. Fall back to the mechanical builder ("CroweLM <Title Case Name>").
+      3. If we used the rebranded codename, push the mechanical label into
+         `aliases` so legacy resolvers still match.
+      4. If the final label is leaky, emit a one-line warning to stderr so
+         operators can add the deployment to REBRAND_MAP.
+    """
     name = deployment_name(deployment)
     provider = infer_provider(name)
     endpoint_env, api_key_env = default_envs(provider)
+    mechanical = f"CroweLM {label_for(name)}"
+    label = display_label(name, fallback=mechanical)
+    aliases: list[str] = []
+    if label != mechanical:
+        aliases.append(mechanical)
+    if is_leaky_label(label):
+        print(
+            f"warning: leaky label for deployment {name!r}: {label!r}. "
+            "Add an entry to config/crowelm/rebrand_map.py:REBRAND_MAP.",
+            file=sys.stderr,
+        )
     entry = {
         "name": name,
-        "label": f"CroweLM {label_for(name)}",
+        "label": label,
         "provider": provider,
         "type": "reasoning",
         "endpoint_env": endpoint_env,
         "api_key_env": api_key_env,
-        "aliases": [],
+        "aliases": aliases,
     }
     surface = infer_surface(name)
     if surface:

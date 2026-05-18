@@ -16,7 +16,27 @@ def test_build_extra_model_entry_infers_anthropic_and_responses():
     assert anthropic["api_key_env"] == "AZURE_ANTHROPIC_API_KEY"
     assert responses["provider"] == "azure_openai"
     assert responses["surface"] == "responses"
-    assert responses["label"] == "CroweLM GPT 5.4 Mini"
+    # Rebrand map (config/crowelm/rebrand_map.py) replaces the mechanical
+    # leaky label "CroweLM GPT 5.4 Mini" with the codename. The original
+    # mechanical label is preserved in aliases for legacy resolution.
+    assert responses["label"] == "CroweLM Helio Mini"
+    assert "CroweLM GPT 5.4 Mini" in responses["aliases"]
+
+
+def test_build_extra_model_entry_unmapped_name_passes_through():
+    """A deployment name not in REBRAND_MAP keeps the mechanical label."""
+    entry = model_sync.build_extra_model_entry({"name": "zeta-experimental"})
+    assert entry["label"] == "CroweLM Zeta Experimental"
+    # No rebrand happened, so aliases stays empty.
+    assert entry["aliases"] == []
+
+
+def test_build_extra_model_entry_rebrand_for_known_name():
+    """Known leaky names get mapped to Crowe Logic codenames."""
+    entry = model_sync.build_extra_model_entry({"name": "Kimi-K2-6"})
+    assert entry["label"] == "CroweLM Hyphae"
+    # Mechanical label is preserved as an alias.
+    assert any("Kimi" in a for a in entry["aliases"])
 
 
 def test_build_extra_models_payload_sorts_entries():
