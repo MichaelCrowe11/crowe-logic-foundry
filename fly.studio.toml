@@ -1,0 +1,29 @@
+app = 'talon-studio'
+primary_region = 'lax'
+
+[build]
+  dockerfile = 'Dockerfile.studio'
+
+[env]
+  PYTHONUNBUFFERED = '1'
+  CROWE_BRIDGE_HOST = '0.0.0.0'
+  CROWE_BRIDGE_PORT = '8080'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[[services]]
+  internal_port = 8080
+  protocol = 'tcp'
+  auto_stop_machines = true
+  auto_start_machines = true
+
+  [[services.ports]]
+    handlers = ['http']
+    port = 80
+
+  [[services.ports]]
+    handlers = ['tls', 'http']
+    port = 443

@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Talon Composer</title>
+<style>
+  :root{
+    --bg:#0a0b0d; --panel:#131519; --panel2:#1a1d22; --panel3:#21252c;
+    --line:#23272e; --line2:#2d323a; --line3:#3a404d;
+    --fg:#e8eaed; --fg2:#c9cdd4; --muted:#8b92a0; --muted2:#5c6270;
+    --accent:#bfa669; --accent2:#7fd0ff; --accent3:#a890ff;
+    --danger:#ff6b6b; --ok:#4ade80; --warn:#fbbf24; --record:#ff2d55;
+    --clip-chords:#7B6B4E; --clip-melody:#6B4E7B; --clip-drums:#4E7B6B;
+    --clip-bass:#3B6B8B; --clip-fx:#6B8B3B;
+    font-size:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,system-ui,"Inter",sans-serif;
+    font-feature-settings:"ss01","cv11";}
+  body{line-height:1.45;overflow:hidden;}
+
+  .app{display:grid;grid-template-columns:200px 1fr 280px;grid-template-rows:52px 40px 1fr 200px;height:100vh;}
+
+  /* Header */
+  header{grid-column:1/-1;display:flex;align-items:center;padding:0 16px;
+    border-bottom:1px solid var(--line);background:var(--panel);gap:10px;}
+  header .mark{width:22px;height:22px;border-radius:4px;
+    background:linear-gradient(135deg,var(--accent),#8a7a4f);display:flex;
+    align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--bg);}
+  header h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.02em;}
+  header .spacer{flex:1;}
+  header .bpm{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+  header .bpm input{width:42px;background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:4px;padding:2px 6px;font-size:12px;text-align:center;}
+  header .time{font-family:ui-monospace,monospace;font-size:16px;color:var(--accent);min-width:80px;text-align:right;}
+
+  /* Transport */
+  .transport{grid-column:1/-1;display:flex;align-items:center;padding:0 16px;gap:10px;
+    background:var(--bg);border-bottom:1px solid var(--line);}
+  .transport button{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    background:var(--panel2);border:1px solid var(--line);color:var(--fg);cursor:pointer;transition:all .1s;
+    font-size:13px;padding:0;}
+  .transport button:hover{border-color:var(--accent2);color:var(--accent2);}
+  .transport button.record{background:var(--panel2);color:var(--record);border-color:#4a1a24;}
+  .transport button.record:hover{border-color:var(--record);box-shadow:0 0 8px rgba(255,45,85,.3);}
+  .transport button.record.active{background:var(--record);color:#fff;border-color:var(--record);
+    box-shadow:0 0 12px rgba(255,45,85,.5);animation:pulse-record 1s infinite;}
+  @keyframes pulse-record{0%,100%{opacity:1}50%{opacity:.6}}
+  .transport .sep{width:1px;height:24px;background:var(--line);margin:0 4px;}
+  .transport .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+
+  /* Sidebar (browser + clips) */
+  aside.left{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;
+    display:flex;flex-direction:column;}
+  aside.left .section{padding:10px 12px;border-bottom:1px solid var(--line);}
+  aside.left .section h3{margin:0 0 8px;font-size:10px;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--muted);font-weight:600;}
+  .clip-item{padding:6px 8px;border-radius:6px;margin-bottom:3px;cursor:pointer;
+    font-size:11px;display:flex;align-items:center;gap:6px;transition:all .1s;
+    border:1px solid transparent;}
+  .clip-item:hover{background:var(--panel2);}
+  .clip-item .dot{width:6px;height:6px;border-radius:2px;}
+  .clip-item .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .clip-item .len{color:var(--muted2);font-size:10px;}
+
+  /* Main (arrangement) */
+  main{background:var(--bg);overflow:auto;position:relative;}
+  .arrangement-header{display:flex;align-items:center;height:32px;padding:0 12px;
+    background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
+  .arrangement-header .track-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+  .arrangement-header .ruler{flex:1;display:flex;align-items:center;height:100%;position:relative;}
+  .ruler .tick{position:absolute;top:0;bottom:0;width:1px;background:var(--line2);}
+  .ruler .tick.major{background:var(--line3);}
+  .ruler .tick-label{position:absolute;top:2px;font-size:9px;color:var(--muted2);transform:translateX(2px);}
+
+  .track-lane{display:flex;border-bottom:1px solid var(--line);height:56px;position:relative;}
+  .track-lane .lane-header{width:120px;padding:8px 12px;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;justify-content:center;}
+  .lane-header .lane-name{font-size:11px;font-weight:600;}
+  .lane-header .lane-meta{font-size:9px;color:var(--muted);margin-top:1px;}
+  .lane-body{flex:1;position:relative;background:repeating-linear-gradient(90deg,transparent,transparent 39px,var(--line) 39px,var(--line) 40px);}
+  .lane-body:hover{background-color:rgba(191,166,105,.02);}
+  .clip{position:absolute;top:4px;bottom:4px;border-radius:4px;padding:4px 8px;font-size:10px;
+    color:#fff;cursor:pointer;overflow:hidden;white-space:nowrap;transition:all .1s;border:1px solid transparent;}
+  .clip:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.4);border-color:rgba(255,255,255,.2);}
+  .clip.chords{background:var(--clip-chords);}
+  .clip.melody{background:var(--clip-melody);}
+  .clip.drums{background:var(--clip-drums);}
+  .clip.bass{background:var(--clip-bass);}
+  .clip.fx{background:var(--clip-fx);}
+
+  /* Bottom panel (detail / device rack) */
+  .bottom{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr 1fr;
+    background:var(--panel);border-top:1px solid var(--line);overflow:hidden;}
+  .bottom .panel{padding:14px 16px;overflow-y:auto;border-right:1px solid var(--line);}
+  .bottom .panel:last-child{border-right:none;}
+  .bottom h3{margin:0 0 12px;font-size:11px;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--muted);font-weight:600;}
+
+  /* Generator UI */
+  .param-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .param-row label{width:70px;font-size:11px;color:var(--muted);text-align:right;}
+  .param-row input,.param-row select{flex:1;background:var(--panel2);color:var(--fg);
+    border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px;}
+  .param-row input:focus,.param-row select:focus{outline:none;border-color:var(--accent);}
+  .param-row input[type="range"]{padding:0;height:4px;-webkit-appearance:none;
+    background:var(--line2);border-radius:2px;}
+  .param-row input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+    border-radius:50%;background:var(--accent);cursor:pointer;}
+  .param-row .val{font-family:ui-monospace,monospace;font-size:11px;color:var(--accent);min-width:36px;text-align:right;}
+
+  button.gen-btn{width:100%;padding:10px;font-size:12px;font-weight:600;margin-top:8px;}
+
+  /* File browser */
+  .file-list{display:flex;flex-direction:column;gap:2px;}
+  .file-item{padding:5px 8px;border-radius:4px;cursor:pointer;font-size:11px;
+    display:flex;align-items:center;gap:6px;transition:all .1s;}
+  .file-item:hover{background:var(--panel2);}
+  .file-item .icon{font-size:10px;opacity:.6;}
+  .file-item .fname{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* MIDI piano roll overlay */
+  .piano-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);
+    display:none;align-items:center;justify-content:center;z-index:1000;}
+  .piano-overlay.active{display:flex;}
+  .piano-container{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    width:90%;max-width:900px;height:80%;display:flex;flex-direction:column;overflow:hidden;}
+  .piano-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;}
+  .piano-header h2{margin:0;font-size:14px;}
+  .piano-header .spacer{flex:1;}
+  .piano-body{flex:1;overflow:auto;position:relative;background:var(--bg);
+    background-image:repeating-linear-gradient(0deg,transparent,transparent 19px,var(--line) 19px,var(--line) 20px);}
+  .piano-keys{width:60px;position:sticky;left:0;background:var(--panel);border-right:1px solid var(--line);
+    z-index:5;display:flex;flex-direction:column;}
+  .piano-key{height:20px;border-bottom:1px solid var(--line);display:flex;align-items:center;
+    padding-left:6px;font-size:9px;color:var(--muted);}
+  .piano-key.black{background:var(--panel3);color:var(--fg2);}
+  .note-rect{position:absolute;height:18px;border-radius:3px;background:var(--accent);
+    border:1px solid rgba(255,255,255,.2);cursor:pointer;transition:all .1s;font-size:9px;
+    display:flex;align-items:center;padding:0 4px;color:var(--bg);overflow:hidden;}
+  .note-rect:hover{transform:scaleY(1.1);z-index:10;box-shadow:0 2px 8px rgba(191,166,105,.4);}
+
+  /* Toast */
+  #toast{position:fixed;bottom:18px;right:18px;max-width:340px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:12px 16px;opacity:0;transition:opacity .2s,transform .2s;
+    pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,.6);z-index:1000;
+    transform:translateY(10px);}
+  #toast.show{opacity:1;transform:translateY(0);}
+  #toast.ok{border-color:#1c4829;} #toast.err{border-color:#4a2628;}
+  #toast .t{font-weight:600;margin-bottom:3px;font-size:13px;}
+  #toast .m{font-size:12px;color:var(--fg2);}
+
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="mark">C</div>
+    <h1>Talon Composer</h1>
+    <span class="spacer"></span>
+    <div class="bpm">
+      <span>BPM</span>
+      <input id="bpm" type="number" value="85" min="20" max="300"/>
+    </div>
+    <div class="time" id="timeDisplay">00:00:00</div>
+  </header>
+
+  <div class="transport">
+    <button onclick="togglePlay()" id="playBtn">></button>
+    <button onclick="stop()">■</button>
+    <button class="record" onclick="toggleRecord()" id="recordBtn">●</button>
+    <div class="sep"></div>
+    <span class="label">QUANTUM</span>
+    <button onclick="openPianoRoll()">♪</button>
+    <div class="spacer"></div>
+    <span class="label" id="statusLabel">Stopped</span>
+  </div>
+
+  <!-- LEFT: Clip browser + file manager -->
+  <aside class="left">
+    <div class="section">
+      <h3>Generated Clips</h3>
+      <div id="clipBrowser">
+        <div class="clip-item" onclick="selectClip('chords')">
+          <div class="dot" style="background:var(--clip-chords)"></div>
+          <span class="name">Chords-Am-85.mid</span>
+          <span class="len">8 bars</span>
+        </div>
+        <div class="clip-item" onclick="selectClip('melody')">
+          <div class="dot" style="background:var(--clip-melody)"></div>
+          <span class="name">Melody-Am-85.mid</span>
+          <span class="len">8 bars</span>
+        </div>
+        <div class="clip-item" onclick="selectClip('drums')">
+          <div class="dot" style="background:var(--clip-drums)"></div>
+          <span class="name">Drums-Break.mid</span>
+          <span class="len">8 bars</span>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <h3>Desktop Files</h3>
+      <div class="file-list" id="fileList"><div style="color:var(--muted);font-size:11px;">Loading...</div></div>
+    </div>
+    <div class="section">
+      <h3>Emotion Presets</h3>
+      <div id="emotionList" style="display:flex;flex-wrap:wrap;gap:4px;">
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('nostalgia')">nostalgia</button>
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('grief')">grief</button>
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('rage')">rage</button>
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('bliss')">bliss</button>
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('anxiety')">anxiety</button>
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('triumph')">triumph</button>
+        <button class="gen-btn" style="width:auto;padding:4px 10px;font-size:10px;" onclick="setEmotion('serenity')">serenity</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN: Arrangement view -->
+  <main>
+    <div class="arrangement-header">
+      <div class="track-label" style="width:120px;">Track</div>
+      <div class="ruler" id="ruler"></div>
+    </div>
+    <div id="trackLanes">
+      <div class="track-lane">
+        <div class="lane-header">
+          <div class="lane-name">Chords</div>
+          <div class="lane-meta">Pad · Organ</div>
+        </div>
+        <div class="lane-body" id="lane-chords">
+          <div class="clip chords" style="left:0px;width:320px;" onclick="openPianoRoll('chords')">Am - Em - F - G</div>
+        </div>
+      </div>
+      <div class="track-lane">
+        <div class="lane-header">
+          <div class="lane-name">Melody</div>
+          <div class="lane-meta">Lead Synth</div>
+        </div>
+        <div class="lane-body" id="lane-melody">
+          <div class="clip melody" style="left:0px;width:320px;" onclick="openPianoRoll('melody')">8-bar phrase</div>
+        </div>
+      </div>
+      <div class="track-lane">
+        <div class="lane-header">
+          <div class="lane-name">Drums</div>
+          <div class="lane-meta">Breakbeat</div>
+        </div>
+        <div class="lane-body" id="lane-drums">
+          <div class="clip drums" style="left:0px;width:320px;" onclick="openPianoRoll('drums')">Kick + Snare + Hat</div>
+        </div>
+      </div>
+      <div class="track-lane">
+        <div class="lane-header">
+          <div class="lane-name">Bass</div>
+          <div class="lane-meta">Sub Pulse</div>
+        </div>
+        <div class="lane-body" id="lane-bass">
+          <div class="clip bass" style="left:0px;width:320px;" onclick="openPianoRoll('bass')">Root + 5th</div>
+        </div>
+      </div>
+      <div class="track-lane">
+        <div class="lane-header">
+          <div class="lane-name">FX / Texture</div>
+          <div class="lane-meta">Ambience</div>
+        </div>
+        <div class="lane-body" id="lane-fx">
+          <div class="clip fx" style="left:0px;width:640px;" onclick="openPianoRoll('fx')">Rain · Vinyl · Drone</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- BOTTOM: Device rack / generator panels -->
+  <div class="bottom">
+    <div class="panel">
+      <h3>Chord Generator</h3>
+      <div class="param-row">
+        <label>Root</label>
+        <select id="chordRoot"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option selected>G</option></select>
+      </div>
+      <div class="param-row">
+        <label>Scale</label>
+        <select id="chordScale"><option selected>minor</option><option>major</option><option>dorian</option><option>pentatonic</option><option>mixolydian</option><option>blues</option></select>
+      </div>
+      <div class="param-row">
+        <label>Bars</label>
+        <input id="chordBars" type="number" value="8" min="1" max="64"/>
+      </div>
+      <div class="param-row">
+        <label>Groove</label>
+        <select id="chordGroove"><option>tight</option><option>loose</option><option selected>swing</option><option>funk</option><option>prog</option><option>floyd</option><option>devastating</option></select>
+      </div>
+      <button class="gen-btn primary" onclick="generateChords()" id="genChordBtn">
+        <span class="spin"></span><span class="label">Generate Chords</span>
+      </button>
+    </div>
+
+    <div class="panel">
+      <h3>Melody Generator</h3>
+      <div class="param-row">
+        <label>Root</label>
+        <select id="melodyRoot"><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option></select>
+      </div>
+      <div class="param-row">
+        <label>Scale</label>
+        <select id="melodyScale"><option selected>minor</option><option>major</option><option>pentatonic</option><option>blues</option><option>dorian</option></select>
+      </div>
+      <div class="param-row">
+        <label>Density</label>
+        <input id="melodyDensity" type="range" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('densityVal').textContent=this.value">
+        <span class="val" id="densityVal">0.5</span>
+      </div>
+      <div class="param-row">
+        <label>Groove</label>
+        <select id="melodyGroove"><option>floyd</option><option>loose</option><option>prog</option><option selected>devastating</option></select>
+      </div>
+      <button class="gen-btn primary" onclick="generateMelody()" id="genMelodyBtn">
+        <span class="spin"></span><span class="label">Generate Melody</span>
+      </button>
+    </div>
+
+    <div class="panel">
+      <h3>Quantum & Emotion</h3>
+      <div class="param-row">
+        <label>Key</label>
+        <select id="quantumKey"><option>Am</option><option>C</option><option>Em</option><option>Dm</option><option>F#m</option></select>
+      </div>
+      <div class="param-row">
+        <label>Style</label>
+        <select id="quantumStyle"><option>miles</option><option>coltrane</option><option>ambient</option></select>
+      </div>
+      <div class="param-row">
+        <label>Tension</label>
+        <input id="quantumTension" type="range" min="0" max="1" step="0.05" value="0.5"
+          oninput="document.getElementById('tensionVal').textContent=this.value">
+        <span class="val" id="tensionVal">0.5</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button class="gen-btn primary" style="flex:1" onclick="generateQuantumMelody()" id="genQMelodyBtn">Quantum Melody</button>
+        <button class="gen-btn primary" style="flex:1" onclick="generateQuantumChord()" id="genQChordBtn">Quantum Chord</button>
+      </div>
+      <button class="gen-btn" style="margin-top:6px;background:linear-gradient(180deg,#3a2040,#2a1530);border-color:#6B4E7B;color:#d4a8e8;"
+        onclick="generateEmotion()" id="genEmotionBtn">
+        Emotion Compose
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Piano Roll Overlay -->
+<div class="piano-overlay" id="pianoOverlay">
+  <div class="piano-container">
+    <div class="piano-header">
+      <div class="mark">♪</div>
+      <h2 id="pianoTitle">Piano Roll</h2>
+      <span class="spacer"></span>
+      <button onclick="closePianoRoll()">Close</button>
+    </div>
+    <div class="piano-body" id="pianoBody">
+      <div class="piano-keys" id="pianoKeys"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"><div class="t" id="toastTitle"></div><div class="m" id="toastMsg"></div></div>
+
+<script>
+const API = '/dashboard/composer';
+let isPlaying = false;
+let isRecording = false;
+let playStartTime = 0;
+let playTimer = null;
+let selectedEmotion = 'nostalgia';
+
+// ── Transport ───────────────────────────────────────────────────
+function togglePlay() {
+  isPlaying = !isPlaying;
+  const btn = document.getElementById('playBtn');
+  btn.textContent = isPlaying ? '❚❚' : '▶';
+  document.getElementById('statusLabel').textContent = isPlaying ? 'Playing' : 'Stopped';
+  if (isPlaying) {
+    playStartTime = Date.now();
+    playTimer = setInterval(updateTime, 100);
+  } else {
+    clearInterval(playTimer);
+  }
+}
+
+function stop() {
+  isPlaying = false;
+  clearInterval(playTimer);
+  document.getElementById('playBtn').textContent = '▶';
+  document.getElementById('timeDisplay').textContent = '00:00:00';
+  document.getElementById('statusLabel').textContent = 'Stopped';
+}
+
+function toggleRecord() {
+  isRecording = !isRecording;
+  document.getElementById('recordBtn').classList.toggle('active', isRecording);
+}
+
+function updateTime() {
+  const elapsed = Math.floor((Date.now() - playStartTime) / 1000);
+  const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const s = String(elapsed % 60).padStart(2, '0');
+  const ms = String(Math.floor((Date.now() - playStartTime) % 1000 / 10)).padStart(2, '0');
+  document.getElementById('timeDisplay').textContent = `${m}:${s}:${ms}`;
+}
+
+// ── Generators ──────────────────────────────────────────────────
+async function generateChords() {
+  const btn = document.getElementById('genChordBtn');
+  setLoading(btn, true);
+  try {
+    const r = await fetch(`${API}/generate/chords?root=${val('chordRoot')}&scale=${val('chordScale')}&bars=${val('chordBars')}&groove=${val('chordGroove')}`, {method:'POST'});
+    const d = await r.json();
+    toast('Chords Generated', d.output || d.raw?.slice(0,100) || 'Done');
+    await refreshFiles();
+  } catch(e) { toast('Error', e.message, true); }
+  finally { setLoading(btn, false); }
+}
+
+async function generateMelody() {
+  const btn = document.getElementById('genMelodyBtn');
+  setLoading(btn, true);
+  try {
+    const r = await fetch(`${API}/generate/melody?root=${val('melodyRoot')}&scale=${val('melodyScale')}&density=${val('melodyDensity')}&groove=${val('melodyGroove')}`, {method:'POST'});
+    const d = await r.json();
+    toast('Melody Generated', d.output || 'Done');
+    await refreshFiles();
+  } catch(e) { toast('Error', e.message, true); }
+  finally { setLoading(btn, false); }
+}
+
+async function generateQuantumMelody() {
+  const btn = document.getElementById('genQMelodyBtn');
+  setLoading(btn, true);
+  try {
+    const r = await fetch(`${API}/generate/quantum-melody?key=${val('quantumKey')}&style=${val('quantumStyle')}`, {method:'POST'});
+    const d = await r.json();
+    toast('Quantum Melody', JSON.stringify(d).slice(0,80));
+  } catch(e) { toast('Error', e.message, true); }
+  finally { setLoading(btn, false); }
+}
+
+async function generateQuantumChord() {
+  const btn = document.getElementById('genQChordBtn');
+  setLoading(btn, true);
+  try {
+    const r = await fetch(`${API}/generate/quantum-chord?key=${val('quantumKey')}&tension=${val('quantumTension')}`, {method:'POST'});
+    const d = await r.json();
+    toast('Quantum Chord', JSON.stringify(d).slice(0,80));
+  } catch(e) { toast('Error', e.message, true); }
+  finally { setLoading(btn, false); }
+}
+
+async function generateEmotion() {
+  const btn = document.getElementById('genEmotionBtn');
+  setLoading(btn, true);
+  try {
+    const r = await fetch(`${API}/generate/emotion?emotion=${selectedEmotion}&key=${val('quantumKey')}`, {method:'POST'});
+    const d = await r.json();
+    toast('Emotion Composed', d.output || 'Done');
+    await refreshFiles();
+  } catch(e) { toast('Error', e.message, true); }
+  finally { setLoading(btn, false); }
+}
+
+function val(id) { return encodeURIComponent(document.getElementById(id).value); }
+
+function setEmotion(e) { selectedEmotion = e; toast('Emotion', `Selected: ${e}`); }
+
+// ── File Browser ────────────────────────────────────────────────
+async function refreshFiles() {
+  try {
+    const r = await fetch('/dashboard/substrate/status');
+    const d = await r.json();
+    // Just show placeholder for now - real file listing would scan ~/Desktop
+    document.getElementById('fileList').innerHTML = `
+      <div class="file-item"><span class="icon">♪</span><span class="fname">Desktop MIDI files</span></div>
+    `;
+  } catch(e) {
+    document.getElementById('fileList').innerHTML = `<div style="color:var(--muted);font-size:11px;">No files yet</div>`;
+  }
+}
+
+// ── Piano Roll ──────────────────────────────────────────────────
+function openPianoRoll(clipType) {
+  document.getElementById('pianoOverlay').classList.add('active');
+  document.getElementById('pianoTitle').textContent = clipType ? `Piano Roll: ${clipType}` : 'Piano Roll';
+  buildPianoKeys();
+  buildNotes(clipType);
+}
+
+function closePianoRoll() {
+  document.getElementById('pianoOverlay').classList.remove('active');
+}
+
+function buildPianoKeys() {
+  const keys = document.getElementById('pianoKeys');
+  keys.innerHTML = '';
+  const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  for (let oct = 6; oct >= 2; oct--) {
+    notes.forEach((n, i) => {
+      const div = document.createElement('div');
+      div.className = `piano-key ${n.includes('#') ? 'black' : ''}`;
+      div.textContent = `${n}${oct}`;
+      keys.appendChild(div);
+    });
+  }
+}
+
+function buildNotes(clipType) {
+  const body = document.getElementById('pianoBody');
+  // Clear old notes except keys
+  const old = body.querySelectorAll('.note-rect');
+  old.forEach(n => n.remove());
+
+  // Demo notes based on clip type
+  const demoNotes = {
+    chords: [
+      {note: 'C4', start: 0, len: 160, name: 'C maj7'},
+      {note: 'A3', start: 160, len: 160, name: 'Am7'},
+      {note: 'F3', start: 320, len: 160, name: 'Fmaj7'},
+      {note: 'G3', start: 480, len: 160, name: 'G7'},
+    ],
+    melody: [
+      {note: 'E4', start: 0, len: 80, name: ''},
+      {note: 'G4', start: 80, len: 80, name: ''},
+      {note: 'A4', start: 160, len: 80, name: ''},
+      {note: 'B4', start: 240, len: 80, name: ''},
+      {note: 'C5', start: 320, len: 160, name: ''},
+    ],
+  }[clipType] || [];
+
+  demoNotes.forEach(n => {
+    const rect = document.createElement('div');
+    rect.className = 'note-rect';
+    rect.style.left = (60 + n.start) + 'px';
+    rect.style.width = n.len + 'px';
+    rect.style.top = (Math.random() * 200 + 20) + 'px';
+    rect.textContent = n.name;
+    body.appendChild(rect);
+  });
+}
+
+function selectClip(type) {
+  toast('Clip Selected', `${type} clip ready for editing`);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+function setLoading(btn, on) {
+  btn.disabled = on;
+  const spin = btn.querySelector('.spin');
+  if (spin) spin.style.display = on ? 'inline-block' : 'none';
+}
+
+function toast(title, msg, err=false) {
+  const t = document.getElementById('toast');
+  document.getElementById('toastTitle').textContent = title;
+  document.getElementById('toastMsg').textContent = msg;
+  t.className = 'show ' + (err ? 'err' : 'ok');
+  setTimeout(() => t.className = '', 4000);
+}
+
+// ── Ruler ───────────────────────────────────────────────────────
+function buildRuler() {
+  const ruler = document.getElementById('ruler');
+  for (let i = 0; i <= 64; i++) {
+    const tick = document.createElement('div');
+    tick.className = i % 4 === 0 ? 'tick major' : 'tick';
+    tick.style.left = (i * 40) + 'px';
+    ruler.appendChild(tick);
+    if (i % 4 === 0) {
+      const label = document.createElement('div');
+      label.className = 'tick-label';
+      label.style.left = (i * 40) + 'px';
+      label.textContent = i + 1;
+      ruler.appendChild(label);
+    }
+  }
+}
+
+// ── Init ────────────────────────────────────────────────────────
+buildRuler();
+refreshFiles();
+</script>
+</body>
+</html>
