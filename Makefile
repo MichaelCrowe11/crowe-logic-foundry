@@ -2,21 +2,24 @@
 PY := .venv/bin/python
 export PYTHONPATH := $(CURDIR)
 
-.PHONY: help venv install lint fmt test preview prod chat key admin e2e clean
+.PHONY: help venv install lint fmt test preview prod chat key admin e2e clean pi-install pi-review pi-build
 
 help:
 	@echo "Crowe Logic Foundry — make targets"
-	@echo "  make install   # pip install -e . + dev deps into .venv"
-	@echo "  make lint      # ruff check"
-	@echo "  make fmt       # ruff format"
-	@echo "  make test      # pytest -q"
-	@echo "  make preview   # run control-plane on :8001 (SQLite)"
-	@echo "  make prod      # uvicorn reload on :8001 (real DB)"
-	@echo "  make chat      # interactive Crowe Logic CLI"
+	@echo "  make install     # pip install -e . + dev deps into .venv"
+	@echo "  make lint        # ruff check"
+	@echo "  make fmt         # ruff format"
+	@echo "  make test        # pytest -q"
+	@echo "  make preview     # run control-plane on :8001 (SQLite)"
+	@echo "  make prod        # uvicorn reload on :8001 (real DB)"
+	@echo "  make chat        # interactive Crowe Logic CLI"
 	@echo "  make key L=alex-dev P=lab    # issue local tester key"
 	@echo "  make key-remote L=alex-dev   # issue via live control plane"
 	@echo "  make admin                    # bootstrap admin JWT to .env.local"
 	@echo "  make e2e                      # smoke: preview + key + gateway call"
+	@echo "  make pi-install               # install pi-coding-agent globally"
+	@echo "  make pi-review                # pi AI review on changed files"
+	@echo "  make pi-build                 # lint -> pi-review -> test (enhanced gate)"
 	@echo "  make clean                    # remove caches + preview db"
 
 venv:
@@ -60,6 +63,21 @@ admin:
 
 e2e:
 	bash scripts/tester_e2e.sh
+pi-install:
+	@echo "Installing pi-coding-agent..."
+	npm install -g @mariozechner/pi-coding-agent
+	@echo "Done. Run 'pi' from anywhere, or 'make pi-review' in this project."
+
+pi-review:
+	@echo "Running pi AI code review..."
+	node scripts/pi-build.mjs review
+
+pi-build:
+	@echo "Running enhanced build: lint -> review -> test"
+	make lint
+	make fmt
+	node scripts/pi-build.mjs review
+	$(PY) -m pytest -q
 
 clean:
 	find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
