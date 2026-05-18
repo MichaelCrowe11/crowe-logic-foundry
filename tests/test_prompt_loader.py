@@ -131,3 +131,71 @@ def test_slugs_for_chain_produces_unique_mapping() -> None:
     ]
     out = slugs_for_chain(chain)
     assert out == {"CroweLM A": "a", "CroweLM B": "b"}
+
+
+def test_inline_prompts_use_current_label_not_legacy_codename() -> None:
+    """Every model's inline `prompt` must self-identify with its own current label.
+
+    Catches the PR #24 rebrand drift where labels were renamed but the
+    inline 'You are CroweLM X' strings still referenced the prior codename
+    (e.g. label='CroweLM Helio' but prompt='You are CroweLM Titan, ...').
+    Self-maintaining: derives the expected name from each cfg, no hardcoded
+    legacy list.
+    """
+    import re
+    from config.agent_config import MODEL_CHAIN
+
+    drift: list[str] = []
+    pattern = re.compile(r"You are \*{0,2}(CroweLM [A-Z][\w\s]*?)\*{0,2}[,.]")
+    for cfg in MODEL_CHAIN:
+        prompt = (cfg.get("prompt") or "").strip()
+        if not prompt:
+            continue
+        match = pattern.search(prompt)
+        if not match:
+            continue
+        introduced = match.group(1).strip()
+        expected = cfg["label"].strip()
+        if introduced != expected:
+            drift.append(f"{expected!r} introduces itself as {introduced!r}")
+
+    assert not drift, (
+        "Inline prompt self-identification drift detected.\n"
+        + "\n".join(f"  - {item}" for item in drift)
+    )
+
+
+def test_stub_prompt_files_use_current_label_not_legacy_codename() -> None:
+    """Stub files on disk must self-identify with the live model's label.
+
+    Mirror of the inline check for the config/system_prompts/*.md files,
+    since prompt_loader.py prefers file content over inline `prompt` when
+    a file exists. A file with the wrong "You are CroweLM X" body would
+    silently re-leak the legacy codename even though inline is correct.
+    """
+    import re
+    from config.agent_config import MODEL_CHAIN
+
+    chain_by_slug = {slug_for(c): c for c in MODEL_CHAIN}
+    pattern = re.compile(r"You are \*{0,2}(CroweLM [A-Z][\w\s]*?)\*{0,2}[,.]")
+
+    drift: list[str] = []
+    for slug in known_slugs():
+        cfg = chain_by_slug.get(slug)
+        if not cfg:
+            continue
+        text = variant_prompt_text(slug)
+        if not text:
+            continue
+        match = pattern.search(text)
+        if not match:
+            continue
+        introduced = match.group(1).strip()
+        expected = cfg["label"].strip()
+        if introduced != expected:
+            drift.append(f"system_prompts/{slug}.md introduces itself as {introduced!r}, expected {expected!r}")
+
+    assert not drift, (
+        "Stub prompt-file self-identification drift detected.\n"
+        + "\n".join(f"  - {item}" for item in drift)
+    )
