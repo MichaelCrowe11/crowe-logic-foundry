@@ -17,9 +17,10 @@ import logging
 import sys
 
 from control_plane import app  # noqa: re-export the FastAPI app
-from control_plane.gateway import router as gateway_router
+from control_plane.gateway import router as gateway_router, openai_router
 from control_plane.billing import router as billing_router
 from control_plane.web import router as web_router
+from control_plane.chat_history import router as chat_history_router
 from control_plane.db import lifespan
 
 logger = logging.getLogger("control_plane.main")
@@ -27,8 +28,10 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %
 
 # Core routers (launch-critical).
 app.include_router(gateway_router)
+app.include_router(openai_router)
 app.include_router(billing_router)
 app.include_router(web_router)
+app.include_router(chat_history_router)
 
 # Optional routers: if any one of these blows up at import-time we still
 # want the core control plane to boot so customers can sign up and pay.

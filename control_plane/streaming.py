@@ -236,3 +236,110 @@ def sse_frame(event: dict) -> str:
     """
     data = json.dumps(event, separators=(",", ":"))
     return f"event: {event['type']}\ndata: {data}\n\n"
+
+
+# ─── OpenAI-compatible streaming adapter ────────────────────────────
+#
+# Vercel AI SDK, LangChain JS, OpenAI SDK, and most off-the-shelf chat
+# UIs speak the OpenAI chat.completion.chunk delta format. To make
+# `chat.crowelogic.com` and any standard client work against the
+# foundry, we translate the crowe-stream v0 events from
+# `stream_agent_events` into OpenAI chunks. Mapping:
+#
+#   crowe.ready       -> OpenAI initial chunk, delta.role="assistant"
+#   crowe.token       -> OpenAI chunk, delta.content=<text>
+#   crowe.reasoning   -> dropped (no standard field yet)
+#   crowe.spinner     -> dropped
+#   crowe.segment_end -> dropped
+#   crowe.error       -> OpenAI chunk finish_reason="error", then [DONE]
+#   crowe.done        -> OpenAI chunk finish_reason="stop", then [DONE]
+#
+# The terminal `data: [DONE]\n\n` is always emitted so clients have one
+# unambiguous end-of-stream signal.
+
+import time as _time
+import uuid as _uuid
+
+
+def _openai_chunk(
+    *,
+    chunk_id: str,
+    model: str,
+    created: int,
+    delta: dict,
+    finish_reason: str | None = None,
+) -> str:
+    payload = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "delta": delta,
+            "finish_reason": finish_reason,
+        }],
+    }
+    return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+
+
+async def stream_openai_compatible(
+    *,
+    messages: list[dict],
+    model_id: str,
+    session_id: str,
+) -> AsyncIterator[str]:
+    """Run the foundry agent loop, yield OpenAI-format SSE chunks."""
+    chunk_id = f"chatcmpl-{_uuid.uuid4().hex[:24]}"
+    created = int(_time.time())
+
+    role_emitted = False
+    finished = False
+
+    async for event in stream_agent_events(
+        messages=messages, model_id=model_id, session_id=session_id,
+    ):
+        etype = event.get("type")
+        if etype == "ready":
+            yield _openai_chunk(
+                chunk_id=chunk_id, model=model_id, created=created,
+                delta={"role": "assistant"},
+            )
+            role_emitted = True
+        elif etype == "token":
+            if not role_emitted:
+                yield _openai_chunk(
+                    chunk_id=chunk_id, model=model_id, created=created,
+                    delta={"role": "assistant"},
+                )
+                role_emitted = True
+            text = event.get("delta") or ""
+            if text:
+                yield _openai_chunk(
+                    chunk_id=chunk_id, model=model_id, created=created,
+                    delta={"content": text},
+                )
+        elif etype == "error":
+            yield _openai_chunk(
+                chunk_id=chunk_id, model=model_id, created=created,
+                delta={}, finish_reason="error",
+            )
+            yield "data: [DONE]\n\n"
+            finished = True
+            return
+        elif etype == "done":
+            yield _openai_chunk(
+                chunk_id=chunk_id, model=model_id, created=created,
+                delta={}, finish_reason="stop",
+            )
+            yield "data: [DONE]\n\n"
+            finished = True
+            return
+        # reasoning / spinner / segment_end / tool cards: dropped.
+
+    if not finished:
+        yield _openai_chunk(
+            chunk_id=chunk_id, model=model_id, created=created,
+            delta={}, finish_reason="stop",
+        )
+        yield "data: [DONE]\n\n"
