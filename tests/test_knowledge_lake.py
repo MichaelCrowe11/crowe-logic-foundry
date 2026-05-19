@@ -319,6 +319,154 @@ def test_dispatch_table_resolves_all_kinds(tmp_path):
 
 # ─── ingest-all CLI ────────────────────────────────────────────
 
+# ─── embeddings, vector + hybrid search ───────────────────────
+
+from knowledge_lake.embeddings import cosine, deserialize, serialize
+
+
+def test_cosine_orthogonal_zero_identical_one():
+    assert abs(cosine([1.0, 0.0], [0.0, 1.0])) < 1e-9
+    assert abs(cosine([1.0, 0.0, 1.0], [1.0, 0.0, 1.0]) - 1.0) < 1e-9
+    # Zero-length / mismatched lengths should not crash.
+    assert cosine([], [1.0]) == 0.0
+    assert cosine([1.0, 2.0], [1.0]) == 0.0
+
+
+def test_serialize_deserialize_round_trip():
+    vec = [0.1, -0.25, 0.333333333]
+    blob = serialize(vec)
+    back = deserialize(blob)
+    assert back is not None
+    assert len(back) == 3
+    # serialize() rounds to 6 sig figs.
+    assert abs(back[2] - 0.333333) < 1e-9
+    assert deserialize(None) is None
+    assert deserialize("not json") is None
+    assert deserialize('{"x": 1}') is None  # not a list of floats
+
+
+def test_replace_chunks_stores_embeddings_when_embedder_provided(tmp_path):
+    store = Store(tmp_path / "kb.db")
+    store.upsert_source("t", "markdown")
+
+    # Hand-rolled embedder: 2-dim, one axis per keyword.
+    def fake_embed(text: str) -> list[float] | None:
+        t = text.lower()
+        return [1.0 if "alpha" in t else 0.0, 1.0 if "beta" in t else 0.0]
+
+    n = store.replace_chunks(
+        "t",
+        [
+            ("a.md", 0, "alpha alpha alpha", {}),
+            ("a.md", 1, "beta beta", {}),
+            ("a.md", 2, "neither word here", {}),
+        ],
+        embedder=fake_embed,
+    )
+    assert n == 3
+
+    # Sanity: the row that was "neither" gets a [0, 0] embedding,
+    # but the column is populated for every row.
+    import sqlite3
+    conn = sqlite3.connect(str(tmp_path / "kb.db"))
+    rows = conn.execute("SELECT embedding FROM chunks ORDER BY chunk_index").fetchall()
+    conn.close()
+    assert all(r[0] is not None for r in rows)
+
+
+def test_search_vector_mode(tmp_path):
+    store = Store(tmp_path / "kb.db")
+    store.upsert_source("t", "markdown")
+
+    def fake_embed(text: str) -> list[float]:
+        t = text.lower()
+        return [1.0 if "alpha" in t else 0.0, 1.0 if "beta" in t else 0.0]
+
+    store.replace_chunks(
+        "t",
+        [
+            ("a.md", 0, "alpha alpha", {}),
+            ("a.md", 1, "beta beta", {}),
+        ],
+        embedder=fake_embed,
+    )
+    # Query is an alpha vector; alpha row should rank higher.
+    hits = store.search(
+        "irrelevant fts",  # ignored in vector mode
+        mode="vector",
+        query_vector=[1.0, 0.0],
+        limit=5,
+    )
+    assert len(hits) >= 1
+    assert hits[0]["chunk_index"] == 0  # alpha row
+    assert hits[0]["score"] >= 0.99
+
+
+def test_search_hybrid_mode_blends_both_signals(tmp_path):
+    store = Store(tmp_path / "kb.db")
+    store.upsert_source("t", "markdown")
+
+    def fake_embed(text: str) -> list[float]:
+        t = text.lower()
+        return [1.0 if "alpha" in t else 0.0, 1.0 if "beta" in t else 0.0]
+
+    store.replace_chunks(
+        "t",
+        [
+            ("a.md", 0, "alpha alpha cultivation note", {}),
+            ("a.md", 1, "beta beta cultivation note", {}),
+            ("a.md", 2, "no keywords here", {}),
+        ],
+        embedder=fake_embed,
+    )
+    # Hybrid query: FTS should find both alpha and beta rows;
+    # vector should prefer the alpha row.
+    hits = store.search(
+        "cultivation",
+        mode="hybrid",
+        query_vector=[1.0, 0.0],
+        limit=5,
+    )
+    assert len(hits) >= 2
+    # Top hit should be the alpha row — wins on both signals.
+    assert hits[0]["chunk_index"] == 0
+
+
+def test_search_vector_rejects_missing_query_vector(tmp_path):
+    store = Store(tmp_path / "kb.db")
+    store.upsert_source("t", "markdown")
+    store.replace_chunks("t", [("a.md", 0, "x", {})])
+    with pytest.raises(ValueError):
+        store.search("x", mode="vector")
+    with pytest.raises(ValueError):
+        store.search("x", mode="hybrid")
+
+
+def test_get_chunk_exact_lookup(tmp_path):
+    store = Store(tmp_path / "kb.db")
+    store.upsert_source("t", "markdown")
+    store.replace_chunks(
+        "t",
+        [("a.md", 0, "first", {"k": "v"}), ("a.md", 1, "second", {})],
+    )
+    chunk = store.get_chunk(source="t", path="a.md", chunk_index=1)
+    assert chunk is not None
+    assert chunk["content"] == "second"
+    assert chunk["metadata"] == {}
+
+    assert store.get_chunk(source="t", path="a.md", chunk_index=99) is None
+    assert store.get_chunk(source="missing", path="a.md", chunk_index=0) is None
+
+
+def test_embeddings_unconfigured_returns_none(monkeypatch):
+    import knowledge_lake.embeddings as emb
+    monkeypatch.delenv("CROWE_KB_EMBED_PROVIDER", raising=False)
+    monkeypatch.delenv("AZURE_CORE_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_CORE_API_KEY", raising=False)
+    assert emb.is_configured() is False
+    assert emb.embed_text("anything") is None
+
+
 def test_ingest_all_runs_each_registered_source(tmp_path, monkeypatch):
     """The CLI invokes the click command end-to-end against a fake
     KNOWN_SOURCES + isolated DB.

@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS chunks (
     chunk_index   INTEGER NOT NULL,
     content       TEXT NOT NULL,
     metadata      TEXT NOT NULL DEFAULT '{}',   -- JSON
+    -- JSON-encoded list[float]. NULL when no embedding provider is
+    -- configured (knowledge_lake.embeddings.is_configured() is False).
+    embedding     TEXT,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -75,6 +78,56 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
     INSERT INTO chunks_fts(rowid, content) VALUES (new.id, new.content);
 END;
 """
+
+
+def _blend(
+    fts_rows: list[dict[str, Any]],
+    vec_rows: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Min-max normalize BM25 scores, then blend 50/50 with cosine.
+
+    BM25 is negative (lower=better); we flip sign and scale to [0,1]
+    within the FTS hit set. Cosine is already in [-1, 1]; clamped to
+    [0, 1] so the blend is monotonic. Rows that hit only one signal
+    still appear with their single-signal score doubled-and-halved
+    (so a vector-only row scores `0.5 * cosine`, fts-only row scores
+    `0.5 * norm_bm25`).
+    """
+    bm25 = [r["score"] for r in fts_rows]
+    if bm25:
+        lo, hi = min(bm25), max(bm25)
+        span = (hi - lo) or 1.0
+
+        def _norm(s: float) -> float:
+            # Flip so higher = better; scale to [0, 1].
+            return (hi - s) / span
+    else:
+        def _norm(_s: float) -> float:
+            return 0.0
+
+    by_id: dict[int, dict[str, Any]] = {}
+    for r in fts_rows:
+        r2 = dict(r)
+        r2["_bm25_norm"] = _norm(r["score"])
+        r2["_cos"] = 0.0
+        by_id[r["id"]] = r2
+    for r in vec_rows:
+        cos_clamped = max(0.0, min(1.0, float(r["score"])))
+        if r["id"] in by_id:
+            by_id[r["id"]]["_cos"] = cos_clamped
+        else:
+            r2 = dict(r)
+            r2["_bm25_norm"] = 0.0
+            r2["_cos"] = cos_clamped
+            by_id[r["id"]] = r2
+    blended = list(by_id.values())
+    for r in blended:
+        r["score"] = 0.5 * r["_bm25_norm"] + 0.5 * r["_cos"]
+        r.pop("_bm25_norm", None)
+        r.pop("_cos", None)
+    blended.sort(key=lambda r: -r["score"])
+    return blended[:limit]
 
 
 def default_db_path() -> Path:
@@ -128,6 +181,15 @@ class Store:
     def _init_schema(self) -> None:
         with self._conn() as c:
             c.executescript(_SCHEMA)
+            # Additive column-add for databases that pre-date the
+            # embedding feature. ALTER TABLE ADD COLUMN with a NULL
+            # default is a metadata-only op in SQLite and is safe to
+            # run on every open. Wrapped in try/except because the
+            # second call would raise "duplicate column" otherwise.
+            try:
+                c.execute("ALTER TABLE chunks ADD COLUMN embedding TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     # ─── source registry ─────────────────────────────────────────
 
@@ -183,22 +245,43 @@ class Store:
         self,
         source: str,
         chunks: Iterable[tuple[str, int, str, dict[str, Any]]],
+        *,
+        embedder: Optional[Any] = None,
     ) -> int:
-        """Atomically replace all chunks for `source`. Yields tuples of
-        (path, chunk_index, content, metadata). Returns count written.
+        """Atomically replace all chunks for `source`.
 
-        This is the only write path. Ingestors always re-ingest by
-        wholesale-replace; partial updates aren't worth the
-        bookkeeping cost at the scale of one corpus.
+        `chunks` yields (path, chunk_index, content, metadata).
+        When `embedder` is provided, it must be a callable
+        `(text: str) -> Optional[list[float]]` (e.g.
+        `knowledge_lake.embeddings.embed_text`). Embeddings are
+        computed inline and stored as JSON in the `embedding` column.
+        A None return is treated as "skip vector storage" so the row
+        still lands without embedding — FTS keeps working regardless.
+
+        Returns the number of rows written.
         """
+        # Lazy import to avoid a circular dep when embeddings.py
+        # eventually imports from store.py.
+        from knowledge_lake.embeddings import serialize as _ser
+
         n = 0
         with self._conn() as c:
             c.execute("DELETE FROM chunks WHERE source = ?", (source,))
             for path, idx, content, metadata in chunks:
+                embedding_blob: Optional[str] = None
+                if embedder is not None:
+                    try:
+                        vec = embedder(content)
+                    except Exception:
+                        vec = None
+                    if vec:
+                        embedding_blob = _ser(vec)
                 c.execute(
-                    """INSERT INTO chunks (source, path, chunk_index, content, metadata)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (source, path, idx, content, json.dumps(metadata or {})),
+                    """INSERT INTO chunks
+                           (source, path, chunk_index, content, metadata, embedding)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (source, path, idx, content,
+                     json.dumps(metadata or {}), embedding_blob),
                 )
                 n += 1
             c.execute(
@@ -218,34 +301,154 @@ class Store:
         *,
         source: Optional[str] = None,
         limit: int = 10,
+        mode: str = "fts",
+        query_vector: Optional[list[float]] = None,
     ) -> list[dict[str, Any]]:
-        """FTS5 BM25 search. `query` is passed as-is to MATCH, so the
-        caller can use FTS operators (AND, OR, NEAR, "phrase").
+        """Search the corpus.
+
+        Modes:
+          - "fts"     (default): FTS5 BM25 only. `query` is passed
+            straight to MATCH so the caller can use FTS operators
+            (AND, OR, NEAR, "phrase").
+          - "vector": cosine similarity against `query_vector`. The
+            caller is responsible for embedding the query (typically
+            with knowledge_lake.embeddings.embed_text). Rows without
+            an embedding are skipped.
+          - "hybrid": run both, then blend. BM25 is min-max normalized
+            within the FTS hit set, cosine is already in [-1, 1];
+            final score is 0.5*norm_bm25 + 0.5*cosine. Rows that hit
+            either signal can surface.
+
+        Returns ranked rows. Each row carries id, source, path,
+        chunk_index, content, decoded metadata, and `score` (lower is
+        better in fts mode; higher is better in vector/hybrid modes).
         """
         limit = max(1, min(limit, 200))
-        sql = (
-            "SELECT c.id, c.source, c.path, c.chunk_index, c.content, c.metadata, "
-            "       bm25(chunks_fts) AS score "
-            "FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid "
-            "WHERE chunks_fts MATCH ? "
-        )
-        params: list[Any] = [query]
-        if source:
-            sql += " AND c.source = ?"
-            params.append(source)
-        sql += " ORDER BY score LIMIT ?"
-        params.append(limit)
-        with self._conn() as c:
-            rows = c.execute(sql, params).fetchall()
+        if mode not in ("fts", "vector", "hybrid"):
+            raise ValueError(f"unknown mode {mode!r}")
+        if mode in ("vector", "hybrid") and query_vector is None:
+            raise ValueError(f"mode={mode!r} requires query_vector")
+
+        # FTS path is unchanged for backward compat. Vector / hybrid
+        # paths are layered on top.
+        fts_rows: list[dict[str, Any]] = []
+        if mode in ("fts", "hybrid"):
+            sql = (
+                "SELECT c.id, c.source, c.path, c.chunk_index, c.content, "
+                "       c.metadata, c.embedding, bm25(chunks_fts) AS score "
+                "FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid "
+                "WHERE chunks_fts MATCH ? "
+            )
+            params: list[Any] = [query]
+            if source:
+                sql += " AND c.source = ?"
+                params.append(source)
+            # In hybrid mode we pull more rows so the blend has signal
+            # to work with; the final top-N is computed after merging.
+            sql += " ORDER BY score LIMIT ?"
+            params.append(limit if mode == "fts" else max(limit * 4, 40))
+            with self._conn() as c:
+                fts_rows = [dict(r) for r in c.execute(sql, params).fetchall()]
+
+        vec_rows: list[dict[str, Any]] = []
+        if mode in ("vector", "hybrid"):
+            from knowledge_lake.embeddings import cosine, deserialize
+            sql = (
+                "SELECT id, source, path, chunk_index, content, metadata, "
+                "       embedding FROM chunks WHERE embedding IS NOT NULL"
+            )
+            params2: list[Any] = []
+            if source:
+                sql += " AND source = ?"
+                params2.append(source)
+            with self._conn() as c:
+                candidates = c.execute(sql, params2).fetchall()
+            for row in candidates:
+                d = dict(row)
+                vec = deserialize(d.pop("embedding", None))
+                if vec is None:
+                    continue
+                sim = cosine(query_vector or [], vec)
+                d["score"] = sim
+                vec_rows.append(d)
+            vec_rows.sort(key=lambda r: -r["score"])
+            vec_rows = vec_rows[: max(limit * 4, 40) if mode == "hybrid" else limit]
+
+        # Combine.
+        if mode == "fts":
+            ranked = fts_rows
+        elif mode == "vector":
+            ranked = vec_rows
+        else:
+            # min-max normalize BM25 inside the FTS hit set. Lower
+            # bm25 = better; flip sign to align with cosine.
+            ranked = _blend(fts_rows, vec_rows, limit)
+
         out: list[dict[str, Any]] = []
-        for r in rows:
-            d = dict(r)
+        for r in ranked[:limit]:
+            r.pop("embedding", None)
             try:
-                d["metadata"] = json.loads(d["metadata"]) if d["metadata"] else {}
-            except json.JSONDecodeError:
-                d["metadata"] = {}
-            out.append(d)
+                r["metadata"] = (
+                    json.loads(r["metadata"]) if r.get("metadata") else {}
+                )
+            except (json.JSONDecodeError, TypeError):
+                r["metadata"] = {}
+            out.append(r)
         return out
+
+    def get_chunk(
+        self,
+        *,
+        source: str,
+        path: str,
+        chunk_index: int,
+    ) -> Optional[dict[str, Any]]:
+        """Look up an exact chunk by its citation triple.
+
+        Citations rendered in chat responses carry source + path +
+        chunk_index. The chip drawer uses this to fetch the full
+        content without an FTS round trip.
+
+        Returns the chunk's id, source, path, chunk_index, content,
+        metadata (decoded JSON), and created_at, or None when nothing
+        matches.
+        """
+        with self._conn() as c:
+            row = c.execute(
+                """SELECT id, source, path, chunk_index, content,
+                          metadata, created_at
+                   FROM chunks
+                   WHERE source = ? AND path = ? AND chunk_index = ?""",
+                (source, path, chunk_index),
+            ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d["metadata"]) if d["metadata"] else {}
+        except json.JSONDecodeError:
+            d["metadata"] = {}
+        return d
+
+    def get_chunk_by_rowid(self, rowid: int) -> Optional[dict[str, Any]]:
+        """Look up a chunk by its internal rowid. Used by ranked search
+        result pipelines that already carry the id.
+        """
+        with self._conn() as c:
+            row = c.execute(
+                """SELECT id, source, path, chunk_index, content,
+                          metadata, created_at
+                   FROM chunks WHERE id = ?""",
+                (rowid,),
+            ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d["metadata"]) if d["metadata"] else {}
+        except json.JSONDecodeError:
+            d["metadata"] = {}
+        return d
 
     def stats(self) -> dict[str, Any]:
         with self._conn() as c:
