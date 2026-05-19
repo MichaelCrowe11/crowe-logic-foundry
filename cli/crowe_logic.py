@@ -3674,5 +3674,13 @@ except Exception as _exc:  # noqa: BLE001
     _logging.getLogger(__name__).debug("portfolio CLI not registered: %s", _exc)
 
 
+try:
+    from cli.kb import register as _register_kb
+    _register_kb(main, console)
+except Exception as _exc:  # noqa: BLE001
+    import logging as _logging
+    _logging.getLogger(__name__).debug("kb CLI not registered: %s", _exc)
+
+
 if __name__ == "__main__":
     main()
