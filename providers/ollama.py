@@ -12,7 +12,6 @@ dual renderer.
 
 from __future__ import annotations
 
-import json
 from typing import NamedTuple
 
 import requests

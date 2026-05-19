@@ -1,8 +1,7 @@
 """Tests for tools.crowe_logic_ai — Crowe Logic platform client."""
 
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from tools.crowe_logic_ai import crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop
 
 

@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.agent_config import PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME
+from config.agent_config import PROJECT_ENDPOINT
 
 # Dataset paths
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -126,7 +126,7 @@ def convert_nemo_sft_to_openai(input_path: Path, output_path: Path, max_samples:
 def cmd_convert(args):
     """Convert all CroweLM datasets to Azure fine-tuning format."""
     print(f"\n{'='*60}")
-    print(f"  DATASET CONVERSION — CroweLM → Azure FT Format")
+    print("  DATASET CONVERSION — CroweLM → Azure FT Format")
     print(f"{'='*60}\n")
 
     total = 0
@@ -168,7 +168,7 @@ def cmd_convert(args):
 def cmd_upload(args):
     """Upload converted dataset to Azure AI Foundry."""
     print(f"\n{'='*60}")
-    print(f"  DATASET UPLOAD — Azure AI Foundry")
+    print("  DATASET UPLOAD — Azure AI Foundry")
     print(f"{'='*60}\n")
 
     from azure.ai.agents import AgentsClient

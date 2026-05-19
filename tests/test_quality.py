@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config.quality import QualitySignal, assess_response
+from config.quality import assess_response
 
 
 def test_empty_response_is_shallow():

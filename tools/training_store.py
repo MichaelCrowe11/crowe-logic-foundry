@@ -28,7 +28,6 @@ import os
 import time
 from pathlib import Path
 
-from tools.capture import CAPTURE_ROOT
 
 TRAINING_ROOT = Path(os.environ.get(
     "STUDIO_TRAINING_ROOT",

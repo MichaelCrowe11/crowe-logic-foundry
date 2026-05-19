@@ -2,7 +2,6 @@
 """Tests for tools.staging_pipeline -- CroweLM staging and tiered gate."""
 
 import json
-import os
 import pytest
 import tools.staging_pipeline as staging_mod
 import tools.audit_log as audit_mod

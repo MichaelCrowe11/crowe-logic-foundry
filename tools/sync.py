@@ -1,8 +1,8 @@
 # Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
-# Part of Crowe Studio — proprietary, private repository.
+# Part of Crowe Studio: proprietary, private repository.
 
 """
-Audio waveform sync — align multi-camera clips to the primary camera.
+Audio waveform sync: align multi-camera clips to the primary camera.
 
 Every camera in a shoot starts recording within a few hundred ms of
 each other but never exactly simultaneously. For broadcast-quality
@@ -26,9 +26,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import tempfile
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np  # noqa: F401  (annotations only; runtime import is lazy in each function)
 
 from tools.capture import CAPTURE_ROOT
 
@@ -54,11 +56,21 @@ def _ff() -> str:
 def _probe_has_audio(path: str) -> bool:
     try:
         r = subprocess.run(
-            ["/opt/homebrew/bin/ffprobe", "-v", "error",
-             "-select_streams", "a:0",
-             "-show_entries", "stream=codec_type",
-             "-of", "default=nw=1:nk=1", path],
-            capture_output=True, text=True, timeout=15,
+            [
+                "/opt/homebrew/bin/ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=nw=1:nk=1",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         return "audio" in r.stdout.lower()
     except Exception:
@@ -76,10 +88,20 @@ def _extract_mono_pcm(path: str, seconds: int) -> np.ndarray | None:
         return None
     try:
         cmd = [
-            _ff(), "-hide_banner", "-loglevel", "error",
-            "-t", str(seconds),
-            "-i", path,
-            "-f", "f32le", "-ac", "1", "-ar", str(SYNC_SAMPLE_RATE),
+            _ff(),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-t",
+            str(seconds),
+            "-i",
+            path,
+            "-f",
+            "f32le",
+            "-ac",
+            "1",
+            "-ar",
+            str(SYNC_SAMPLE_RATE),
             "-",
         ]
         proc = subprocess.run(cmd, capture_output=True, timeout=60)
@@ -145,8 +167,12 @@ def sync_shoot(shoot_id: str, window_seconds: int = SYNC_DEFAULT_WINDOW_SECONDS)
             return json.dumps({"error": f"Unknown shoot: {shoot_id}"})
         manifest = json.loads(manifest_path.read_text())
         clips = manifest.get("clips") or [
-            {"camera": c["camera"], "role": c["role"], "path": c["path"],
-             "sync_priority": c.get("sync_priority", "secondary")}
+            {
+                "camera": c["camera"],
+                "role": c["role"],
+                "path": c["path"],
+                "sync_priority": c.get("sync_priority", "secondary"),
+            }
             for c in manifest.get("cameras", [])
         ]
         if not clips:
@@ -158,28 +184,45 @@ def sync_shoot(shoot_id: str, window_seconds: int = SYNC_DEFAULT_WINDOW_SECONDS)
             primary = next((c for c in clips if _probe_has_audio(c["path"])), clips[0])
         primary_pcm = _extract_mono_pcm(primary["path"], window_seconds)
         if primary_pcm is None:
-            return json.dumps({"error": f"Primary {primary['camera']} has no audio to sync against"})
+            return json.dumps(
+                {"error": f"Primary {primary['camera']} has no audio to sync against"}
+            )
 
         offsets = []
         for c in clips:
             if c["camera"] == primary["camera"]:
-                offsets.append({
-                    "camera": c["camera"], "offset_ms": 0.0,
-                    "confidence": 1.0, "has_audio": True, "is_primary": True,
-                })
+                offsets.append(
+                    {
+                        "camera": c["camera"],
+                        "offset_ms": 0.0,
+                        "confidence": 1.0,
+                        "has_audio": True,
+                        "is_primary": True,
+                    }
+                )
                 continue
             other_pcm = _extract_mono_pcm(c["path"], window_seconds)
             if other_pcm is None:
-                offsets.append({
-                    "camera": c["camera"], "offset_ms": 0.0,
-                    "confidence": 0.0, "has_audio": False, "is_primary": False,
-                })
+                offsets.append(
+                    {
+                        "camera": c["camera"],
+                        "offset_ms": 0.0,
+                        "confidence": 0.0,
+                        "has_audio": False,
+                        "is_primary": False,
+                    }
+                )
                 continue
             ms, conf = _offset_ms(primary_pcm, other_pcm)
-            offsets.append({
-                "camera": c["camera"], "offset_ms": round(ms, 2),
-                "confidence": round(conf, 4), "has_audio": True, "is_primary": False,
-            })
+            offsets.append(
+                {
+                    "camera": c["camera"],
+                    "offset_ms": round(ms, 2),
+                    "confidence": round(conf, 4),
+                    "has_audio": True,
+                    "is_primary": False,
+                }
+            )
 
         manifest["sync"] = {
             "primary_camera": primary["camera"],
@@ -189,12 +232,14 @@ def sync_shoot(shoot_id: str, window_seconds: int = SYNC_DEFAULT_WINDOW_SECONDS)
         }
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
-        return json.dumps({
-            "shoot_id": shoot_id,
-            "primary_camera": primary["camera"],
-            "offsets": offsets,
-            "analysis_seconds": round(time.time() - t0, 2),
-        })
+        return json.dumps(
+            {
+                "shoot_id": shoot_id,
+                "primary_camera": primary["camera"],
+                "offsets": offsets,
+                "analysis_seconds": round(time.time() - t0, 2),
+            }
+        )
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -214,7 +259,9 @@ def get_sync_offsets(shoot_id: str) -> str:
         manifest = json.loads(manifest_path.read_text())
         sync = manifest.get("sync")
         if not sync:
-            return json.dumps({"error": "shoot has not been synced yet — call sync_shoot first"})
+            return json.dumps(
+                {"error": "shoot has not been synced yet — call sync_shoot first"}
+            )
         return json.dumps(sync)
     except Exception as e:
         return json.dumps({"error": str(e)})

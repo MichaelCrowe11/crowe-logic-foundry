@@ -7,7 +7,6 @@ Falls back to a lightweight mock for testing.
 
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
 
 # ─── Async Postgres pool (production) ─────────────────────────────────
 

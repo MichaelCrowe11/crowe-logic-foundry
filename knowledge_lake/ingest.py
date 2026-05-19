@@ -13,12 +13,11 @@ overrides `_iter_files` and `_extract_text`.
 """
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterator
 
 from knowledge_lake.sources import Source
 from knowledge_lake.store import Store
@@ -226,7 +225,6 @@ class MarkdownIngestor(Ingestor):
 
 def _glob_match(rel: str, pattern: str) -> bool:
     """Glob match that respects `**` as `match any sub-path including slashes`."""
-    import fnmatch
     # `**/x` and `x/**` and `a/**/b`. Convert the recursive form to a
     # regex so fnmatch-style ** works.
     regex = re.escape(pattern)

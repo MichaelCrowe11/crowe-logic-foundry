@@ -348,7 +348,6 @@ def run_training(training_dir: Path, labels: list[str], model_id: str, output_di
         AutoModelForVision2Seq,
         AutoProcessor,
         TrainingArguments,
-        Trainer,
     )
 
     data_files = {

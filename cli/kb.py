@@ -209,7 +209,6 @@ def register(main_group: click.Group, console) -> None:
         from knowledge_lake import KNOWN_SOURCES
         from knowledge_lake.discover import discover_sources
         from knowledge_lake.sources import (
-            Source,
             _load_overlay,
             _overlay_path,
             save_overlay,

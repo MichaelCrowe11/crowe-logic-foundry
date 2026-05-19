@@ -5,11 +5,7 @@ Uses a lightweight in-memory mock DB so tests run without Postgres.
 """
 
 import asyncio
-import hashlib
-import json
-import secrets
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -449,7 +445,6 @@ class TestResearchEndpoint:
         return ws_id, pat
 
     def test_research_debits_credits_and_returns_report(self, client, mock_db, monkeypatch):
-        from datetime import datetime, timezone
         from control_plane._research_engine.models import (
             Report, Source, SourceTier, Usage, StageUsage,
         )

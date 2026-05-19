@@ -2,7 +2,6 @@
 Filesystem tools — read, write, edit, and list files.
 """
 
-import os
 import json
 from pathlib import Path
 

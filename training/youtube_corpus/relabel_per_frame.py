@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -51,10 +50,8 @@ import numpy as np
 from training.shot_selector.baseline_clip import (
     ARTIFACT_SUBDIR,
     CACHE_SUBDIR,
-    Example,
     _dataset_fingerprint,
     _encode_split,
-    _image_embed,
     _load_backbone,
     _records_from_jsonl,
     _resolve_device,

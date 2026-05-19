@@ -221,7 +221,10 @@ def load_seed_pairs() -> list[Pair]:
         # Pull from COS using the existing helper
         sys.path.insert(0, str(ROOT))
         from config.crowelm.watsonx_adapter import _load_env
-        import hashlib as h, hmac, datetime as dt, urllib.request
+        import hashlib as h
+        import hmac
+        import datetime as dt
+        import urllib.request
         env = _load_env()
         ak, sk = env["COS_HMAC_ACCESS_KEY_ID"], env["COS_HMAC_SECRET_ACCESS_KEY"]
         bucket, endpoint = env["COS_BUCKET"], env["COS_ENDPOINT"].rstrip("/")

@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Optional
 
 from . import watsonx_adapter
-from .brand_registry import ALL_BRANDS, CroweBrand, BY_BRAND, resolve
+from .brand_registry import ALL_BRANDS, BY_BRAND, resolve
 
 
 def list_brands(*, capability: Optional[str] = None) -> list[dict]:
@@ -73,7 +73,8 @@ def health() -> dict:
 
 
 if __name__ == "__main__":
-    import json, sys
+    import json
+    import sys
     if len(sys.argv) > 1 and sys.argv[1] == "list":
         print(json.dumps(list_brands(), indent=2))
     elif len(sys.argv) > 1 and sys.argv[1] == "health":

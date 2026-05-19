@@ -1,7 +1,6 @@
 """Tests for the iTerm2 integration module."""
 
 import os
-import sys
 import io
 import unittest
 from unittest.mock import patch

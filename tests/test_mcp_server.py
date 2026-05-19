@@ -1,8 +1,6 @@
 """Tests for the Crowe Logic AI MCP server tool definitions."""
 
-import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestMcpServerTools:

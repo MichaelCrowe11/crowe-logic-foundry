@@ -5,11 +5,10 @@ Routes tasks, manages sessions, dispatches pipelines and agents,
 injects context from memory into the model's system prompt.
 """
 
-import os
 from crowe_synapse_engine.memory import MemoryStore
 from crowe_synapse_engine.pipeline import PipelineEngine
 from crowe_synapse_engine.agent_registry import AgentRegistry
-from crowe_synapse_engine.quantum_bridge import QuantumBridge, DecisionPoint
+from crowe_synapse_engine.quantum_bridge import QuantumBridge
 
 
 class Orchestrator:

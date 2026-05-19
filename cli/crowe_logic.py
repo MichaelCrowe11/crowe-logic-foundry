@@ -24,7 +24,6 @@ sys.path.insert(0, _PACKAGE_ROOT)
 import click
 from rich.console import Console
 from rich.table import Table
-from rich.text import Text
 from rich.markup import escape as _rich_escape
 from rich import box
 
@@ -35,7 +34,7 @@ load_dotenv(os.path.join(_PACKAGE_ROOT, ".env"))
 PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 
 from cli.branding import (
-    welcome_screen, show_welcome, show_inline_image, get_favicon,
+    show_welcome, get_favicon,
     session_state, reset_session_state,
     render_tool_card, render_error as render_error_block, render_transcript_markdown,
     render_session_hud, render_recent_actions, record_action, show_last_transcript,
@@ -612,7 +611,7 @@ def _show_account_status() -> None:
     console.print()
 
     if status.byok:
-        console.print(f"  [bold #bfa669]BYOK mode[/bold #bfa669]")
+        console.print("  [bold #bfa669]BYOK mode[/bold #bfa669]")
         console.print(f"  [dim]{status.message}[/dim]")
         console.print()
         return
@@ -689,7 +688,7 @@ def _preflight_credits(model_cfg: dict, dual_state=None) -> bool:
         return True
 
     console.print()
-    console.print(f"  [bold #bf6f6f]Credits unavailable[/bold #bf6f6f]")
+    console.print("  [bold #bf6f6f]Credits unavailable[/bold #bf6f6f]")
     console.print(f"  [dim]{decision.reason}[/dim]")
     console.print("  [dim]Check balance with /account or upgrade your plan.[/dim]")
     console.print()
@@ -2658,16 +2657,13 @@ def deploy():
         MODEL_CHAIN, OLLAMA_BASE_URL, NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY,
         OPENROUTER_API_KEY, OPENROUTER_BASE_URL, NEON_DATABASE_URL,
         AGENT_NAME, AGENT_VERSION,
-        AZURE_CORE_ENDPOINT, AZURE_CORE_API_KEY,
-        AZURE_GLM_ENDPOINT, AZURE_GLM_API_KEY,
-        AZURE_ANTHROPIC_ENDPOINT, AZURE_ANTHROPIC_API_KEY,
         azure_openai_runtime_config,
         provider_model_name,
     )
     import requests
 
     console.print(f"\n{'='*60}")
-    console.print(f"  CROWE LOGIC — DEPLOY HEALTH CHECK")
+    console.print("  CROWE LOGIC — DEPLOY HEALTH CHECK")
     console.print(f"  {AGENT_NAME} v{AGENT_VERSION}")
     console.print(f"  request timeout {int(_deploy_timeout_seconds())}s")
     console.print(f"{'='*60}\n")
@@ -3044,10 +3040,10 @@ def deploy():
 
     if live_count > 0:
         console.print(f"\n{'='*60}")
-        console.print(f"  READY -- Run: crowe-logic chat")
+        console.print("  READY -- Run: crowe-logic chat")
         console.print(f"{'='*60}\n")
     else:
-        console.print(f"\n  [bold red]No models available. Check credentials and connectivity.[/bold red]\n")
+        console.print("\n  [bold red]No models available. Check credentials and connectivity.[/bold red]\n")
 
 
 @main.group()

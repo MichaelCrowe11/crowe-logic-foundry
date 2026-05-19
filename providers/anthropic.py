@@ -18,7 +18,7 @@ delta streaming format, reasoning surfaced as thinking blocks.
 
 import json
 import time
-from typing import Any, Optional, Union
+from typing import Any
 
 from providers._shared import (
     build_forced_final_answer_prompt,

@@ -37,7 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from config.crowelm.watsonx_adapter import _load_env, get_iam_token, _wx_url, WatsonxError
+from config.crowelm.watsonx_adapter import _load_env, get_iam_token, WatsonxError
 from config.crowelm.brand_registry import resolve
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"

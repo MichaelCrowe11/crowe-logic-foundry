@@ -44,8 +44,6 @@ def run_quantum_circuit(code: str, backend: str = "qiskit", shots: int = 1024) -
                 run as trinity_run,
                 compile as trinity_compile,
                 TrinityPipeline,
-                ExecutionResult,
-                AnalyzedResult,
             )
             from crowe_quantum_core.states import StateVector
             from crowe_quantum_core.gates import standard_gates

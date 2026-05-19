@@ -12,13 +12,11 @@ import argparse
 import datetime as dt
 import hashlib
 import json
-import os
 import sys
-import urllib.request
 from pathlib import Path
 
 from .brand_registry import resolve
-from .watsonx_adapter import _load_env, get_iam_token, _post, _wx_url, WatsonxError
+from .watsonx_adapter import _load_env, _post, _wx_url, WatsonxError
 
 
 def convert_jsonl(src: Path, dst: Path) -> int:

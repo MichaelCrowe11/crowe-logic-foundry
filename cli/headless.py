@@ -105,7 +105,8 @@ def _meter_turn(*, tokens: int, reasoning_tokens: int, model_label: str, elapsed
     total_tokens = max(1, int(tokens) + int(reasoning_tokens))
     amount = max(1, (total_tokens + 249) // 250)
     try:
-        import urllib.request, json as _json
+        import urllib.request
+        import json as _json
         req = urllib.request.Request(
             f"{base_url}/api/workspaces/{workspace_id}/credits/consume",
             data=_json.dumps({

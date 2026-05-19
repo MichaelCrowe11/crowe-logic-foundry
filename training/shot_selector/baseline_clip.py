@@ -62,7 +62,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 import time
 from dataclasses import dataclass
@@ -335,7 +334,7 @@ def _render_report(
     lines.append("Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.")
     lines.append("")
     lines.append(f"- Backbone: `{model_id}`")
-    lines.append(f"- Head:     LogisticRegression(class_weight='balanced', C=1.0)")
+    lines.append("- Head:     LogisticRegression(class_weight='balanced', C=1.0)")
     lines.append(f"- Device:   {device}")
     lines.append(f"- Train N:  {train_n}")
     lines.append("")

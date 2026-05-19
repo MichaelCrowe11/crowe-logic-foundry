@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from config import prompt_loader
 from config.prompt_loader import (
@@ -12,7 +11,6 @@ from config.prompt_loader import (
     slug_for,
     slugs_for_chain,
     system_prompt_for,
-    variant_prompt_text,
 )
 
 

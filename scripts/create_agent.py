@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Crowe Logic Agent — Create & Configure
+Crowe Logic Agent: Create and Configure
 
 Creates the Crowe Logic agent on Azure AI Foundry with all available tools:
 - Custom function tools (filesystem, shell, browser, search)
@@ -25,7 +25,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import (
     CodeInterpreterTool,
-    FileSearchTool,
     BingGroundingTool,
     AzureAISearchTool,
     AzureAISearchQueryType,
@@ -117,27 +116,42 @@ def create_agent(name: str = AGENT_NAME, verbose: bool = False):
 
     agent = client.create_agent(**create_kwargs)
 
-    print(f"\n  Agent created successfully!")
+    print("\n  Agent created successfully!")
     print(f"  Agent ID:   {agent.id}")
     print(f"  Agent Name: {agent.name}")
     print(f"  Model:      {agent.model}")
 
     # Save agent ID for CLI use
-    agent_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".agent_id")
+    agent_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".agent_id"
+    )
     with open(agent_file, "w") as f:
-        json.dump({"agent_id": agent.id, "name": name, "version": AGENT_VERSION, "model": MODEL_DEPLOYMENT_NAME}, f, indent=2)
-    print(f"  Saved agent ID to .agent_id")
+        json.dump(
+            {
+                "agent_id": agent.id,
+                "name": name,
+                "version": AGENT_VERSION,
+                "model": MODEL_DEPLOYMENT_NAME,
+            },
+            f,
+            indent=2,
+        )
+    print("  Saved agent ID to .agent_id")
 
     if verbose:
-        print(f"\n  Full agent config:")
+        print("\n  Full agent config:")
         print(f"  Instructions: {SYSTEM_INSTRUCTIONS[:200]}...")
-        print(f"  Tools: {[t.__class__.__name__ for t in [functions, code_interpreter]]}")
+        print(
+            f"  Tools: {[t.__class__.__name__ for t in [functions, code_interpreter]]}"
+        )
 
     return agent
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create the Crowe Logic agent on Azure AI Foundry")
+    parser = argparse.ArgumentParser(
+        description="Create the Crowe Logic agent on Azure AI Foundry"
+    )
     parser.add_argument("--name", default=AGENT_NAME, help="Agent name")
     parser.add_argument("--model", default=None, help="Override model deployment name")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
@@ -147,20 +161,20 @@ def main():
         global MODEL_DEPLOYMENT_NAME
         MODEL_DEPLOYMENT_NAME = args.model
 
-    print(f"\n{'='*60}")
-    print(f"  CROWE LOGIC AGENT — CREATE")
+    print(f"\n{'=' * 60}")
+    print("  CROWE LOGIC AGENT: CREATE")
     print(f"  Version {AGENT_VERSION}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     try:
-        agent = create_agent(name=args.name, verbose=args.verbose)
-        print(f"\n{'='*60}")
-        print(f"  READY — Run: crowe-logic chat")
-        print(f"{'='*60}\n")
+        create_agent(name=args.name, verbose=args.verbose)
+        print(f"\n{'=' * 60}")
+        print("  READY. Run: crowe-logic chat")
+        print(f"{'=' * 60}\n")
     except Exception as e:
         print(f"\n  ERROR: {e}")
-        print(f"  Make sure you've run: az login")
-        print(f"  And set PROJECT_ENDPOINT in .env")
+        print("  Make sure you've run: az login")
+        print("  And set PROJECT_ENDPOINT in .env")
         sys.exit(1)
 
 

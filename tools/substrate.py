@@ -11,7 +11,6 @@ chains, and mixes to a loudnorm=-14 LUFS master.
 """
 
 import json
-import os
 import re
 import subprocess
 import sys

@@ -1,7 +1,6 @@
 """Tests for domain modules — mycology, vision, research, compound discovery."""
 
 import pytest
-from datetime import date
 from fastapi.testclient import TestClient
 
 

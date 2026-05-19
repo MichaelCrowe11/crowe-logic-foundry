@@ -7,7 +7,6 @@ facade, and end-to-end ingest + search against a tmp_path corpus.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
@@ -472,7 +471,7 @@ def test_ingest_all_runs_each_registered_source(tmp_path, monkeypatch):
     KNOWN_SOURCES + isolated DB.
     """
     from click.testing import CliRunner
-    from knowledge_lake import KNOWN_SOURCES, sources as sources_mod
+    from knowledge_lake import sources as sources_mod
 
     # Two ready sources + one missing-root, in an isolated registry.
     md_root = tmp_path / "md-corpus"

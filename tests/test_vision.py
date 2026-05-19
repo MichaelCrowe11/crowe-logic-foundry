@@ -1,9 +1,7 @@
 """Tests for tools.vision — multi-backend image analysis."""
 
 import json
-import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from tools.vision import analyze_image, screenshot_and_analyze, VISION_MODELS
 
 
