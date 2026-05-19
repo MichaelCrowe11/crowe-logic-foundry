@@ -59,7 +59,26 @@ def record_shot_selection(
     render_output: str | None,
 ) -> str:
     """
-    Append one training tuple. Returns the path it was written to.
+    Append one training tuple for the Studio shot-selection model.
+
+    :param shoot_id: Identifier of the shoot the tuple belongs to.
+    :param edl_id: Identifier of the EDL (edit decision list) snapshot.
+    :param strategy: Strategy name the operator asked for (may be None).
+    :param effective_strategy: Strategy name the engine actually used
+        after fallbacks (may be None).
+    :param script_path: Path to the script/source file the shoot was cut against.
+    :param original_picks: Dict mapping section id to the engine's initial
+        pick (before any operator overrides).
+    :param final_picks: Dict mapping section id to the final pick that was
+        rendered into the cut.
+    :param overrides: List of per-section override records the operator
+        applied on top of the engine's initial picks.
+    :param sections: List of section descriptors (id, start, end, label).
+    :param cameras_used: List of camera identifiers that contributed clips.
+    :param render_output: Path to the final rendered output (may be None
+        if the tuple was logged before render).
+    :return: Filesystem path the tuple was appended to (monthly JSONL).
+    :rtype: str
     """
     _ensure_root()
     tuple_ = {

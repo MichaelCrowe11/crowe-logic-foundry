@@ -113,6 +113,7 @@ def chatgpt_agent_invoke(
     :param temperature: Sampling temperature 0.0-2.0 (default 0.7).
     :param max_output_tokens: Cap on output tokens (default 2048).
     :return: JSON string with the agent's reply and metadata.
+    :rtype: str
     """
     if httpx is None:
         return json.dumps({
@@ -204,6 +205,7 @@ def chatgpt_agent_health(agent_id: str = "") -> str:
 
     :param agent_id: Optional agent id. Falls back to CHATGPT_AGENT_ID env var.
     :return: JSON with {"reachable": bool, "agent_id": str, "detail": str, ...}.
+    :rtype: str
     """
     if not os.environ.get("OPENAI_API_KEY", "").strip():
         return json.dumps({

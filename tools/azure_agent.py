@@ -120,6 +120,7 @@ def azure_agent_list(project_endpoint: str = "") -> str:
     :param project_endpoint: Project URL (services.ai.azure.com/api/projects/...).
         Falls back to AZURE_AGENT_PROJECT_ENDPOINT, then PROJECT_ENDPOINT env.
     :return: JSON string with ``{"agents": [{"id", "name", "model", "created_at"}, ...]}``.
+    :rtype: str
     """
     try:
         endpoint = _resolve_project_endpoint(project_endpoint)
@@ -162,6 +163,7 @@ def azure_agent_invoke(
     :param thread_id: Optional existing thread id to continue.
     :param project_endpoint: Optional project URL override.
     :return: JSON with ``output``, ``agent_id``, ``thread_id``, ``run_id``, ``status``, ``usage``.
+    :rtype: str
     """
     if not isinstance(message, str) or not message.strip():
         return json.dumps({"error": "Empty message"})
@@ -265,6 +267,7 @@ def azure_agent_create(
                   Must match a deployed model on the project's backing resource.
     :param project_endpoint: Optional project URL override.
     :return: JSON with the created agent's ``id``, ``name``, ``model``, and endpoint.
+    :rtype: str
     """
     if not isinstance(name, str) or not name.strip():
         return json.dumps({"error": "Empty name"})

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - "requirements*.txt"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest + ruff
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          # Project doesn't pin a single requirements file; the
+          # pyproject + dev-deps install path matches what `make install`
+          # uses locally.
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          # Dev tools used by make lint / pytest.
+          python -m pip install ruff pytest pytest-asyncio pytest-httpx pytest-cov
+          # Optional deps that the test suite imports defensively but
+          # CI should still resolve so importorskip doesn't hide bugs.
+          python -m pip install fastapi httpx pyjwt pyyaml asyncpg
+
+      - name: Lint
+        run: |
+          python -m ruff check .
+        # Ruff config lives in pyproject.toml.
+
+      - name: Test
+        env:
+          # The control-plane lifespan tries to open a real Neon
+          # connection on import — tests stub this, but the env var
+          # being absent is the upstream signal.
+          CONTROL_PLANE_DATABASE_URL: ""
+          # JWT secret tests use the same dev default the app does;
+          # set it explicitly so the test runner doesn't pick up
+          # stray values from the runner image.
+          CROWE_JWT_SECRET: dev-secret-change-me-in-prod
+          # Stream endpoint stays disabled so the 503 test asserts
+          # the gate works in CI.
+          CROWE_STREAM_ENABLED: ""
+        run: |
+          python -m pytest -q --maxfail=10

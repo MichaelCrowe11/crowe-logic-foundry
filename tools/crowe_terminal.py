@@ -252,7 +252,11 @@ def _add_to_legacy_registry(fn: Callable, name: str, description: str, schema: D
 
 
 def discover_and_register() -> List[str]:
-    """Probe Crowe Terminal and register every advertised tool. Returns names."""
+    """Probe Crowe Terminal and register every advertised tool.
+
+    :return: Names of the tools that were registered with the local registry.
+    :rtype: list[str]
+    """
     if os.environ.get(ENABLE_ENV) != "1":
         return []
     catalog = _fetch_catalog()
@@ -438,7 +442,12 @@ restarts.
 
 
 def system_prompt() -> str:
-    """Return the agent-tools system prompt addendum, or "" if disabled."""
+    """Return the agent-tools system prompt addendum, or "" if disabled.
+
+    :return: The system-prompt addendum string when Crowe Terminal tools
+        are registered and the integration is enabled; empty string otherwise.
+    :rtype: str
+    """
     if os.environ.get(ENABLE_ENV) != "1":
         return ""
     if not _REGISTERED_PROXIES:
