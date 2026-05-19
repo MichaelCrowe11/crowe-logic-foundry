@@ -1,12 +1,14 @@
 # Copyright (c) 2026 Crowe Logic, Inc. All rights reserved.
 """
-`crowe-logic kb` — knowledge-lake CLI surface.
+`crowe-logic kb`: knowledge-lake CLI surface.
 
-Four subcommands:
-  kb sources        — list registered sources (and which are ingested)
-  kb status         — db path, total chunks, source breakdown
-  kb ingest <name>  — run the right ingestor against the source
-  kb search QUERY   — FTS5 search across (or scoped to) one source
+Subcommands:
+  kb sources       : list registered sources (and which are ingested)
+  kb status        : db path, total chunks, source breakdown
+  kb ingest NAME   : run the right ingestor against the source
+  kb ingest-all    : run every registered ingestor in sequence
+  kb discover      : surface portfolio entries not yet registered
+  kb search QUERY  : FTS5 search across (or scoped to) one source
 """
 from __future__ import annotations
 
@@ -189,6 +191,67 @@ def register(main_group: click.Group, console) -> None:
             f"[yellow]{summary['failed']} skipped/failed[/]"
         )
 
+    # ─── discover ─────────────────────────────────────────────
+
+    @kb.command("discover")
+    @click.option(
+        "--register",
+        "do_register",
+        is_flag=True,
+        help="Persist candidates to the overlay file so they show up "
+             "in `kb sources` and `kb ingest-all`.",
+    )
+    @click.option("--json", "as_json", is_flag=True)
+    def discover_cmd(do_register: bool, as_json: bool):
+        """Find ingestible corpora the portfolio knows about but
+        knowledge_lake hasn't registered yet.
+        """
+        from knowledge_lake import KNOWN_SOURCES
+        from knowledge_lake.discover import discover_sources
+        from knowledge_lake.sources import (
+            Source,
+            _load_overlay,
+            _overlay_path,
+            save_overlay,
+        )
+
+        candidates = discover_sources(
+            already_registered=KNOWN_SOURCES.keys()
+        )
+
+        if as_json:
+            click.echo(json.dumps(
+                [c.to_dict() for c in candidates], indent=2
+            ))
+            if do_register and candidates:
+                _persist_candidates(candidates, _load_overlay, save_overlay)
+            return
+
+        if not candidates:
+            console.print(
+                "[dim]no new candidates. Every portfolio entry with "
+                "a local clone is either already registered or has no "
+                "markdown/latex/jsonl content.[/]"
+            )
+            return
+
+        _render_candidates_table(candidates, console)
+
+        if do_register:
+            written = _persist_candidates(
+                candidates, _load_overlay, save_overlay
+            )
+            console.print(
+                f"\n[green]registered {len(candidates)} new source"
+                f"{'s' if len(candidates) != 1 else ''}[/] -> "
+                f"[dim]{written}[/]"
+            )
+        else:
+            console.print(
+                "\n[dim]run with [bold]--register[/bold] to persist to "
+                f"{_overlay_path()}[/]"
+            )
+
     # ─── search ───────────────────────────────────────────────
 
     @kb.command("search")
@@ -243,7 +306,7 @@ def _render_status(stats: dict, sources: list[dict], console) -> None:
         f"{stats['source_count']} sources)[/]"
     )
     if not sources:
-        console.print("[dim](no sources ingested yet — run `kb ingest <name>`)[/]")
+        console.print("[dim](no sources ingested yet. Run `kb ingest <name>`)[/]")
         return
     t = Table(show_header=True, header_style="bold", padding=(0, 1))
     t.add_column("source")
@@ -251,8 +314,51 @@ def _render_status(stats: dict, sources: list[dict], console) -> None:
     t.add_column("chunks", justify="right", width=8)
     t.add_column("last ingested")
     for s in sources:
-        t.add_row(s["name"], s["kind"], str(s["chunks"]), s["last_ingested_at"] or "—")
+        t.add_row(s["name"], s["kind"], str(s["chunks"]), s["last_ingested_at"] or "-")
     console.print(t)
+
+
+def _render_candidates_table(candidates, console) -> None:
+    from rich.table import Table
+    t = Table(
+        title="[bold]auto-discovered knowledge-lake candidates[/]",
+        show_header=True,
+        header_style="bold",
+        title_justify="left",
+        padding=(0, 1),
+    )
+    t.add_column("name")
+    t.add_column("kind", width=8)
+    t.add_column("files", justify="right", width=6)
+    t.add_column("origin", width=18)
+    t.add_column("root", overflow="fold")
+    for c in candidates:
+        t.add_row(
+            c.name,
+            c.kind,
+            str(c.file_count),
+            c.origin,
+            str(c.root),
+        )
+    console.print(t)
+
+
+def _persist_candidates(candidates, load_overlay, save_overlay):
+    """Merge new candidates into the overlay file. Existing overlay
+    entries are preserved; duplicate names are skipped.
+    """
+    from knowledge_lake.sources import Source
+    existing = {s.name: s for s in load_overlay()}
+    for c in candidates:
+        if c.name in existing:
+            continue
+        existing[c.name] = Source(
+            name=c.name,
+            kind=c.kind,
+            root=c.root,
+            description=c.description,
+        )
+    return save_overlay(list(existing.values()))
 
 
 def _render_hits(query: str, hits, console) -> None:
