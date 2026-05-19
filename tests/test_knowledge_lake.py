@@ -315,3 +315,46 @@ def test_dispatch_table_resolves_all_kinds(tmp_path):
         src = Source(name=f"x-{kind}", kind=kind, root=tmp_path, description="")
         ing = ingestor_for(src, store)
         assert type(ing).__name__ == expected
+
+
+# ─── ingest-all CLI ────────────────────────────────────────────
+
+def test_ingest_all_runs_each_registered_source(tmp_path, monkeypatch):
+    """The CLI invokes the click command end-to-end against a fake
+    KNOWN_SOURCES + isolated DB.
+    """
+    from click.testing import CliRunner
+    from knowledge_lake import KNOWN_SOURCES, sources as sources_mod
+
+    # Two ready sources + one missing-root, in an isolated registry.
+    md_root = tmp_path / "md-corpus"
+    md_root.mkdir()
+    (md_root / "a.md").write_text("# Heading\n\nMycelium colonizes substrate.\n", encoding="utf-8")
+
+    jsonl_root = tmp_path / "jsonl-corpus"
+    jsonl_root.mkdir()
+    (jsonl_root / "c.jsonl").write_text('{"text": "Pleurotus fruits at 18C."}\n', encoding="utf-8")
+
+    fake = {
+        "md-test": Source(name="md-test", kind="markdown", root=md_root, description=""),
+        "jsonl-test": Source(name="jsonl-test", kind="jsonl", root=jsonl_root, description=""),
+        "missing-test": Source(name="missing-test", kind="markdown", root=tmp_path / "nope", description=""),
+    }
+    monkeypatch.setattr(sources_mod, "KNOWN_SOURCES", fake)
+    monkeypatch.setattr("knowledge_lake.KNOWN_SOURCES", fake, raising=False)
+    monkeypatch.setenv("CROWE_KB_DB", str(tmp_path / "kb.db"))
+
+    from cli.crowe_logic import main
+    runner = CliRunner()
+    result = runner.invoke(main, ["kb", "ingest-all", "--json"])
+    assert result.exit_code == 0, result.output
+
+    import json as _json
+    payload = _json.loads(result.output)
+    assert payload["ingested"] == 2
+    assert payload["failed"] == 1
+    by_name = {r["source"]: r for r in payload["sources"]}
+    assert by_name["md-test"]["ok"] is True
+    assert by_name["jsonl-test"]["ok"] is True
+    assert by_name["missing-test"]["ok"] is False
+    assert "root missing" in by_name["missing-test"]["reason"]

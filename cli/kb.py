@@ -118,6 +118,77 @@ def register(main_group: click.Group, console) -> None:
         if len(stats.skipped_paths) > 10:
             console.print(f"  [dim](+{len(stats.skipped_paths) - 10} more skips)[/]")
 
+    # ─── ingest-all ───────────────────────────────────────────
+
+    @kb.command("ingest-all")
+    @click.option(
+        "--only-ready",
+        is_flag=True,
+        default=True,
+        show_default=True,
+        help="Skip sources whose root path doesn't exist locally.",
+    )
+    @click.option("--json", "as_json", is_flag=True)
+    def ingest_all_cmd(only_ready: bool, as_json: bool):
+        """Run every registered ingestor in sequence."""
+        from knowledge_lake import KNOWN_SOURCES, Store
+        from knowledge_lake.ingest import ingestor_for
+
+        store = Store()
+        per_source: list[dict] = []
+        for name in sorted(KNOWN_SOURCES):
+            src = KNOWN_SOURCES[name]
+            if only_ready and not src.root.exists():
+                per_source.append({
+                    "source": name, "ok": False, "reason": "root missing",
+                    "root": str(src.root),
+                })
+                continue
+            try:
+                ingestor = ingestor_for(src, store)
+            except NotImplementedError as exc:
+                per_source.append({
+                    "source": name, "ok": False, "reason": str(exc),
+                })
+                continue
+            try:
+                stats = ingestor.run()
+                per_source.append({
+                    "source": name, "ok": True,
+                    "files_ingested": stats.files_ingested,
+                    "chunks_written": stats.chunks_written,
+                    "skipped": len(stats.skipped_paths),
+                })
+            except Exception as exc:  # noqa: BLE001
+                per_source.append({
+                    "source": name, "ok": False,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                })
+
+        summary = {
+            "ingested": sum(1 for r in per_source if r["ok"]),
+            "failed":   sum(1 for r in per_source if not r["ok"]),
+            "sources":  per_source,
+        }
+        if as_json:
+            click.echo(json.dumps(summary, indent=2))
+            return
+
+        for r in per_source:
+            if r["ok"]:
+                console.print(
+                    f"  [green]ok[/]   [bold]{r['source']}[/]: "
+                    f"{r['files_ingested']} files, {r['chunks_written']} chunks"
+                )
+            else:
+                console.print(
+                    f"  [yellow]skip[/] [bold]{r['source']}[/]: {r['reason']}"
+                )
+        console.print(
+            f"[bold]summary:[/] [green]{summary['ingested']} ingested[/], "
+            f"[yellow]{summary['failed']} skipped/failed[/]"
+        )
+
     # ─── search ───────────────────────────────────────────────
 
     @kb.command("search")
