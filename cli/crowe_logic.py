@@ -3577,5 +3577,110 @@ def substrate_dna_cmd():
         console.print(Markdown(content))
 
 
+@main.command()
+@click.argument("query", required=True)
+@click.option(
+    "--kind",
+    type=click.Choice(["model", "agent", "tool"], case_sensitive=False),
+    help="Restrict to one kind.",
+)
+@click.option("--limit", default=15, show_default=True, type=int, help="Max hits.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
+def discover(query: str, kind: str | None, limit: int, as_json: bool):
+    """Keyword + fuzzy search across models, agents, and tools."""
+    from cli.discover import render_json, render_table, search
+    hits = search(query, kind=kind, limit=limit)
+    if as_json:
+        click.echo(render_json(hits))
+    else:
+        render_table(hits, query, console=console)
+    raise SystemExit(0 if hits else 1)
+
+
+@main.command(name="agents-deps")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
+@click.option("--strict", is_flag=True, help="Exit non-zero if any agent declares an orphan tool.")
+def agents_deps_cmd(as_json: bool, strict: bool):
+    """Cross-reference agents/*.yaml tool declarations against tools/ registry."""
+    from cli.agents_deps import compute_deps, has_orphans, render_json, render_table
+    report = compute_deps()
+    if as_json:
+        click.echo(render_json(report))
+    else:
+        render_table(report, console=console)
+    raise SystemExit(1 if strict and has_orphans(report) else 0)
+
+
+@main.command()
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table (for CI).")
+@click.option("--skip-slow", is_flag=True, help="Skip Azure CLI + Ollama network probes.")
+@click.option("--skip-tools", is_flag=True, help="Skip the tool-docstring linter.")
+@click.option("--strict", is_flag=True, help="Exit non-zero on WARN as well as FAIL.")
+@click.option(
+    "--fix-leaks",
+    is_flag=True,
+    help="Apply REBRAND_MAP to any leaky labels found in registry files. Backs up before writing.",
+)
+def doctor(as_json: bool, skip_slow: bool, skip_tools: bool, strict: bool, fix_leaks: bool):
+    """Comprehensive environment + registry preflight diagnostics."""
+    from cli.doctor import (
+        fix_leaky_labels,
+        overall_exit_code,
+        render_json,
+        render_table,
+        run_all_checks,
+    )
+
+    results = run_all_checks(skip_slow=skip_slow, skip_tools=skip_tools)
+
+    if fix_leaks:
+        reports = fix_leaky_labels(results)
+        if as_json:
+            click.echo(json.dumps({"repairs": reports}, indent=2))
+        else:
+            for rep in reports:
+                if rep.get("ok") and rep.get("renamed"):
+                    console.print(
+                        f"  [green]repaired[/] {rep['path']}: "
+                        f"{len(rep['renamed'])} labels rewritten (backup: {rep['backup']})"
+                    )
+                    for r in rep["renamed"]:
+                        console.print(f"    [dim]{r['name']}[/] {r['old']!r} -> {r['new']!r}")
+                elif rep.get("ok"):
+                    console.print(f"  [dim]{rep['path']}: nothing to repair[/]")
+                else:
+                    console.print(f"  [red]failed[/] {rep['path']}: {rep.get('error')}")
+        # Re-run after fix to give the user a clean post-repair view.
+        results = run_all_checks(skip_slow=skip_slow, skip_tools=skip_tools)
+
+    if as_json and not fix_leaks:
+        click.echo(render_json(results))
+    elif not as_json:
+        render_table(results, console=console)
+
+    code = overall_exit_code(results)
+    if not strict and code == 2:
+        code = 0
+    raise SystemExit(code)
+
+
+try:
+    from cli.portfolio import register as _register_portfolio
+    _register_portfolio(main, console)
+except Exception as _exc:  # noqa: BLE001
+    # Portfolio CLI is best-effort: if httpx isn't installed or the
+    # registration fails, the rest of the CLI still works.
+    import logging as _logging
+    _logging.getLogger(__name__).debug("portfolio CLI not registered: %s", _exc)
+
+
+try:
+    from cli.kb import register as _register_kb
+    _register_kb(main, console)
+except Exception as _exc:  # noqa: BLE001
+    import logging as _logging
+    _logging.getLogger(__name__).debug("kb CLI not registered: %s", _exc)
+
+
 if __name__ == "__main__":
     main()

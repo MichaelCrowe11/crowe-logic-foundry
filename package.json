@@ -8,7 +8,10 @@
   },
   "scripts": {
     "start": "node npm/bin.js chat",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "pi-review": "node scripts/pi-build.mjs review",
+    "pi-build": "node scripts/pi-build.mjs build",
+    "pi-ci": "node scripts/pi-build.mjs ci"
   },
   "keywords": [
     "ai",
@@ -35,11 +38,21 @@
     "registry": "https://npm.pkg.github.com"
   },
   "type": "commonjs",
+  "pi": {
+    "extensions": [".pi/extensions"],
+    "skills": [".pi/skills"],
+    "prompts": [".pi/prompts"]
+  },
   "files": [
     "npm/",
+    ".pi/",
+    "scripts/pi-build.mjs",
     "README.md",
     "LICENSE"
   ],
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.73.1"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@modelcontextprotocol/server-filesystem": "^2026.1.14",

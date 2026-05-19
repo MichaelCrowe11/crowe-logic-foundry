@@ -301,42 +301,130 @@ async def list_model_catalog():
     return {"models": _build_model_catalog()}
 
 
+async def _resolve_jwt_principal(
+    bearer: str,
+    db: Database,
+    *,
+    workspace_id_hint: Optional[str] = None,
+) -> dict:
+    """Resolve a JWT to the same dict shape `_resolve_api_key` returns.
+
+    Browser sessions authenticate with a short-lived JWT minted by
+    `/auth/login` (see `_mint_token` in control_plane/__init__.py).
+    The JWT carries `sub` (user_id) but not workspace_id, since a user
+    can belong to multiple workspaces. Resolution order:
+
+      1. If `workspace_id_hint` is given (e.g. X-Workspace-Id header),
+         verify the user belongs to that workspace's org and use it.
+      2. Otherwise pick the most-recently-used workspace the user
+         belongs to — gives the chat surface a sensible default for
+         single-workspace users.
+
+    Returns the same row shape `_resolve_api_key` does:
+      {user_id, workspace_id, plan_id, ws_status, ...}
+    Raises 401 on invalid/expired JWT, 403 on workspace membership
+    failure, 404 if the user has no active workspace.
+    """
+    # Import the project-level decoder so we share the same JWT_SECRET
+    # and ExpiredSignatureError handling as the rest of the API.
+    from . import _decode_token
+
+    claims = _decode_token(bearer)
+    user_id = claims.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="JWT missing sub claim")
+
+    if workspace_id_hint:
+        row = await db.fetchrow(
+            """SELECT w.id AS workspace_id, w.plan_id, w.status AS ws_status,
+                      $1::text AS user_id
+               FROM workspaces w
+               JOIN org_members om ON om.org_id = w.org_id
+               WHERE w.id = $2 AND om.user_id = $1""",
+            user_id, workspace_id_hint,
+        )
+        if not row:
+            raise HTTPException(
+                status_code=403,
+                detail="User is not a member of the requested workspace",
+            )
+    else:
+        # Pick a default workspace: most recent active one the user
+        # belongs to. Deterministic + 1 query, no joins on api_keys.
+        row = await db.fetchrow(
+            """SELECT w.id AS workspace_id, w.plan_id, w.status AS ws_status,
+                      $1::text AS user_id
+               FROM workspaces w
+               JOIN org_members om ON om.org_id = w.org_id
+               WHERE om.user_id = $1 AND w.status = 'active'
+               ORDER BY w.created_at DESC
+               LIMIT 1""",
+            user_id,
+        )
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail="User has no active workspace",
+            )
+
+    if row["ws_status"] != "active":
+        raise HTTPException(status_code=403, detail="Workspace suspended")
+    return dict(row)
+
+
 async def _resolve_api_key(
     authorization: Optional[str] = Header(None),
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-Id"),
     db: Database = Depends(get_db),
 ) -> dict:
-    """Resolve an API key to workspace + user + plan."""
+    """Resolve a credential to workspace + user + plan.
+
+    Accepts three credential forms, in priority order:
+      1. `X-API-Key` header (legacy + service-to-service).
+      2. `Authorization: Bearer <api_key>` — workspace PAT or `cl_`/`clk_`.
+      3. `Authorization: Bearer <jwt>` — browser session token.
+
+    The optional `X-Workspace-Id` header scopes a JWT session to a
+    specific workspace (multi-workspace users). API-key paths ignore
+    it since the key itself binds to one workspace.
+    """
     raw_key = None
+    bearer_candidate = None
     if x_api_key:
         raw_key = x_api_key
     elif authorization and authorization.startswith("Bearer "):
         candidate = authorization[7:]
-        # Accept launch PATs and legacy `cl_`/`clk_` keys.
         if is_supported_api_key(candidate):
             raw_key = candidate
+        else:
+            # Not a workspace API key — try JWT.
+            bearer_candidate = candidate
 
-    if not raw_key:
-        raise HTTPException(status_code=401, detail="API key required")
+    if raw_key:
+        key_hash = hash_api_key(raw_key)
+        row = await db.fetchrow(
+            """SELECT ak.*, w.plan_id, w.status AS ws_status
+               FROM api_keys ak
+               JOIN workspaces w ON ak.workspace_id = w.id
+               WHERE ak.key_hash = $1 AND NOT ak.revoked""",
+            key_hash,
+        )
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+        if row["ws_status"] != "active":
+            raise HTTPException(status_code=403, detail="Workspace suspended")
+        await db.execute(
+            "UPDATE api_keys SET last_used_at = now() WHERE id = $1", row["id"]
+        )
+        return dict(row)
 
-    key_hash = hash_api_key(raw_key)
-    row = await db.fetchrow(
-        """SELECT ak.*, w.plan_id, w.status AS ws_status
-           FROM api_keys ak
-           JOIN workspaces w ON ak.workspace_id = w.id
-           WHERE ak.key_hash = $1 AND NOT ak.revoked""",
-        key_hash,
-    )
-    if not row:
-        raise HTTPException(status_code=401, detail="Invalid or revoked API key")
-    if row["ws_status"] != "active":
-        raise HTTPException(status_code=403, detail="Workspace suspended")
+    if bearer_candidate:
+        return await _resolve_jwt_principal(
+            bearer_candidate, db, workspace_id_hint=x_workspace_id,
+        )
 
-    # Update last_used_at
-    await db.execute(
-        "UPDATE api_keys SET last_used_at = now() WHERE id = $1", row["id"]
-    )
-    return dict(row)
+    raise HTTPException(status_code=401, detail="API key or JWT required")
 
 
 @router.post("/chat", response_model=GatewayResponse)
@@ -521,3 +609,198 @@ async def list_available_models(
         if plan_rank(entry["min_plan"]) <= rank
     ]
     return {"plan": plan_id, "models": available}
+
+
+# ─── OpenAI-compatible surface (/v1) ────────────────────────────────
+#
+# Mirrors the subset of `api.openai.com/v1` that off-the-shelf clients
+# need to drive a chat UI: `/v1/chat/completions` (stream + non-stream)
+# and `/v1/models`. The browser holds an API key in a server-rendered
+# cookie or environment-bound proxy and forwards it as Bearer; the
+# same key path the existing gateway already accepts.
+#
+# This lets `chat.crowelogic.com` use Vercel AI SDK / OpenAI client
+# without any custom protocol code on the frontend.
+
+openai_router = APIRouter(prefix="/v1", tags=["openai-compat"])
+
+
+class OpenAIChatRequest(BaseModel):
+    model: str
+    messages: list[dict]
+    stream: bool = False
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    # Tolerate extra OpenAI fields without rejecting the request.
+    # (top_p, frequency_penalty, presence_penalty, user, etc.)
+    model_config = {"extra": "allow"}
+
+
+@openai_router.post("/chat/completions")
+async def openai_chat_completions(
+    req: OpenAIChatRequest,
+    key_info: dict = Depends(_resolve_api_key),
+    db: Database = Depends(get_db),
+):
+    """OpenAI-compatible chat completions.
+
+    Streaming: returns SSE chunks in the standard OpenAI
+    chat.completion.chunk delta format, terminated with `data: [DONE]`.
+    Non-streaming: accumulates the stream server-side and returns a
+    single OpenAI chat.completion JSON object.
+
+    Plan gating + budget check are identical to the existing
+    `/api/gateway/chat` and `/api/gateway/chat/stream` endpoints.
+    """
+    if not CROWE_STREAM_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Streaming endpoint is disabled (set CROWE_STREAM_ENABLED=1)",
+        )
+
+    from .streaming import (
+        _openai_chunk,
+        stream_agent_events,
+        stream_openai_compatible,
+    )
+
+    model = req.model
+    plan_id = canonical_plan_id(key_info["plan_id"])
+    workspace_id = key_info["workspace_id"]
+    user_id = key_info["user_id"]
+
+    required_plan = MODEL_PLAN_ACCESS.get(model, "enterprise")
+    if plan_rank(plan_id) < plan_rank(required_plan):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Model '{model}' requires {required_plan} plan or higher",
+        )
+
+    # Budget pre-check (same as /chat/stream).
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+    if plan and plan["token_budget_month"] != -1:
+        used_row = await db.fetchrow(
+            """SELECT COALESCE(SUM(quantity), 0) AS used
+               FROM usage_events
+               WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
+            workspace_id, month_start,
+        )
+        if used_row and used_row["used"] >= plan["token_budget_month"]:
+            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+
+    messages = req.messages or []
+    if not messages or messages[-1].get("role") != "user":
+        raise HTTPException(status_code=400, detail="messages must end with a user turn")
+
+    session_id = f"openai-{workspace_id[:12]}"
+
+    if req.stream:
+        async def _sse_gen():
+            recorded = 0
+            try:
+                async for frame in stream_openai_compatible(
+                    messages=messages, model_id=model, session_id=session_id,
+                ):
+                    yield frame
+            finally:
+                # OpenAI-compatible path doesn't get usage from the
+                # adapter (the adapter drops the `done` payload). For
+                # billing parity, we can record a heuristic — leaving
+                # this as a TODO so the cost story stays honest until
+                # crowe-stream v1 lands the usage block (gap #3 in the
+                # protocol spec).
+                _ = recorded
+        return StreamingResponse(
+            _sse_gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # Non-streaming: accumulate the underlying crowe-stream and return
+    # one OpenAI chat.completion object.
+    import time as _time
+    import uuid as _uuid
+
+    content_parts: list[str] = []
+    finish_reason = "stop"
+    tokens = 0
+    reasoning_tokens = 0
+    async for event in stream_agent_events(
+        messages=messages, model_id=model, session_id=session_id,
+    ):
+        etype = event.get("type")
+        if etype == "token":
+            content_parts.append(event.get("delta") or "")
+        elif etype == "error":
+            finish_reason = "error"
+            break
+        elif etype == "done":
+            tokens = int(event.get("tokens") or 0)
+            reasoning_tokens = int(event.get("reasoning_tokens") or 0)
+            break
+
+    body = {
+        "id": f"chatcmpl-{_uuid.uuid4().hex[:24]}",
+        "object": "chat.completion",
+        "created": int(_time.time()),
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "".join(content_parts)},
+            "finish_reason": finish_reason,
+        }],
+        "usage": {
+            "prompt_tokens": 0,  # TODO: crowe-stream v1 will carry this.
+            "completion_tokens": tokens,
+            "total_tokens": tokens + reasoning_tokens,
+        },
+    }
+    if tokens > 0:
+        try:
+            await db.execute(
+                """INSERT INTO usage_events
+                       (workspace_id, user_id, event_type, quantity, model)
+                   VALUES ($1, $2, 'tokens', $3, $4)""",
+                workspace_id, user_id, tokens + reasoning_tokens, model,
+            )
+        except Exception:
+            pass
+    return body
+
+
+@openai_router.get("/models")
+async def openai_list_models(
+    key_info: dict = Depends(_resolve_api_key),
+):
+    """OpenAI-compatible model list."""
+    plan_id = canonical_plan_id(key_info["plan_id"])
+    rank = plan_rank(plan_id)
+    available = [
+        entry
+        for entry in _build_model_catalog()
+        if plan_rank(entry["min_plan"]) <= rank
+    ]
+    import time as _time
+    now = int(_time.time())
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": m["id"],
+                "object": "model",
+                "created": now,
+                "owned_by": "crowe-logic",
+                # CroweLM extensions — OpenAI clients ignore unknown keys.
+                "display": m.get("display"),
+                "tier": m.get("min_plan"),
+            }
+            for m in available
+        ],
+    }
