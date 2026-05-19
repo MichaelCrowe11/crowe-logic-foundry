@@ -248,11 +248,25 @@ def sse_frame(event: dict) -> str:
 #
 #   crowe.ready       -> OpenAI initial chunk, delta.role="assistant"
 #   crowe.token       -> OpenAI chunk, delta.content=<text>
+#   crowe.tool        -> OpenAI chunk, delta.tool_calls=[{...}] with a
+#                        non-standard `crowe_tool_result` sidecar that
+#                        carries server-executed result + status +
+#                        duration. Clients that don't speak the
+#                        extension simply ignore it.
 #   crowe.reasoning   -> dropped (no standard field yet)
 #   crowe.spinner     -> dropped
 #   crowe.segment_end -> dropped
 #   crowe.error       -> OpenAI chunk finish_reason="error", then [DONE]
 #   crowe.done        -> OpenAI chunk finish_reason="stop", then [DONE]
+#
+# Tool-call protocol divergence: in OpenAI's spec the server stops
+# after emitting tool_calls and waits for the client to execute and
+# post the result back. The foundry executes tools server-side and
+# only emits `crowe.tool` once execution has *completed*. So we emit
+# a single tool_calls chunk with the final arguments (no streaming of
+# partial args) and then continue the assistant turn with more
+# content chunks. We never emit finish_reason="tool_calls" because
+# there is nothing for the client to do.
 #
 # The terminal `data: [DONE]\n\n` is always emitted so clients have one
 # unambiguous end-of-stream signal.
@@ -283,6 +297,40 @@ def _openai_chunk(
     return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
 
 
+def _tool_call_delta(
+    *, index: int, name: str, args_json: str, status: str | None,
+    result: str | None, duration_ms: int | None,
+) -> dict:
+    """Build the `delta` body for a tool-call chunk.
+
+    Conforms to OpenAI's `delta.tool_calls` shape, with a non-standard
+    `crowe_tool_result` sidecar so Crowe-aware clients can render the
+    server-side execution result without an extra round trip.
+    """
+    call_id = f"call_{_uuid.uuid4().hex[:24]}"
+    body: dict = {
+        "tool_calls": [{
+            "index": index,
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": args_json or "{}",
+            },
+        }],
+    }
+    # Sidecar with the server-executed result. The result field is
+    # already truncated to 5000 chars by the renderer.
+    body["crowe_tool_result"] = {
+        "index": index,
+        "id": call_id,
+        "status": status,
+        "result": result,
+        "duration_ms": duration_ms,
+    }
+    return body
+
+
 async def stream_openai_compatible(
     *,
     messages: list[dict],
@@ -295,6 +343,7 @@ async def stream_openai_compatible(
 
     role_emitted = False
     finished = False
+    tool_call_index = 0
 
     async for event in stream_agent_events(
         messages=messages, model_id=model_id, session_id=session_id,
@@ -319,6 +368,31 @@ async def stream_openai_compatible(
                     chunk_id=chunk_id, model=model_id, created=created,
                     delta={"content": text},
                 )
+        elif etype == "tool":
+            # Emit a role chunk first if the tool fired before any
+            # text token (some agents call tools at the very top).
+            if not role_emitted:
+                yield _openai_chunk(
+                    chunk_id=chunk_id, model=model_id, created=created,
+                    delta={"role": "assistant"},
+                )
+                role_emitted = True
+            name = event.get("name") or ""
+            if not name:
+                continue
+            delta = _tool_call_delta(
+                index=tool_call_index,
+                name=name,
+                args_json=event.get("args") or "{}",
+                status=event.get("status"),
+                result=event.get("result"),
+                duration_ms=event.get("duration_ms"),
+            )
+            tool_call_index += 1
+            yield _openai_chunk(
+                chunk_id=chunk_id, model=model_id, created=created,
+                delta=delta,
+            )
         elif etype == "error":
             yield _openai_chunk(
                 chunk_id=chunk_id, model=model_id, created=created,
@@ -335,7 +409,7 @@ async def stream_openai_compatible(
             yield "data: [DONE]\n\n"
             finished = True
             return
-        # reasoning / spinner / segment_end / tool cards: dropped.
+        # reasoning / spinner / segment_end: dropped.
 
     if not finished:
         yield _openai_chunk(

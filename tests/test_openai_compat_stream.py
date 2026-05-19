@@ -134,6 +134,160 @@ def test_openai_adapter_handles_missing_ready(monkeypatch):
     assert parsed[1]["choices"][0]["delta"] == {"content": "ok"}
 
 
+def test_openai_adapter_translates_tool_event_to_tool_calls(monkeypatch):
+    """A `tool` event becomes one OpenAI chunk with delta.tool_calls
+    in OpenAI shape plus a crowe_tool_result sidecar for the
+    server-side execution result.
+    """
+    events = [
+        {"type": "ready"},
+        {"type": "token", "delta": "Looking up. "},
+        {
+            "type": "tool",
+            "name": "search_kb",
+            "args": '{"query":"mycorrhiza"}',
+            "status": "ok",
+            "result": "Mycorrhizal fungi form symbiosis...",
+            "duration_ms": 142,
+        },
+        {"type": "token", "delta": "Found references."},
+        {"type": "done", "tokens": 3, "reasoning_tokens": 0},
+    ]
+    monkeypatch.setattr(
+        streaming_mod, "stream_agent_events",
+        lambda **kwargs: _fake_events(events),
+    )
+
+    import asyncio
+    async def _collect():
+        return [f async for f in streaming_mod.stream_openai_compatible(
+            messages=[{"role": "user", "content": "hi"}],
+            model_id="CroweLM-Helio",
+            session_id="t-tool",
+        )]
+    parsed = _frames_to_chunks(asyncio.run(_collect()))
+
+    # role + content + tool_calls + content + stop + [DONE]
+    assert len(parsed) == 6
+    tool_chunk = parsed[2]
+    delta = tool_chunk["choices"][0]["delta"]
+    assert "tool_calls" in delta, delta
+    assert delta["tool_calls"][0]["index"] == 0
+    assert delta["tool_calls"][0]["type"] == "function"
+    assert delta["tool_calls"][0]["id"].startswith("call_")
+    assert delta["tool_calls"][0]["function"]["name"] == "search_kb"
+    assert delta["tool_calls"][0]["function"]["arguments"] == \
+        '{"query":"mycorrhiza"}'
+    # The non-standard sidecar carries the server-side result.
+    assert delta["crowe_tool_result"]["status"] == "ok"
+    assert "Mycorrhizal fungi" in delta["crowe_tool_result"]["result"]
+    assert delta["crowe_tool_result"]["duration_ms"] == 142
+    # The sidecar's id matches the tool_call id so consumers can
+    # match the result to its call.
+    assert delta["crowe_tool_result"]["id"] == delta["tool_calls"][0]["id"]
+    # Crucially, NO finish_reason=tool_calls. We continued the turn.
+    assert tool_chunk["choices"][0]["finish_reason"] is None
+    # The text content after the tool call is preserved.
+    assert parsed[3]["choices"][0]["delta"] == {"content": "Found references."}
+    # Final stop chunk is emitted normally.
+    assert parsed[4]["choices"][0]["finish_reason"] == "stop"
+    assert parsed[5] == "[DONE]"
+
+
+def test_openai_adapter_increments_tool_call_index_across_calls(monkeypatch):
+    """Multiple tool events within one turn get monotonically
+    increasing index values (mirrors OpenAI's contract for parallel
+    tool calls).
+    """
+    events = [
+        {"type": "ready"},
+        {"type": "tool", "name": "a", "args": "{}", "status": "ok"},
+        {"type": "tool", "name": "b", "args": "{}", "status": "ok"},
+        {"type": "tool", "name": "c", "args": "{}", "status": "ok"},
+        {"type": "done"},
+    ]
+    monkeypatch.setattr(
+        streaming_mod, "stream_agent_events",
+        lambda **kwargs: _fake_events(events),
+    )
+
+    import asyncio
+    async def _collect():
+        return [f async for f in streaming_mod.stream_openai_compatible(
+            messages=[{"role": "user", "content": "hi"}],
+            model_id="X", session_id="t-multi",
+        )]
+    parsed = _frames_to_chunks(asyncio.run(_collect()))
+
+    tool_chunks = [
+        p for p in parsed
+        if isinstance(p, dict) and "tool_calls" in p["choices"][0]["delta"]
+    ]
+    assert len(tool_chunks) == 3
+    assert [c["choices"][0]["delta"]["tool_calls"][0]["index"]
+            for c in tool_chunks] == [0, 1, 2]
+    assert [c["choices"][0]["delta"]["tool_calls"][0]["function"]["name"]
+            for c in tool_chunks] == ["a", "b", "c"]
+
+
+def test_openai_adapter_skips_tool_event_with_no_name(monkeypatch):
+    """A malformed `tool` event without `name` is silently dropped
+    rather than emitting a malformed chunk.
+    """
+    events = [
+        {"type": "ready"},
+        {"type": "tool", "name": "", "args": "{}"},
+        {"type": "token", "delta": "ok"},
+        {"type": "done"},
+    ]
+    monkeypatch.setattr(
+        streaming_mod, "stream_agent_events",
+        lambda **kwargs: _fake_events(events),
+    )
+
+    import asyncio
+    async def _collect():
+        return [f async for f in streaming_mod.stream_openai_compatible(
+            messages=[{"role": "user", "content": "hi"}],
+            model_id="X", session_id="t-bad",
+        )]
+    parsed = _frames_to_chunks(asyncio.run(_collect()))
+
+    deltas = [p["choices"][0]["delta"] for p in parsed if isinstance(p, dict)]
+    assert all("tool_calls" not in d for d in deltas)
+    # role + content + stop = 3 chunks (+ [DONE] string)
+    assert len(parsed) == 4
+
+
+def test_openai_adapter_tool_before_token_still_emits_role_first(monkeypatch):
+    """If the agent fires a tool before any text token, the assistant
+    role chunk still has to come first so OpenAI clients see a valid
+    delta sequence.
+    """
+    events = [
+        {"type": "ready"},
+        {"type": "tool", "name": "first", "args": "{}", "status": "ok"},
+        {"type": "done"},
+    ]
+    monkeypatch.setattr(
+        streaming_mod, "stream_agent_events",
+        lambda **kwargs: _fake_events(events),
+    )
+
+    import asyncio
+    async def _collect():
+        return [f async for f in streaming_mod.stream_openai_compatible(
+            messages=[{"role": "user", "content": "hi"}],
+            model_id="X", session_id="t-early",
+        )]
+    parsed = _frames_to_chunks(asyncio.run(_collect()))
+
+    # ready emits role, so role is on parsed[0]. parsed[1] is the
+    # tool chunk. parsed[2] is the stop chunk. parsed[3] is [DONE].
+    assert parsed[0]["choices"][0]["delta"] == {"role": "assistant"}
+    assert "tool_calls" in parsed[1]["choices"][0]["delta"]
+
+
 def test_openai_adapter_drops_reasoning_and_spinner(monkeypatch):
     """Reasoning + spinner + segment_end events are filtered out."""
     events = [
