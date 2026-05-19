@@ -24,7 +24,13 @@ into the ingestors or the CLI.
 """
 from knowledge_lake.store import Store, default_db_path
 from knowledge_lake.sources import KNOWN_SOURCES, Source, register
-from knowledge_lake.ingest import IngestStats, Ingestor, MarkdownIngestor
+from knowledge_lake.ingest import (
+    IngestStats,
+    Ingestor,
+    JsonlIngestor,
+    LatexIngestor,
+    MarkdownIngestor,
+)
 from knowledge_lake.search import SearchHit, search
 
 __all__ = [
@@ -36,6 +42,8 @@ __all__ = [
     "IngestStats",
     "Ingestor",
     "MarkdownIngestor",
+    "LatexIngestor",
+    "JsonlIngestor",
     "SearchHit",
     "search",
 ]
