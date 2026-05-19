@@ -118,6 +118,7 @@ def deepparallel_query(
     :param max_tokens: Maximum tokens to generate (default 4096).
     :param reasoning_chains: Comma-separated chains to activate, or "all".
     :return: DeepParallel's reasoning output as text.
+    :rtype: str
     """
     if not prompt.strip():
         return json.dumps({"error": "Empty prompt"})
@@ -258,6 +259,7 @@ def deepparallel_status() -> str:
     """Check DeepParallel model availability and Ollama server status.
 
     :return: JSON status of DeepParallel model and Ollama connection.
+    :rtype: str
     """
     try:
         resp = _http_session().get(f"{OLLAMA_BASE}/api/tags", timeout=5)
