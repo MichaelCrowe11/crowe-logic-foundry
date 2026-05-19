@@ -141,3 +141,42 @@ def test_kb_search_malformed_fts_returns_400(client):
     resp = client.get("/api/kb/search", params={"q": '"unterminated'})
     assert resp.status_code == 400
     assert "bad query" in resp.json()["detail"].lower()
+
+
+def test_kb_chunk_exact_lookup(client):
+    resp = client.get(
+        "/api/kb/chunk",
+        params={"source": "test-src", "path": "a.md", "chunk_index": 0},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "test-src"
+    assert body["path"] == "a.md"
+    assert body["chunk_index"] == 0
+    assert "Mycelial succession" in body["content"]
+    assert isinstance(body["metadata"], dict)
+
+
+def test_kb_chunk_404_when_not_found(client):
+    resp = client.get(
+        "/api/kb/chunk",
+        params={"source": "test-src", "path": "no-such.md", "chunk_index": 99},
+    )
+    assert resp.status_code == 404
+
+
+def test_kb_chunk_requires_active_workspace(client, monkeypatch):
+    async def _suspended():
+        return {
+            "user_id": "u",
+            "workspace_id": "w",
+            "plan_id": "personal",
+            "ws_status": "suspended",
+        }
+    from control_plane import app
+    app.dependency_overrides[gateway_mod._resolve_api_key] = _suspended
+    resp = client.get(
+        "/api/kb/chunk",
+        params={"source": "test-src", "path": "a.md", "chunk_index": 0},
+    )
+    assert resp.status_code == 403

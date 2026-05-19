@@ -153,7 +153,9 @@ class Ingestor:
                 }))
             files_ingested += 1
 
-        n_written = self.store.replace_chunks(self.source.name, chunks)
+        n_written = self.store.replace_chunks(
+            self.source.name, chunks, embedder=_get_embedder(),
+        )
         return IngestStats(
             source=self.source.name,
             files_seen=files_seen,
@@ -161,6 +163,20 @@ class Ingestor:
             chunks_written=n_written,
             skipped_paths=skipped,
         )
+
+
+def _get_embedder():
+    """Return the configured embedder callable, or None if no
+    provider is configured. Lazy import so tests that don't touch
+    embeddings don't pay the import cost.
+    """
+    try:
+        from knowledge_lake.embeddings import embed_text, is_configured
+    except ImportError:
+        return None
+    if not is_configured():
+        return None
+    return embed_text
 
 
 # ─── markdown ──────────────────────────────────────────────────
@@ -436,7 +452,9 @@ class JsonlIngestor(Ingestor):
             else:
                 skipped.append(f"{rel}: zero usable records")
 
-        n_written = self.store.replace_chunks(self.source.name, chunks)
+        n_written = self.store.replace_chunks(
+            self.source.name, chunks, embedder=_get_embedder(),
+        )
         return IngestStats(
             source=self.source.name,
             files_seen=files_seen,
