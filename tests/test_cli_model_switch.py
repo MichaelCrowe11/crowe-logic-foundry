@@ -58,10 +58,18 @@ def test_provider_detail_filter_hides_legacy_backend_aliases():
 
 
 def test_model_switch_error_allows_hosted_models_with_endpoint_only(monkeypatch):
+    """A hosted openai_compat model is OK when only the endpoint is set."""
     monkeypatch.setenv("CROWE_OPEN_ENDPOINT", "https://models.crowe.logic/v1")
     monkeypatch.delenv("CROWE_OPEN_API_KEY", raising=False)
 
-    cfg = resolve_model_config("titan")
+    # Use the synthetic cfg rather than resolve_model_config("titan").
+    # The "titan" alias used to point at the openai_compat tier; after
+    # the Helio/Azure rebrand merged via config/models.extra.json,
+    # resolve_model_config("titan") returns the Azure entry instead.
+    # The intent of this test is to exercise the openai_compat branch
+    # of _model_switch_error, so the cfg shape is what matters, not
+    # the registry's current alias resolution.
+    cfg = _synthetic_openai_compat_cfg()
     assert cli_mod._model_switch_error(cfg) is None
 
 
@@ -99,7 +107,8 @@ def test_advance_model_can_skip_a_provider_family():
     original_index = cli_mod._model_state["chain_index"]
     try:
         start_index = next(
-            idx for idx, cfg in enumerate(cli_mod.MODEL_CHAIN)
+            idx
+            for idx, cfg in enumerate(cli_mod.MODEL_CHAIN)
             if cfg.get("provider") != "auto"
         )
         start_provider = cli_mod.MODEL_CHAIN[start_index]["provider"]
