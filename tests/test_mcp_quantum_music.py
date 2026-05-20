@@ -2,6 +2,12 @@
 
 import json
 
+import pytest
+
+# The MCP server script imports the optional `mcp` SDK. Skip the
+# whole module when it isn't installed.
+pytest.importorskip("mcp.server.fastmcp")
+
 
 class TestQuantumMusicMcpServer:
     def test_server_module_imports(self):
@@ -34,9 +40,13 @@ class TestQuantumMusicMcpServer:
                 "shots": shots,
             },
         )
-        monkeypatch.setattr(mcp_mod, "_build_seed_circuit", lambda *args, **kwargs: object())
+        monkeypatch.setattr(
+            mcp_mod, "_build_seed_circuit", lambda *args, **kwargs: object()
+        )
 
-        result = json.loads(mcp_mod.compose_quantum_melody(root="D", mode="dorian", steps=5, shots=24))
+        result = json.loads(
+            mcp_mod.compose_quantum_melody(root="D", mode="dorian", steps=5, shots=24)
+        )
 
         assert result["backend"] == "aer_simulator"
         assert len(result["melody"]) == 5
@@ -46,7 +56,11 @@ class TestQuantumMusicMcpServer:
         """Verify the status tool degrades gracefully when Qiskit is unavailable."""
         import scripts.mcp_quantum_music as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "_load_qiskit", lambda: {"available": False, "error": "missing qiskit"})
+        monkeypatch.setattr(
+            mcp_mod,
+            "_load_qiskit",
+            lambda: {"available": False, "error": "missing qiskit"},
+        )
         result = json.loads(mcp_mod.quantum_music_status())
 
         assert result["qiskit_available"] is False
