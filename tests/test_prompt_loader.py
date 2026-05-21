@@ -122,6 +122,13 @@ def test_eclipse_has_a_prompt_file_in_real_repo() -> None:
     )
 
 
+def test_live_smoke_variants_have_prompt_files_in_real_repo() -> None:
+    """Live CLI smoke paths should not fall back to inline prompt warnings."""
+    slugs = known_slugs()
+    assert "kernel" in slugs
+    assert "nexus" in slugs
+
+
 def test_slugs_for_chain_produces_unique_mapping() -> None:
     chain = [
         {"name": "a:cloud", "label": "CroweLM A", "aliases": ["a"]},

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from click.testing import CliRunner
 
+from cli import crowe_logic as cli_mod
 from cli.crowe_logic import main
 
 
@@ -81,3 +82,111 @@ def test_models_sync_warns_when_output_is_shadowed(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert "prefer /tmp/project/config/models.extra.json" in result.output
+
+
+def test_models_legend_operator_view_shows_provider_and_readiness(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.delenv("LEGEND_TEST_ENDPOINT", raising=False)
+    monkeypatch.delenv("LEGEND_TEST_KEY", raising=False)
+    monkeypatch.setattr(
+        cli_mod,
+        "MODEL_CHAIN",
+        [
+            {
+                "name": "crowelm-auto",
+                "label": "CroweLM Auto",
+                "provider": "auto",
+                "type": "router",
+                "aliases": ["auto"],
+            },
+            {
+                "name": "crowelm-missing",
+                "label": "CroweLM Missing",
+                "provider": "azure_openai",
+                "endpoint_env": "LEGEND_TEST_ENDPOINT",
+                "api_key_env": "LEGEND_TEST_KEY",
+                "aliases": ["missing"],
+            },
+        ],
+    )
+
+    result = runner.invoke(main, ["models", "legend"])
+
+    assert result.exit_code == 0
+    assert "CroweLM Auto" in result.output
+    assert "CroweLM Missing" in result.output
+    assert "config readiness" in result.output
+    assert cli_mod._model_legend_status(cli_mod.MODEL_CHAIN[0]) == (
+        "virtual",
+        "available",
+    )
+    assert cli_mod._model_legend_status(cli_mod.MODEL_CHAIN[1]) == (
+        "missing config",
+        "operator-only",
+    )
+
+
+def test_models_legend_customer_view_hides_backend_details(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.setattr(
+        cli_mod,
+        "MODEL_CHAIN",
+        [
+            {
+                "name": "crowelm-kernel",
+                "label": "CroweLM Kernel",
+                "provider": "azure_openai",
+                "type": "reasoning",
+                "backend_name": "gpt-5.4-nano",
+                "endpoint_env": "AZURE_CORE_ENDPOINT",
+                "api_key_env": "AZURE_CORE_API_KEY",
+                "aliases": ["kernel", "gpt-5.4-nano", "CroweLM Kernel"],
+            },
+        ],
+    )
+
+    result = runner.invoke(main, ["models", "legend", "--customer"])
+
+    assert result.exit_code == 0
+    assert "CroweLM Kernel" in result.output
+    assert cli_mod._model_legend_use(cli_mod.MODEL_CHAIN[0]) == (
+        "Cultivation and mycology"
+    )
+    assert "Provider" not in result.output
+    assert "azure_openai" not in result.output
+    assert "gpt-5.4-nano" not in result.output
+    aliases = cli_mod._model_legend_aliases(cli_mod.MODEL_CHAIN[0], customer=True)
+    assert "kernel" in aliases
+    assert "gpt-5.4-nano" not in aliases
+
+
+def test_models_legend_only_ready_filters_operator_only_models(monkeypatch):
+    runner = CliRunner()
+    monkeypatch.delenv("LEGEND_TEST_ENDPOINT", raising=False)
+    monkeypatch.delenv("LEGEND_TEST_KEY", raising=False)
+    monkeypatch.setattr(
+        cli_mod,
+        "MODEL_CHAIN",
+        [
+            {
+                "name": "crowelm-auto",
+                "label": "CroweLM Auto",
+                "provider": "auto",
+                "type": "router",
+                "aliases": ["auto"],
+            },
+            {
+                "name": "crowelm-missing",
+                "label": "CroweLM Missing",
+                "provider": "azure_openai",
+                "endpoint_env": "LEGEND_TEST_ENDPOINT",
+                "api_key_env": "LEGEND_TEST_KEY",
+            },
+        ],
+    )
+
+    result = runner.invoke(main, ["models", "legend", "--only-ready"])
+
+    assert result.exit_code == 0
+    assert "CroweLM Auto" in result.output
+    assert "CroweLM Missing" not in result.output

@@ -3052,6 +3052,141 @@ def models():
     pass
 
 
+def _model_legend_status(model_cfg: dict) -> tuple[str, str]:
+    """Return operator status plus customer-facing availability."""
+    provider = model_cfg.get("provider", "")
+    config_error = _model_switch_error(model_cfg)
+
+    if provider in {"auto", "router"}:
+        return "virtual", "available"
+    if provider == "deepparallel":
+        return ("blocked", "operator-only") if config_error else ("virtual", "available")
+    if config_error:
+        if "missing" in config_error.lower():
+            return "missing config", "operator-only"
+        return "blocked", "operator-only"
+    if provider == "ollama":
+        return "local", "available"
+    return "ready", "available"
+
+
+def _model_legend_use(model_cfg: dict) -> str:
+    """Return a concise, product-facing use case for a model config."""
+    label = str(model_cfg.get("label") or model_cfg.get("name") or "")
+    label_l = label.lower()
+    model_type = str(model_cfg.get("type") or "general").lower()
+    provider = str(model_cfg.get("provider") or "").lower()
+
+    if provider in {"auto", "router"}:
+        return "Default task router"
+    if provider == "deepparallel":
+        return "Multi-perspective synthesis"
+    if "vision" in label_l or model_type == "vision":
+        return "Visual reasoning"
+    if any(token in label_l for token in ("kernel", "grower", "mycelium")):
+        return "Cultivation and mycology"
+    if "cadence" in label_l:
+        return "Crowe voice and style"
+    if any(token in label_l for token in ("coder", "dev", "anvil")):
+        return "Code and engineering"
+    if "talon" in label_l:
+        return "Agentic tool use"
+    if "vanguard" in label_l:
+        return "Sovereign Azure reasoning"
+    if model_type == "fast":
+        return "Low-latency execution"
+    if provider == "ollama":
+        return "Local or edge inference"
+    if any(token in label_l for token in ("supreme", "sovereign", "prime", "apex")):
+        return "Premium deep reasoning"
+    return "General reasoning"
+
+
+def _model_legend_aliases(model_cfg: dict, *, customer: bool) -> str:
+    aliases = [str(item) for item in (model_cfg.get("aliases") or [])]
+    if customer:
+        aliases = [
+            item for item in aliases
+            if not _contains_provider_detail(item)
+            and not item.startswith("CroweLM ")
+        ]
+    return ", ".join(aliases[:4]) if aliases else "-"
+
+
+def _model_legend_status_markup(status: str) -> str:
+    if status in {"ready", "local"}:
+        return f"[bold #6fbf73]{status}[/bold #6fbf73]"
+    if status == "virtual":
+        return "[dim cyan]virtual[/dim cyan]"
+    if status == "missing config":
+        return "[yellow]missing config[/yellow]"
+    return f"[#bf6f6f]{status}[/#bf6f6f]"
+
+
+@models.command(name="legend")
+@click.option(
+    "--customer",
+    is_flag=True,
+    help="Hide provider/backend details and show only customer-facing fields.",
+)
+@click.option(
+    "--only-ready",
+    is_flag=True,
+    help="Only show models currently available from local config.",
+)
+def models_legend(customer: bool, only_ready: bool):
+    """Show the CroweLM model legend and routing readiness."""
+    from config.agent_config import provider_model_name
+
+    table = Table(
+        title="CroweLM Model Legend",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        header_style="bold white",
+        show_lines=False,
+        padding=(0, 1),
+    )
+    table.add_column("Model", style="#bfa669", min_width=22)
+    table.add_column("Use", style="white", min_width=18)
+    table.add_column("Status", min_width=13)
+    table.add_column("Customer", style="dim", min_width=12)
+
+    if not customer:
+        table.add_column("Provider", style="dim", min_width=12)
+        table.add_column("Backend", style="dim", min_width=18)
+
+    table.add_column("Aliases", style="dim", min_width=20)
+
+    visible_count = 0
+    for model_cfg in MODEL_CHAIN:
+        status, customer_status = _model_legend_status(model_cfg)
+        if only_ready and customer_status != "available":
+            continue
+
+        row = [
+            str(model_cfg.get("label") or model_cfg.get("name") or "Unknown"),
+            _model_legend_use(model_cfg),
+            _model_legend_status_markup(status),
+            customer_status,
+        ]
+        if not customer:
+            row.extend([
+                str(model_cfg.get("provider") or "-"),
+                provider_model_name(model_cfg) or "-",
+            ])
+        row.append(_model_legend_aliases(model_cfg, customer=customer))
+        table.add_row(*row)
+        visible_count += 1
+
+    console.print()
+    console.print(table)
+    console.print(
+        f"  [dim]{visible_count}/{len(MODEL_CHAIN)} models shown. "
+        "Legend status is config readiness; run `crowe-logic deploy` for live probes.[/dim]\n"
+    )
+
+
 @models.command(name="sync")
 @click.option("--account", help="Azure Cognitive Services account name")
 @click.option("--resource-group", help="Azure resource group for the account")
