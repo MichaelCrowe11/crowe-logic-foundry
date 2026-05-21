@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from crowe_synapse_engine.agent_registry import AgentRegistry, AgentConfig
+from crowe_synapse_engine.agent_registry import AgentRegistry
 
 
 @pytest.fixture

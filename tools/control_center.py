@@ -28,7 +28,6 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from tools.capture import (
@@ -38,18 +37,17 @@ from tools.capture import (
 )
 from tools.presentation import (
     apply_zoom_effect, launch_teleprompter, list_zoom_effects, load_script,
-    split_recording_by_chapters,
 )
 from tools.studio_route import (
-    get_tenant, list_tenants, route_clip_to_tenant, tenant_inbox_peek,
+    list_tenants, route_clip_to_tenant, tenant_inbox_peek,
 )
 from tools.shoot import (
-    get_camera, list_cameras, list_shoots, register_cloud_camera,
+    list_cameras, list_shoots, register_cloud_camera,
     start_shoot, stop_shoot,
 )
 from tools.shot_selector import build_edl, list_edls, load_edl
 from tools.edl_render import render_edl
-from tools.sync import sync_shoot, get_sync_offsets
+from tools.sync import sync_shoot
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_DIR = REPO_ROOT / "dashboard" / "static"

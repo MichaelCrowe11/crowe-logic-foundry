@@ -23,7 +23,6 @@ import argparse
 import datetime as dt
 import hashlib
 import hmac
-import json
 import sys
 import urllib.request
 from pathlib import Path

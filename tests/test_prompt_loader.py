@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from config import prompt_loader
 from config.prompt_loader import (
@@ -12,7 +11,6 @@ from config.prompt_loader import (
     slug_for,
     slugs_for_chain,
     system_prompt_for,
-    variant_prompt_text,
 )
 
 
@@ -122,6 +120,13 @@ def test_eclipse_has_a_prompt_file_in_real_repo() -> None:
     assert "eclipse" in slugs, (
         "eclipse.md must exist; this is the variant from the failure transcript"
     )
+
+
+def test_live_smoke_variants_have_prompt_files_in_real_repo() -> None:
+    """Live CLI smoke paths should not fall back to inline prompt warnings."""
+    slugs = known_slugs()
+    assert "kernel" in slugs
+    assert "nexus" in slugs
 
 
 def test_slugs_for_chain_produces_unique_mapping() -> None:

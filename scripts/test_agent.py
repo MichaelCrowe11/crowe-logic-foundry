@@ -23,7 +23,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import (
     FunctionTool, ToolSet, CodeInterpreterTool,
-    MessageDeltaChunk, ThreadMessage, ThreadRun, AgentStreamEvent,
     ListSortOrder, MessageRole,
 )
 from azure.identity import DefaultAzureCredential
@@ -141,7 +140,7 @@ def main():
 
     # Connect
     print(f"\n{'='*60}")
-    print(f"  CROWE LOGIC AGENT — TEST SUITE")
+    print("  CROWE LOGIC AGENT — TEST SUITE")
     print(f"{'='*60}\n")
 
     client = AgentsClient(

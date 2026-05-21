@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 import pytest
 
 from cli.foundry_api import (
-    AccountStatus,
-    CreditDecision,
     FoundryAPIClient,
     get_client,
     reset_client,

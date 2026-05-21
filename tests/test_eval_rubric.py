@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
 
 from eval.rubric import (
     METRIC_REGISTRY,
@@ -20,7 +19,6 @@ from eval.rubric import (
     metric_ttft_health,
     metric_verb_coverage,
     metric_verification_claim,
-    score_transcript,
 )
 
 

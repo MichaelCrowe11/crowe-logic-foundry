@@ -19,12 +19,14 @@ _qubit_flow_available = False
 
 try:
     from crowe_quantum_core import StateVector, standard_gates
+
     _core_available = True
 except ImportError:
     pass
 
 try:
-    from crowe_qubit_flow import Parser as QFParser, Interpreter as QFInterpreter
+    from crowe_qubit_flow import Interpreter as QFInterpreter
+
     _qubit_flow_available = True
 except ImportError:
     pass
@@ -79,6 +81,7 @@ class QuantumBridge:
         to a single choice — true quantum randomness when available.
         """
         import numpy as np
+
         n_candidates = len(dp.candidates)
         # Use enough qubits to cover all candidates
         num_qubits = max(1, int(np.ceil(np.log2(n_candidates))))

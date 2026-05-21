@@ -181,7 +181,7 @@ def fetch_github_docs(repo: str, limit_files: int = 50) -> list[Path]:
             "gh", "api",
             f"/repos/{GH_USER}/{repo}/git/trees/{default_branch}?recursive=1",
         ], text=True, timeout=30))
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         print(f"  [{repo}] tree fetch failed")
         return []
 
@@ -232,7 +232,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not STATE_FILE.exists():
-        sys.exit(f"FAIL: vector store not created. Run T2.1 first.")
+        sys.exit("FAIL: vector store not created. Run T2.1 first.")
     state = json.loads(STATE_FILE.read_text())
     vs_id = state["vector_store_id"]
     print(f"target vector store: {vs_id} ({state.get('name')})")
@@ -300,7 +300,7 @@ def main() -> int:
 
     # 4. Final vector store state
     vs = http("GET", f"{base}/vector_stores/{vs_id}", key)
-    print(f"\nVector store final state:")
+    print("\nVector store final state:")
     print(f"  status: {vs.get('status')}")
     print(f"  file_counts: {vs.get('file_counts')}")
     return 0

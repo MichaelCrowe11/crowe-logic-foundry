@@ -100,7 +100,7 @@ def main() -> int:
 
         if not args.auto_status_poll:
             print()
-            print(f"Not succeeded yet. Re-run with --auto-status-poll to block.")
+            print("Not succeeded yet. Re-run with --auto-status-poll to block.")
             return 0
 
         time.sleep(args.poll_interval)

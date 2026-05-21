@@ -1,8 +1,6 @@
 """Tests for config.telemetry — structured JSON-lines logging."""
 
 import json
-import os
-import tempfile
 
 import pytest
 

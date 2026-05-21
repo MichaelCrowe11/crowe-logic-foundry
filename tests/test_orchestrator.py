@@ -1,8 +1,6 @@
 """Tests for crowe_synapse_engine.orchestrator — the central coordinator."""
 
-import json
 import os
-import tempfile
 import pytest
 from crowe_synapse_engine.orchestrator import Orchestrator
 

@@ -46,7 +46,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 def _workspace_id_from_api_key(raw_key: str) -> Optional[str]:
     if raw_key.startswith("clk_"):

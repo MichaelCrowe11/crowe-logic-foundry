@@ -49,7 +49,11 @@ jobs:
           python -m pip install ruff pytest pytest-asyncio pytest-httpx pytest-cov
           # Optional deps that the test suite imports defensively but
           # CI should still resolve so importorskip doesn't hide bugs.
-          python -m pip install fastapi httpx pyjwt pyyaml asyncpg
+          # Optional FastAPI/Pydantic helpers the test suite depends on
+          # but the package's runtime install does not pull in:
+          #   - email-validator: pydantic.EmailStr
+          #   - python-multipart: FastAPI Form / File endpoints
+          python -m pip install fastapi httpx pyjwt pyyaml asyncpg email-validator python-multipart
 
       - name: Lint
         run: |

@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from knowledge_lake.discover import (
-    DiscoveredSource,
     discover_sources,
     _count_kinds,
     _pick_kind,

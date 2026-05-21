@@ -2,9 +2,7 @@
 
 import json
 import os
-import tempfile
 import pytest
-from unittest.mock import patch
 
 # We'll patch DATA_DIR in the module to point at a temp dir
 import tools.crowelm as crowelm_mod

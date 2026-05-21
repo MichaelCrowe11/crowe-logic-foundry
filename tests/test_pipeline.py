@@ -2,9 +2,8 @@
 
 import json
 import os
-import tempfile
 import pytest
-from crowe_synapse_engine.pipeline import PipelineEngine, PipelineStep, PipelineRun, PipelineTemplate
+from crowe_synapse_engine.pipeline import PipelineEngine, PipelineStep, PipelineRun
 
 
 @pytest.fixture

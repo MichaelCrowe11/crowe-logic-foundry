@@ -11,7 +11,6 @@ Docs: https://iterm2.com/python-api/
 
 import asyncio
 import json
-from typing import Optional
 
 
 # ── Connection management ──────────────────────────────────────────────

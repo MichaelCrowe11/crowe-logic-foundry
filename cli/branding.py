@@ -907,7 +907,6 @@ def show_retry_countdown(console, wait_seconds: float, attempt: int, max_attempt
     """Show a progress bar countdown during rate limit retry."""
     from rich.live import Live
     from rich.text import Text
-    from rich.progress_bar import ProgressBar
 
     session_state["api_status"] = "throttled"
     session_state["retry_seconds"] = int(wait_seconds)

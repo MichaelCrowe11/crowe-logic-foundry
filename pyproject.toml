@@ -87,3 +87,32 @@ include = ["cli*", "tools*", "config*", "scripts*", "providers*", "crowe_synapse
 cli = ["icon.png", "icons/*.icns"]
 crowe_synapse_engine = ["templates/*.yaml"]
 iterm = ["daemon.py"]
+
+# ── Ruff configuration ────────────────────────────────────────────
+# Keeps pyflakes (F-codes) strict because they catch real bugs.
+# Relaxes the pycodestyle (E-codes) noise that the codebase has
+# carried since the initial commit and that the CI workflow surfaced
+# when it was added in PR #33. Specific suppressions:
+#
+# - E402 (imports not at top): the foundry has a deliberate pattern of
+#   lazy + conditional imports inside functions for slow/optional deps
+#   (numpy, openai, azure SDKs).
+# - E741 (ambiguous names l/I/O): legacy code uses `l` for loop vars.
+# - E721 (type == vs isinstance): a handful of places compare exact
+#   types deliberately.
+# - E701, E731: tolerated stylistic choices.
+#
+# Per-file ignores:
+# - `__init__.py`: re-exports legitimately import-without-use (F401)
+#   and use star-imports (F403).
+# - `tests/*`: test fixtures legitimately import without referencing,
+#   and unused-local patterns appear in setup/teardown helpers.
+[tool.ruff.lint]
+# F841 (unused locals): tolerated because several call sites keep
+# `t0 = time.time()` / `cams_by_name = {...}` as reserved-for-debug
+# scaffolding. Auto-fixing would silently strip readable intent.
+ignore = ["E402", "E701", "E721", "E731", "E741", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403"]
+"tests/*" = ["F401", "F841"]

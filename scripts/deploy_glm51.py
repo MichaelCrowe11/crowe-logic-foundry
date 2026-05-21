@@ -97,7 +97,7 @@ def cmd_register(_args):
         name=AML_MODEL_NAME,
         version=AML_MODEL_VERSION,
         type=AssetTypes.CUSTOM_MODEL,
-        description=f"THUDM GLM-5.1 — base model for CroweLM Dense tier",
+        description="THUDM GLM-5.1 — base model for CroweLM Dense tier",
         properties={
             "hf_model_id": HF_MODEL_ID,
             "crowe_logic_tier": "dense",

@@ -23,7 +23,6 @@ Related:
 """
 from __future__ import annotations
 
-import re
 
 REBRAND_MAP: dict[str, str] = {
     # OpenAI family

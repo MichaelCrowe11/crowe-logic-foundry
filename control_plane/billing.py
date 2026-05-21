@@ -6,14 +6,11 @@ and usage-based billing metering. All Stripe operations go through
 this module so the rest of the control plane stays billing-agnostic.
 """
 
-import hashlib
-import hmac
-import json
 import os
 import time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Header, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from .db import Database, get_db

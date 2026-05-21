@@ -15,14 +15,13 @@ caches the IAM token until a few minutes before expiry.
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Iterable
 
-from .brand_registry import CroweBrand, resolve
+from .brand_registry import resolve
 
 DEFAULT_ENV = Path.home() / ".crowe-logic" / "ibm.env"
 DEFAULT_VERSION = "2024-09-16"

@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from cli.tool_cache import STATEFUL_TOOLS, CacheDecision, ToolCache
+from cli.tool_cache import STATEFUL_TOOLS, ToolCache
 
 
 @pytest.fixture

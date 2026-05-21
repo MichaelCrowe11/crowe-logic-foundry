@@ -27,7 +27,6 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import hashlib
 import json
 
 import jwt as pyjwt
@@ -267,7 +266,7 @@ async def login_submit(
 ):
     user = await db.fetchrow("SELECT * FROM users WHERE email = $1", email)
     if not user or not _verify_password(password, user["password_hash"]):
-        params = f"?error=Invalid+email+or+password"
+        params = "?error=Invalid+email+or+password"
         if plan: params += f"&plan={plan}"
         if next: params += f"&next={next}"
         return RedirectResponse(f"/login{params}", status_code=303)

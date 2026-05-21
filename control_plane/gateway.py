@@ -10,10 +10,9 @@ Sits between the client and the existing provider layer. For every request:
 This module is imported by the Control Plane API; it doesn't run standalone.
 """
 
-import json
 import os
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, HTTPException, Header, Depends
 from fastapi.responses import StreamingResponse
@@ -28,7 +27,11 @@ router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 # Reversible flag for the SSE streaming endpoint. Off by default so a
 # misconfigured deploy can't accidentally expose it; flip to "1" once
 # the surface is dogfood-ready. See docs/protocols/crowe-stream-v0.md.
-CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in ("1", "true", "yes")
+CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # Model tier → plan minimum. Models not listed are enterprise-only.
 MODEL_PLAN_ACCESS = {
@@ -155,7 +158,6 @@ async def _call_provider(
     """
     import asyncio
     import os
-    import functools
 
     from config.agent_config import (
         MODEL_CHAIN,
@@ -169,7 +171,9 @@ async def _call_provider(
         # Fall back to first model in chain
         cfg = list(MODEL_CHAIN)[0] if MODEL_CHAIN else None
     if cfg is None:
-        raise HTTPException(status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN")
+        raise HTTPException(
+            status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN"
+        )
 
     provider_kind = cfg.get("provider", "azure_openai")
     name = provider_model_name(cfg)
@@ -177,12 +181,13 @@ async def _call_provider(
     def _sync_call():
         """Execute the provider call synchronously (OpenAI SDK is not async)."""
         if provider_kind == "azure_openai":
-            from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
+            from providers.azure_openai import AzureOpenAIProvider
+
             runtime = azure_openai_runtime_config(cfg)
             if runtime["missing"]:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Missing credentials for {name} ({'/'.join(runtime['missing'])})"
+                    detail=f"Missing credentials for {name} ({'/'.join(runtime['missing'])})",
                 )
             runtime_model = runtime["model"]
 
@@ -205,6 +210,7 @@ async def _call_provider(
                 )
         elif provider_kind == "openai_compat":
             from providers.hosted_openai import HostedOpenAIProvider
+
             endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
             api_key_var = cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
             endpoint = os.environ.get(endpoint_var, "")
@@ -212,7 +218,7 @@ async def _call_provider(
             if not endpoint:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Missing endpoint for {name} ({endpoint_var})"
+                    detail=f"Missing endpoint for {name} ({endpoint_var})",
                 )
             provider = HostedOpenAIProvider(
                 model=name,
@@ -223,12 +229,19 @@ async def _call_provider(
             )
         elif provider_kind == "openrouter":
             from providers.openrouter import OpenRouterProvider
+
             api_key = os.environ.get("OPENROUTER_API_KEY", "")
-            base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+            base_url = os.environ.get(
+                "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+            )
             if not api_key:
-                raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not set")
+                raise HTTPException(
+                    status_code=503, detail="OPENROUTER_API_KEY not set"
+                )
             provider = OpenRouterProvider(
-                api_key=api_key, base_url=base_url, model=name,
+                api_key=api_key,
+                base_url=base_url,
+                model=name,
                 system_instructions="You are a helpful assistant.",
                 label=cfg.get("label", "CroweLM"),
             )
@@ -236,33 +249,47 @@ async def _call_provider(
             endpoint = os.environ.get("NVIDIA_NIM_ENDPOINT", "")
             api_key = os.environ.get("NVIDIA_API_KEY", "")
             if not endpoint or not api_key:
-                raise HTTPException(status_code=503, detail="NVIDIA credentials not set")
+                raise HTTPException(
+                    status_code=503, detail="NVIDIA credentials not set"
+                )
             from providers.nvidia import NvidiaProvider
+
             provider = NvidiaProvider(
-                model=name, system_instructions="You are a helpful assistant.",
-                endpoint=endpoint, api_key=api_key,
+                model=name,
+                system_instructions="You are a helpful assistant.",
+                endpoint=endpoint,
+                api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
             )
         elif provider_kind == "anthropic":
             from providers.anthropic import AnthropicProvider
+
             endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
             api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
             endpoint = os.environ.get(endpoint_var, "")
             api_key = os.environ.get(api_key_var, "")
             if not endpoint or not api_key:
-                raise HTTPException(status_code=503, detail=f"Missing credentials for {name}")
+                raise HTTPException(
+                    status_code=503, detail=f"Missing credentials for {name}"
+                )
             provider = AnthropicProvider(
-                model=name, system_instructions="You are a helpful assistant.",
-                endpoint=endpoint, api_key=api_key,
+                model=name,
+                system_instructions="You are a helpful assistant.",
+                endpoint=endpoint,
+                api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
             )
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_kind}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported provider: {provider_kind}"
+            )
 
         # Build messages for the OpenAI-compatible SDK call
         sdk_messages = [{"role": "system", "content": "You are a helpful assistant."}]
         for m in messages:
-            sdk_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+            sdk_messages.append(
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+            )
 
         kwargs = {"model": provider.model, "messages": sdk_messages, "stream": False}
         if max_tokens is not None:
@@ -273,7 +300,11 @@ async def _call_provider(
         response = provider.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content or ""
         usage = response.usage
-        return content, (usage.prompt_tokens if usage else 0), (usage.completion_tokens if usage else 0)
+        return (
+            content,
+            (usage.prompt_tokens if usage else 0),
+            (usage.completion_tokens if usage else 0),
+        )
 
     # Run the blocking SDK call in a thread
     return await asyncio.get_event_loop().run_in_executor(None, _sync_call)
@@ -341,7 +372,8 @@ async def _resolve_jwt_principal(
                FROM workspaces w
                JOIN org_members om ON om.org_id = w.org_id
                WHERE w.id = $2 AND om.user_id = $1""",
-            user_id, workspace_id_hint,
+            user_id,
+            workspace_id_hint,
         )
         if not row:
             raise HTTPException(
@@ -421,7 +453,9 @@ async def _resolve_api_key(
 
     if bearer_candidate:
         return await _resolve_jwt_principal(
-            bearer_candidate, db, workspace_id_hint=x_workspace_id,
+            bearer_candidate,
+            db,
+            workspace_id_hint=x_workspace_id,
         )
 
     raise HTTPException(status_code=401, detail="API key or JWT required")
@@ -449,6 +483,7 @@ async def gateway_chat(
 
     # ── Token budget check ──
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
@@ -460,10 +495,13 @@ async def gateway_chat(
             """SELECT COALESCE(SUM(quantity), 0) AS used
                FROM usage_events
                WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id, month_start,
+            workspace_id,
+            month_start,
         )
         if used_row and used_row["used"] >= budget:
-            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+            raise HTTPException(
+                status_code=429, detail="Monthly token budget exhausted"
+            )
 
     # ── Forward to provider ──
     start = time.monotonic()
@@ -483,14 +521,21 @@ async def gateway_chat(
         await db.execute(
             """INSERT INTO usage_events (workspace_id, user_id, event_type, quantity, model)
                VALUES ($1, $2, 'tokens', $3, $4)""",
-            workspace_id, user_id, token_count, model,
+            workspace_id,
+            user_id,
+            token_count,
+            model,
         )
 
     return GatewayResponse(
         id=f"gw_{int(time.time())}",
         model=model,
         content=content,
-        usage={"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": token_count},
+        usage={
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": token_count,
+        },
         latency_ms=elapsed_ms,
     )
 
@@ -538,6 +583,7 @@ async def gateway_chat_stream(
     # cost up front for a streamed turn, so this only guards against
     # users who are already over budget when the request arrives.
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
@@ -546,26 +592,32 @@ async def gateway_chat_stream(
             """SELECT COALESCE(SUM(quantity), 0) AS used
                FROM usage_events
                WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id, month_start,
+            workspace_id,
+            month_start,
         )
         if used_row and used_row["used"] >= plan["token_budget_month"]:
-            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+            raise HTTPException(
+                status_code=429, detail="Monthly token budget exhausted"
+            )
 
     session_id = f"http-{workspace_id[:12]}"
     messages = req.messages or []
     if not messages or messages[-1].get("role") != "user":
-        raise HTTPException(status_code=400, detail="messages must end with a user turn")
+        raise HTTPException(
+            status_code=400, detail="messages must end with a user turn"
+        )
 
     async def _sse() -> "AsyncIterator[str]":
         recorded_tokens = 0
         try:
             async for event in stream_agent_events(
-                messages=messages, model_id=model, session_id=session_id,
+                messages=messages,
+                model_id=model,
+                session_id=session_id,
             ):
                 if event.get("type") == "done":
-                    recorded_tokens = (
-                        int(event.get("tokens") or 0)
-                        + int(event.get("reasoning_tokens") or 0)
+                    recorded_tokens = int(event.get("tokens") or 0) + int(
+                        event.get("reasoning_tokens") or 0
                     )
                 yield sse_frame(event)
         finally:
@@ -577,7 +629,10 @@ async def gateway_chat_stream(
                         """INSERT INTO usage_events
                                (workspace_id, user_id, event_type, quantity, model)
                            VALUES ($1, $2, 'tokens', $3, $4)""",
-                        workspace_id, user_id, recorded_tokens, model,
+                        workspace_id,
+                        user_id,
+                        recorded_tokens,
+                        model,
                     )
                 except Exception:
                     # Don't crash the response on a usage-write failure;
@@ -659,7 +714,6 @@ async def openai_chat_completions(
         )
 
     from .streaming import (
-        _openai_chunk,
         stream_agent_events,
         stream_openai_compatible,
     )
@@ -678,6 +732,7 @@ async def openai_chat_completions(
 
     # Budget pre-check (same as /chat/stream).
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
@@ -686,23 +741,31 @@ async def openai_chat_completions(
             """SELECT COALESCE(SUM(quantity), 0) AS used
                FROM usage_events
                WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id, month_start,
+            workspace_id,
+            month_start,
         )
         if used_row and used_row["used"] >= plan["token_budget_month"]:
-            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+            raise HTTPException(
+                status_code=429, detail="Monthly token budget exhausted"
+            )
 
     messages = req.messages or []
     if not messages or messages[-1].get("role") != "user":
-        raise HTTPException(status_code=400, detail="messages must end with a user turn")
+        raise HTTPException(
+            status_code=400, detail="messages must end with a user turn"
+        )
 
     session_id = f"openai-{workspace_id[:12]}"
 
     if req.stream:
+
         async def _sse_gen():
             recorded = 0
             try:
                 async for frame in stream_openai_compatible(
-                    messages=messages, model_id=model, session_id=session_id,
+                    messages=messages,
+                    model_id=model,
+                    session_id=session_id,
                 ):
                     yield frame
             finally:
@@ -713,6 +776,7 @@ async def openai_chat_completions(
                 # crowe-stream v1 lands the usage block (gap #3 in the
                 # protocol spec).
                 _ = recorded
+
         return StreamingResponse(
             _sse_gen(),
             media_type="text/event-stream",
@@ -733,7 +797,9 @@ async def openai_chat_completions(
     tokens = 0
     reasoning_tokens = 0
     async for event in stream_agent_events(
-        messages=messages, model_id=model, session_id=session_id,
+        messages=messages,
+        model_id=model,
+        session_id=session_id,
     ):
         etype = event.get("type")
         if etype == "token":
@@ -751,11 +817,13 @@ async def openai_chat_completions(
         "object": "chat.completion",
         "created": int(_time.time()),
         "model": model,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": "".join(content_parts)},
-            "finish_reason": finish_reason,
-        }],
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "".join(content_parts)},
+                "finish_reason": finish_reason,
+            }
+        ],
         "usage": {
             "prompt_tokens": 0,  # TODO: crowe-stream v1 will carry this.
             "completion_tokens": tokens,
@@ -768,7 +836,10 @@ async def openai_chat_completions(
                 """INSERT INTO usage_events
                        (workspace_id, user_id, event_type, quantity, model)
                    VALUES ($1, $2, 'tokens', $3, $4)""",
-                workspace_id, user_id, tokens + reasoning_tokens, model,
+                workspace_id,
+                user_id,
+                tokens + reasoning_tokens,
+                model,
             )
         except Exception:
             pass
@@ -788,6 +859,7 @@ async def openai_list_models(
         if plan_rank(entry["min_plan"]) <= rank
     ]
     import time as _time
+
     now = int(_time.time())
     return {
         "object": "list",

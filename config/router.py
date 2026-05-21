@@ -38,7 +38,6 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-from config.agent_config import MODEL_CHAIN
 
 
 # ── Intent classification ─────────────────────────────────────────────

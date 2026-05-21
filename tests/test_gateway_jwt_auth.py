@@ -9,7 +9,6 @@ workspace API keys, and resolve to the same dict shape.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
 

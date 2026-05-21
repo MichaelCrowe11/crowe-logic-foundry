@@ -479,7 +479,7 @@ def _run_synthesis_turn(
     )
 
     from cli.renderer import StreamRenderer
-    from cli.branding import GOLD_HEX, GOLD_DIM_HEX
+    from cli.branding import GOLD_HEX
 
     console.print()
     console.print(
