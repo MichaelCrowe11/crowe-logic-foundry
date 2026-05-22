@@ -103,6 +103,13 @@ def test_provider_wide_error_detects_watsonx_quota_exhaustion():
     assert cli_mod._is_failover_eligible_error(err) is True
 
 
+def test_provider_wide_error_detects_generic_connection_error():
+    err = "Connection error."
+
+    assert cli_mod._is_provider_wide_error(err) is True
+    assert cli_mod._is_failover_eligible_error(err) is True
+
+
 def test_advance_model_can_skip_a_provider_family():
     original_index = cli_mod._model_state["chain_index"]
     try:
