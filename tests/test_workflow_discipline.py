@@ -42,7 +42,7 @@ def test_system_prompt_keeps_load_bearing_rules():
 
 
 def test_tier_overlay_applied_for_each_known_type():
-    for tier_type in ("fast", "reasoning", "vision", "code"):
+    for tier_type in ("fast", "reasoning", "vision", "code", "voice", "instruct"):
         cfg = {"label": "CroweLM Test", "type": tier_type, "prompt": "tier test"}
         rendered = build_system_instructions(cfg).lower()
         assert f"tier behavior: {tier_type}" in rendered, (

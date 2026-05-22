@@ -64,8 +64,8 @@ def test_build_system_instructions_includes_crowelm_tier_prompt():
     cfg = resolve_model_config("apex")
     instructions = build_system_instructions(cfg)
 
-    assert "CroweLM Apex" in instructions
-    assert "peak-performance reasoning tier" in instructions
+    assert "CroweLM Helio Pro" in instructions
+    assert "Professional-grade Helio tier" in instructions
 
 
 def test_provider_model_name_supports_env_var_interpolation(monkeypatch):

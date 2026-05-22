@@ -29,27 +29,52 @@ BASE_FILE = PROMPTS_DIR / "_base.md"
 _warned_variants: set[str] = set()
 
 
+def _safe_slug(value: str) -> str:
+    """Normalize a selector into the filename convention used by prompt files."""
+    return "_".join(
+        part
+        for part in "".join(
+            ch.lower() if ch.isalnum() else "_" for ch in value
+        ).split("_")
+        if part
+    )
+
+
 def slug_for(model_cfg: dict) -> str:
     """Return the canonical filesystem slug for a model config.
 
     Preference order:
-        1. The first alias that does not contain provider prefixes.
-        2. The label, lowercased and stripped of "CroweLM " prefix.
-        3. The full backend name with non-alphanumerics replaced by '-'.
+        1. An explicit prompt_slug, when supplied.
+        2. A concrete CroweLM deployment slug, when a prompt file exists.
+        3. The first alias that does not contain provider prefixes.
+        4. The label, lowercased and stripped of "CroweLM " prefix.
+        5. The full backend name with non-alphanumerics replaced by '_'.
     """
+    explicit = str(model_cfg.get("prompt_slug") or "").strip()
+    if explicit:
+        return _safe_slug(explicit)
+
+    # Synced provider entries can replace a built-in model while preserving
+    # legacy aliases like "apex". Prefer the concrete generated prompt for the
+    # live deployment when it exists, so instructions match the active label.
+    name = str(model_cfg.get("name", "")).strip()
+    if name:
+        deployment_slug = f"crowelm_{_safe_slug(name)}"
+        if (PROMPTS_DIR / f"{deployment_slug}.md").exists():
+            return deployment_slug
+
     aliases: list[str] = model_cfg.get("aliases") or []
     for alias in aliases:
         if "/" not in alias and ":" not in alias:
-            return alias
+            return _safe_slug(alias)
 
     label = model_cfg.get("label", "")
     if label.startswith("CroweLM "):
-        return label[len("CroweLM ") :].lower().replace(" ", "_")
+        return _safe_slug(label[len("CroweLM ") :])
     if label:
-        return label.lower().replace(" ", "_")
+        return _safe_slug(label)
 
-    name = model_cfg.get("name", "unknown")
-    return "".join(ch if ch.isalnum() else "_" for ch in name).strip("_").lower()
+    return _safe_slug(model_cfg.get("name", "unknown"))
 
 
 def _read_text(path: Path) -> str:

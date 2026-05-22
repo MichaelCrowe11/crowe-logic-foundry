@@ -158,6 +158,111 @@ def test_next_auto_model_after_failure_uses_immediate_next_candidate_on_model_er
     assert next_model == candidates[1]
 
 
+def test_normalize_interactive_command_accepts_bare_model_number():
+    assert cli_mod._normalize_interactive_command("model 68") == "/model 68"
+    assert cli_mod._normalize_interactive_command("model <68>") == "/model <68>"
+    assert cli_mod._normalize_interactive_command("/model 68") == "/model 68"
+    assert cli_mod._normalize_interactive_command("model behavior is odd") == (
+        "model behavior is odd"
+    )
+
+
+def test_next_manual_model_after_failure_uses_task_route_and_avoids_voice(
+    monkeypatch,
+):
+    failed = {
+        "name": "kimi-k2.5:cloud",
+        "label": "CroweLM Crescent",
+        "provider": "ollama",
+        "type": "reasoning",
+    }
+    cadence = {
+        "name": "mike-clone-gemma3-4b-lora",
+        "label": "CroweLM Cadence",
+        "provider": "openai_compat",
+        "type": "voice",
+    }
+    helio = {
+        "name": "gpt-5.4-mini",
+        "label": "CroweLM Helio",
+        "provider": "azure_openai",
+        "type": "reasoning",
+    }
+    chain = [failed, cadence, helio]
+    monkeypatch.setattr(cli_mod, "MODEL_CHAIN", chain)
+    monkeypatch.setattr(cli_mod, "_model_switch_error", lambda cfg: None)
+
+    def route_candidates_for_auto(prompt, availability_check=None):
+        candidates = [cadence, helio]
+        if availability_check is not None:
+            candidates = [cfg for cfg in candidates if availability_check(cfg)]
+        return candidates, "chat"
+
+    monkeypatch.setattr(
+        agent_config,
+        "route_candidates_for_auto",
+        route_candidates_for_auto,
+    )
+
+    next_index, next_model, task_class = cli_mod._next_manual_model_after_failure(
+        "hello how are you?",
+        failed,
+        "503 backend overloaded",
+    )
+
+    assert next_index == 2
+    assert next_model is helio
+    assert task_class == "chat"
+
+
+def test_next_manual_model_after_failure_skips_failed_provider_family(
+    monkeypatch,
+):
+    failed = {
+        "name": "gpt-5.4",
+        "label": "CroweLM Titan",
+        "provider": "azure_openai",
+        "type": "reasoning",
+    }
+    same_provider = {
+        "name": "gpt-5.4-mini",
+        "label": "CroweLM Helio Mini",
+        "provider": "azure_openai",
+        "type": "reasoning",
+    }
+    different_provider = {
+        "name": "crowelm-edge",
+        "label": "CroweLM Edge",
+        "provider": "nvidia",
+        "type": "reasoning",
+    }
+    chain = [failed, same_provider, different_provider]
+    monkeypatch.setattr(cli_mod, "MODEL_CHAIN", chain)
+    monkeypatch.setattr(cli_mod, "_model_switch_error", lambda cfg: None)
+
+    def route_candidates_for_auto(prompt, availability_check=None):
+        candidates = [same_provider, different_provider]
+        if availability_check is not None:
+            candidates = [cfg for cfg in candidates if availability_check(cfg)]
+        return candidates, "default"
+
+    monkeypatch.setattr(
+        agent_config,
+        "route_candidates_for_auto",
+        route_candidates_for_auto,
+    )
+
+    next_index, next_model, task_class = cli_mod._next_manual_model_after_failure(
+        "give me a quick answer",
+        failed,
+        "401 unauthorized",
+    )
+
+    assert next_index == 2
+    assert next_model is different_provider
+    assert task_class == "default"
+
+
 def test_model_switch_error_uses_recent_provider_health_block(monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod.Path, "home", lambda: tmp_path)
 

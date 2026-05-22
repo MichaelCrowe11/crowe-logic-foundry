@@ -23,6 +23,24 @@ def test_slug_prefers_clean_alias() -> None:
     assert slug_for(cfg) == "eclipse"
 
 
+def test_slug_prefers_concrete_deployment_prompt_over_legacy_alias(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prompts_dir = tmp_path / "system_prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "apex.md").write_text("legacy apex")
+    (prompts_dir / "crowelm_gpt_5_4_pro.md").write_text("synced helio pro")
+
+    monkeypatch.setattr(prompt_loader, "PROMPTS_DIR", prompts_dir)
+
+    cfg = {
+        "name": "gpt-5.4-pro",
+        "label": "CroweLM Helio Pro",
+        "aliases": ["apex", "CroweLM GPT 5.4 Pro", "gpt-5.4-pro"],
+    }
+    assert slug_for(cfg) == "crowelm_gpt_5_4_pro"
+
+
 def test_slug_skips_aliases_with_prefixes() -> None:
     cfg = {
         "name": "moonshotai/kimi-k2.5",

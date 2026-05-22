@@ -175,6 +175,29 @@ def _reset_model_chain():
     _model_state["watsonx_provider"] = None
 
 
+def _normalize_interactive_command(user_input: str) -> str:
+    """Accept common command forms users type without the leading slash."""
+    stripped = user_input.strip()
+    if stripped.startswith("/"):
+        return user_input
+
+    parts = stripped.split(maxsplit=1)
+    if len(parts) != 2 or parts[0].lower() != "model":
+        return user_input
+
+    target = parts[1].split(maxsplit=1)[0].strip().strip("<>").strip("'\"").strip()
+    if not target:
+        return user_input
+    if target.isdigit() or target.lower() == "resolve":
+        return "/" + stripped
+
+    from config.agent_config import resolve_model_config
+
+    if resolve_model_config(target) is not None:
+        return "/" + stripped
+    return user_input
+
+
 # ─── Synapse Router: per-turn auto-routing ──────────────────────────
 
 def _auto_route_enabled() -> bool:
@@ -858,6 +881,68 @@ def _next_auto_model_after_failure(
     )
 
 
+def _turn_model_display(router_cfg: dict | None, model_cfg: dict) -> str:
+    if router_cfg is not None:
+        return f"{router_cfg['label']} → {model_cfg['label']}"
+    return model_cfg["label"]
+
+
+def _safe_manual_fallback_candidate(candidate: dict, failed_model: dict) -> bool:
+    if candidate.get("provider") == "auto":
+        return False
+    if candidate.get("name") == failed_model.get("name"):
+        return False
+    # Cadence/Mike voice is useful when explicitly selected, but it should not
+    # become the surprise fallback for broken local/cloud reasoning tiers.
+    if candidate.get("type") == "voice" and failed_model.get("type") != "voice":
+        return False
+    return _model_switch_error(candidate) is None
+
+
+def _next_manual_model_after_failure(
+    prompt: str,
+    failed_model: dict,
+    error_str: str | None,
+) -> tuple[int, dict, str | None] | tuple[None, None, str | None]:
+    """Pick a safe same-turn fallback for a manually selected model.
+
+    Manual selection used to advance to the next item in MODEL_CHAIN, which
+    made local Kimi failures fall into CroweLM Cadence. This keeps the fallback
+    task-aware and avoids voice/local tiers unless they were explicitly chosen.
+    """
+    skip_provider = None
+    if error_str and _is_provider_wide_error(error_str):
+        skip_provider = failed_model.get("provider")
+
+    from config.agent_config import route_candidates_for_auto
+
+    try:
+        candidates, task_class = route_candidates_for_auto(
+            prompt,
+            availability_check=lambda c: _safe_manual_fallback_candidate(
+                c,
+                failed_model,
+            ),
+        )
+    except RuntimeError:
+        candidates, task_class = [], None
+
+    for candidate in candidates:
+        if skip_provider and candidate.get("provider") == skip_provider:
+            continue
+        idx = next((i for i, m in enumerate(MODEL_CHAIN) if m is candidate), None)
+        if idx is not None:
+            return idx, candidate, task_class
+
+    for idx, candidate in enumerate(MODEL_CHAIN):
+        if skip_provider and candidate.get("provider") == skip_provider:
+            continue
+        if _safe_manual_fallback_candidate(candidate, failed_model):
+            return idx, candidate, task_class
+
+    return None, None, task_class
+
+
 def _deploy_with_model(client, model_name: str) -> str:
     """Create a new agent with the specified model and return the agent ID."""
     from azure.ai.agents.models import CodeInterpreterTool, FunctionTool, ToolSet
@@ -1352,7 +1437,7 @@ def chat():
             console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
 
-        user_input = user_input.strip()
+        user_input = _normalize_interactive_command(user_input.strip())
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
@@ -1494,6 +1579,8 @@ def chat():
                 console.print(
                     f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
                 )
+            session_state["active_model"] = _turn_model_display(router_cfg, model_cfg)
+            iterm_set_var("crowe_logic_model", session_state["active_model"])
             # Pre-flight credit reservation runs after Auto has resolved
             # to a concrete tier so the reservation matches the model
             # that actually answers.
@@ -1615,12 +1702,7 @@ def chat():
 
                         session_state["api_status"] = "ok"
                         iterm_set_var("crowe_logic_api", "ok")
-                        # When routed via Auto, the HUD shows "Auto → Tier"
-                        # so the user knows the router picked for this turn.
-                        if router_cfg is not None:
-                            display = f"{router_cfg['label']} → {model_cfg['label']}"
-                        else:
-                            display = model_cfg["label"]
+                        display = _turn_model_display(router_cfg, model_cfg)
                         session_state["active_model"] = display
                         iterm_set_var("crowe_logic_model", display)
                         _clear_provider_health(model_cfg.get("provider"))
@@ -1671,7 +1753,6 @@ def chat():
                 _model_state["failures"][model_cfg["name"]] = (
                     _model_state["failures"].get(model_cfg["name"], 0) + 1
                 )
-                skip_provider = None
                 if last_error and _is_provider_wide_error(last_error):
                     _set_provider_health(
                         model_cfg.get("provider", ""),
@@ -1679,7 +1760,6 @@ def chat():
                         reason=last_error,
                         model_label=model_cfg.get("label", ""),
                     )
-                    skip_provider = model_cfg.get("provider")
 
                 if router_cfg is not None:
                     next_index, next_model = _next_auto_model_after_failure(
@@ -1691,6 +1771,11 @@ def chat():
                     if next_model is not None and next_index is not None:
                         auto_route_index = next_index
                         model_cfg = next_model
+                        session_state["active_model"] = _turn_model_display(
+                            router_cfg,
+                            model_cfg,
+                        )
+                        iterm_set_var("crowe_logic_model", session_state["active_model"])
                         console.print(
                             f"  [dim #bfa669]Auto route failed — switching to "
                             f"{next_model['label']}...[/dim #bfa669]"
@@ -1705,8 +1790,12 @@ def chat():
                         f"Auto route failed: {model_cfg['label']}",
                     )
                     break
-                next_model = _advance_model(skip_provider=skip_provider)
-                if next_model is None:
+                next_index, next_model, fallback_task_class = _next_manual_model_after_failure(
+                    user_input,
+                    model_cfg,
+                    last_error,
+                )
+                if next_model is None or next_index is None:
                     session_state["api_status"] = "down"
                     iterm_set_var("crowe_logic_api", "down")
                     _render_error(
@@ -1715,9 +1804,16 @@ def chat():
                     )
                     break
 
+                _model_state["chain_index"] = next_index
+                session_state["active_model"] = next_model["label"]
+                iterm_set_var("crowe_logic_model", next_model["label"])
+                suffix = (
+                    f" ({fallback_task_class} fallback)"
+                    if fallback_task_class else ""
+                )
                 console.print(
                     f"  [dim #bfa669]Model failed — switching to "
-                    f"{next_model['label']}...[/dim #bfa669]"
+                    f"{next_model['label']}{suffix}...[/dim #bfa669]"
                 )
 
                 # If switching to legacy Azure Agents, lazy-init and deploy
