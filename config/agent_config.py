@@ -822,17 +822,18 @@ _BASE_MODEL_CHAIN = [
             "when they help. Be direct."
         ),
     },
-    # Mike-voice tier: Gemma 3 4B QLoRA on operator SOP + Substrate spoken-word.
-    # Served by the dedicated FastAPI on Nexus 3080 over tailnet (bf16 quality).
+    # Mike-voice tier: Qwen 2.5 Coder 32B QLoRA on operator SOP + Substrate
+    # spoken-word. Served by the Modal OpenAI-compatible endpoint, with the
+    # older Nexus/Gemma aliases kept live for compatibility.
     # Strengths: Mike's instructional cadence (cultivation SOPs, customer email,
     # marketing copy) and Substrate verse register. Distinct lineage from the
     # CroweLM Unified Local Gemma 4 8B variant — narrower domain, sharper voice.
     {
-        "name": "mike-clone-gemma3-4b-lora",
+        "name": "mike-qwen-coder-32b-v1",
         "label": "CroweLM Cadence",
         "type": "voice",
         "provider": "openai_compat",
-        "backend_name": "mike-clone-gemma3-4b-lora",
+        "backend_name": "mike-qwen-coder-32b-v1",
         "endpoint_env": "NEXUS_MIKE_ENDPOINT",
         "api_key_env": "NEXUS_MIKE_TOKEN",
         "aliases": [
