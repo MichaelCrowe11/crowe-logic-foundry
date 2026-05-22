@@ -67,8 +67,9 @@ from tools.presentation import (
     split_recording_by_chapters,
 )
 
-# Control Center — single-window FastAPI dashboard that wraps all studio tools
-from tools.control_center import start_control_center
+# Control Center is a FastAPI dashboard, not an agent-callable tool. Keep it
+# out of the eager tool registry so lightweight CLI installs can chat without
+# requiring the local dashboard server dependencies.
 
 # Shoot — multi-camera orchestration (camera registry + start_shoot/stop_shoot)
 from tools.shoot import (
