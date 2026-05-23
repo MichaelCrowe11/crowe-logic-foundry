@@ -357,6 +357,40 @@ _BASE_MODEL_CHAIN = [
             "Keep outputs concise unless the task clearly needs depth."
         ),
     },
+    # Tier 3+: CroweLM Hyphae Nexus — frontier reasoning on the Crowe-owned edge node.
+    # Routes through the Nexus GPU box's Ollama bridge (OpenAI-compatible /v1).
+    # backend_name is the Ollama model id; cloud auth is held by Nexus's own
+    # `ollama login` token, so the client api key is a non-secret placeholder.
+    {
+        "name": "crowelm-hyphae-nexus",
+        "label": "CroweLM Hyphae Nexus",
+        "type": "reasoning",
+        "provider": "openai_compat",
+        "backend_name": "kimi-k2.6:cloud",
+        "endpoint_env": "NEXUS_OLLAMA_ENDPOINT",
+        "api_key_env": "NEXUS_OLLAMA_API_KEY",
+        # Ollama reasoning models burn the whole budget on hidden reasoning and
+        # return empty content unless `think: false` is sent. reasoning_effort
+        # (the OpenAI control) is ignored by Ollama, so it travels via extra_body.
+        "extra_body": {"think": False},
+        # Ollama Cloud's kimi proxy returns empty content when `max_tokens` is
+        # sent (even with think:false). The reasoning tier profile injects it,
+        # so drop it for this route. Verified live 2026-05-23.
+        "drop_runtime_params": ["max_tokens"],
+        "aliases": [
+            "hyphae-nexus",
+            "crowelm-hyphae-nexus",
+            "hyphae",
+            "nexus-frontier",
+        ],
+        "prompt": (
+            "You are CroweLM Hyphae Nexus, Crowe Logic's frontier reasoning tier "
+            "served from the Crowe-owned Nexus edge node. Apply deep, rigorous "
+            "multi-step reasoning across science, strategy, and engineering. "
+            "Stay decisive and first-party branded as Crowe Logic. "
+            "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
+        ),
+    },
     # Tier 4: Specialist reasoning
     {
         "name": "DeepSeek-R1",
@@ -1400,6 +1434,18 @@ def tier_runtime_params(model_cfg: dict | None) -> dict:
         params["reasoning_effort"] = "low"
         # Temperature is ignored by reasoning models on the responses path
         # but accepted on chat-completions; leave it for non-strict backends.
+    # Per-entry passthrough. Ollama-routed reasoning models (e.g. kimi-k2.6:cloud
+    # behind crowelm-hyphae-nexus) need ``think: false`` in extra_body or they
+    # return empty content; reasoning_effort is ignored by Ollama. Entry-level
+    # extra_body merges over (and is unioned with) any tier-derived extra_body.
+    entry_extra = model_cfg.get("extra_body")
+    if entry_extra:
+        params["extra_body"] = {**params.get("extra_body", {}), **entry_extra}
+    # Per-entry param drops. Some backends (Ollama Cloud reasoning models)
+    # return empty content when a tier-default param like ``max_tokens`` is
+    # forwarded; the entry can name params to strip after the profile is built.
+    for key in model_cfg.get("drop_runtime_params", ()):
+        params.pop(key, None)
     return params
 
 

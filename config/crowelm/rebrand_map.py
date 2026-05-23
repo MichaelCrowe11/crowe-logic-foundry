@@ -21,6 +21,7 @@ Related:
   - cli/crowe_logic.py:doctor() scans for unrebranded entries
   - .claude memory: project-crowe-logic-model-rebrand
 """
+
 from __future__ import annotations
 
 
@@ -41,6 +42,7 @@ REBRAND_MAP: dict[str, str] = {
     # Moonshot Kimi family
     "Kimi-K2-6": "CroweLM Hyphae",
     "Kimi-K2.5": "CroweLM Hyphae Legacy",
+    "kimi-k2.6:cloud": "CroweLM Hyphae Nexus",  # Ollama Cloud route via Nexus edge node
     # Meta Llama family
     "Llama-3-3-70B": "CroweLM Bastion",
     "Llama-4-Maverick": "CroweLM Maverick Raw",
@@ -87,9 +89,11 @@ _LEAKY_TOKENS: tuple[str, ...] = (
 
 # Tokens we intentionally allow — open-source hackathon release or
 # explicit branded mention. Override per-deployment if needed.
-_LEAK_ALLOWLIST: frozenset[str] = frozenset({
-    "Gemma 4 Mycelium",
-})
+_LEAK_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "Gemma 4 Mycelium",
+    }
+)
 
 
 def is_leaky_label(label: str) -> bool:
