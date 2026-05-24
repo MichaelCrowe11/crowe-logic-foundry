@@ -57,7 +57,7 @@ Every emitted event carries `session_id`. `tool_call_id` is synthesized stably a
 `MeshBus` wrapping `redis.asyncio`. Channel convention `mesh:session:<session_id>`.
 
 - `async publish(session_id, event: dict) -> None` — `PUBLISH` JSON. On `RedisError`/connection failure: log once + no-op (**graceful degradation** — a turn must never fail because the broadcast bus is down).
-- `async subscribe(session_id) -> AsyncIterator[dict]` — subscribe the channel, decode JSON, yield. Wrapped by a **bounded `asyncio.Queue`** (default maxsize 256): a drain task pumps Redis → queue; on overflow it drops oldest and tracks a counter, surfacing a synthetic `{"type":"events_dropped","count":N}` frame to the consumer. On connection failure: the iterator ends cleanly (degrade), logged.
+- `async subscribe(session_id) -> AsyncIterator[dict]` — subscribe the channel, decode JSON, yield. On connection failure: the iterator ends cleanly (degrade), logged. **Backpressure note:** this cycle relies on Redis's own connection-level buffering; an explicit bounded consumer queue that synthesizes `events_dropped` on slow-consumer overflow is deferred (the CMP `events_dropped` frame exists and `cla` already renders it, but the producer does not synthesize it yet — untested-code avoidance).
 - `async ping() -> bool` — used by `/mesh/surfaces` + `cla doctor` to report bus health.
 - Module-level singleton `get_bus()` reading `REDIS_URL` (default `redis://localhost:6379/0`).
 
@@ -75,7 +75,7 @@ Every emitted event carries `session_id`. `tool_call_id` is synthesized stably a
 ## Testing
 
 - **`tests/test_cmp_translate.py`** — pure unit tests over every v0→CMP mapping; assert `session_id` present and types ∈ `CMP_EVENT_TYPES`; tool event yields the started+result pair with a stable `tool_call_id`.
-- **`tests/test_mesh_bus.py`** — `fakeredis.aioredis` backend: publish→subscribe round-trip; overflow yields `events_dropped`; `publish` no-ops (no raise) when the client raises `RedisError`.
+- **`tests/test_mesh_bus.py`** — `fakeredis.aioredis` backend: publish→subscribe round-trip; session isolation (s2 not seen by s1); `publish` no-ops (no raise) when the client raises.
 - **`tests/test_mesh_endpoints.py`** (extend) — `/mesh/stream` with `stream_agent_events` monkeypatched to a canned v0 sequence asserts CMP-shaped SSE frames; `/mesh/attach` with an injected fakeredis bus receives an event published mid-session.
 
 ## Risks / notes
