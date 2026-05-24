@@ -30,3 +30,40 @@ def list_tools() -> list[dict]:
             }
         )
     return out
+
+
+def _terminal_surface() -> dict:
+    """Probe the :8012 terminal bridge without raising if it is down."""
+    reachable = False
+    tool_count = 0
+    try:
+        from tools import user_functions
+
+        tool_count = sum(1 for f in user_functions if f.__name__.startswith("ct_"))
+        reachable = tool_count > 0
+    except Exception:
+        pass
+    return {
+        "id": "terminal",
+        "kind": "editor",
+        "reachable": reachable,
+        "tool_count": tool_count,
+        "cmp_version": CMP_VERSION,
+    }
+
+
+@router.get("/surfaces")
+def list_surfaces() -> list[dict]:
+    from tools import user_functions
+
+    native = sum(1 for f in user_functions if not f.__name__.startswith("ct_"))
+    return [
+        {
+            "id": "foundry-runtime",
+            "kind": "runtime",
+            "reachable": True,
+            "tool_count": native,
+            "cmp_version": CMP_VERSION,
+        },
+        _terminal_surface(),
+    ]
