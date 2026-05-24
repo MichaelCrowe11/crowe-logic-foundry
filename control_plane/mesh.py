@@ -4,7 +4,7 @@ the mesh over HTTP instead of only in-process."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter(prefix="/mesh", tags=["mesh"])
 
@@ -67,3 +67,35 @@ def list_surfaces() -> list[dict]:
         },
         _terminal_surface(),
     ]
+
+
+@router.websocket("/attach")
+async def attach(ws: WebSocket) -> None:
+    """CMP attach server (mesh B3): handshake + presence + heartbeat."""
+    await ws.accept()
+    try:
+        frame = await ws.receive_json()
+        if frame.get("type") != "attach":
+            await ws.close(code=4400)
+            return
+        session_id = frame.get("session_id", "")
+        surface_id = frame.get("surface_id", "unknown")
+        await ws.send_json(
+            {"type": "attach_ack", "session_id": session_id, "cmp_version": CMP_VERSION}
+        )
+        await ws.send_json(
+            {
+                "type": "surface_joined",
+                "session_id": session_id,
+                "surface_id": surface_id,
+            }
+        )
+        while True:
+            msg = await ws.receive_json()
+            if msg.get("type") == "ping":
+                await ws.send_json({"type": "pong", "ts": msg.get("ts", 0)})
+            elif msg.get("type") == "detach":
+                await ws.close()
+                return
+    except WebSocketDisconnect:
+        return

@@ -36,3 +36,17 @@ def test_mesh_surfaces_includes_self():
     assert runtime["reachable"] is True
     assert runtime["tool_count"] >= 1
     assert "cmp_version" in runtime
+
+
+def test_mesh_attach_handshake_and_ping():
+    client = _client()
+    with client.websocket_connect("/mesh/attach") as ws:
+        ws.send_json({"type": "attach", "session_id": "s1", "surface_id": "cla"})
+        ack = ws.receive_json()
+        assert ack["type"] == "attach_ack"
+        assert ack["session_id"] == "s1"
+        joined = ws.receive_json()
+        assert joined["type"] == "surface_joined"
+        ws.send_json({"type": "ping", "ts": 1})
+        pong = ws.receive_json()
+        assert pong["type"] == "pong"
