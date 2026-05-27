@@ -23,6 +23,7 @@ from knowledge_lake.store import Store
 
 # ─── Store basics ──────────────────────────────────────────────
 
+
 def test_store_creates_schema_on_first_open(tmp_path):
     s = Store(tmp_path / "kb.db")
     assert (tmp_path / "kb.db").exists()
@@ -34,11 +35,14 @@ def test_store_creates_schema_on_first_open(tmp_path):
 def test_store_round_trip_and_search(tmp_path):
     s = Store(tmp_path / "kb.db")
     s.upsert_source("test-src", "markdown", root=str(tmp_path), description="t")
-    n = s.replace_chunks("test-src", [
-        ("a.md", 0, "Mycelial succession is a fungal community process.", {}),
-        ("a.md", 1, "Substrate composition drives the colonization rate.", {}),
-        ("b.md", 0, "Crowe Logic ships an OpenAI-compatible API.", {}),
-    ])
+    n = s.replace_chunks(
+        "test-src",
+        [
+            ("a.md", 0, "Mycelial succession is a fungal community process.", {}),
+            ("a.md", 1, "Substrate composition drives the colonization rate.", {}),
+            ("b.md", 0, "Crowe Logic ships an OpenAI-compatible API.", {}),
+        ],
+    )
     assert n == 3
     hits = s.search("mycelial")
     assert len(hits) == 1
@@ -54,10 +58,13 @@ def test_replace_chunks_is_atomic(tmp_path):
     s = Store(tmp_path / "kb.db")
     s.upsert_source("t", "markdown")
     s.replace_chunks("t", [("a.md", 0, "first", {})])
-    s.replace_chunks("t", [
-        ("a.md", 0, "second one", {}),
-        ("a.md", 1, "third one", {}),
-    ])
+    s.replace_chunks(
+        "t",
+        [
+            ("a.md", 0, "second one", {}),
+            ("a.md", 1, "third one", {}),
+        ],
+    )
     assert s.stats()["chunk_count"] == 2
     hits = s.search("second")
     assert len(hits) == 1
@@ -74,6 +81,7 @@ def test_delete_source_cascades(tmp_path):
 
 
 # ─── Chunking ──────────────────────────────────────────────────
+
 
 def test_chunk_paragraphs_keeps_small_blocks_together():
     text = "Short paragraph one.\n\nShort two.\n\nShort three."
@@ -96,6 +104,7 @@ def test_chunk_paragraphs_empty_input():
 
 # ─── glob matching ─────────────────────────────────────────────
 
+
 def test_glob_match_double_star_prefix():
     assert _glob_match("docs/a/b.md", "**/b.md")
     assert _glob_match("b.md", "**/b.md")
@@ -111,6 +120,7 @@ def test_glob_match_negative():
 
 
 # ─── Markdown ingestor end-to-end ──────────────────────────────
+
 
 def test_markdown_ingest_walks_and_strips_frontmatter(tmp_path):
     # Build a tiny corpus.
@@ -138,7 +148,9 @@ def test_markdown_ingest_walks_and_strips_frontmatter(tmp_path):
     )
     store = Store(tmp_path / "kb.db")
     stats = MarkdownIngestor(store, src).run()
-    assert stats.files_seen == 2          # readme + guide (skipme excluded, node_modules excluded)
+    assert (
+        stats.files_seen == 2
+    )  # readme + guide (skipme excluded, node_modules excluded)
     assert stats.files_ingested == 2
     assert stats.chunks_written >= 2
 
@@ -160,6 +172,7 @@ def test_markdown_ingest_raises_when_root_missing(tmp_path):
 
 
 # ─── search facade snippets ────────────────────────────────────
+
 
 def test_search_facade_returns_snippet_around_query(tmp_path, monkeypatch):
     store = Store(tmp_path / "kb.db")
@@ -256,6 +269,7 @@ def test_latex_section_breaks_chunk_boundaries(tmp_path):
 
 # ─── JSONL ingestor ────────────────────────────────────────────
 
+
 def test_jsonl_reads_default_text_field(tmp_path):
     (tmp_path / "corpus.jsonl").write_text(
         '{"text": "Mycorrhizal succession is a stepwise community process."}\n'
@@ -276,9 +290,9 @@ def test_jsonl_reads_default_text_field(tmp_path):
 def test_jsonl_skips_malformed_lines(tmp_path):
     (tmp_path / "corpus.jsonl").write_text(
         '{"text": "good record"}\n'
-        'not json at all\n'
-        '{"text": ""}\n'                # empty text
-        '"a string, not an object"\n'   # valid JSON but wrong type
+        "not json at all\n"
+        '{"text": ""}\n'  # empty text
+        '"a string, not an object"\n'  # valid JSON but wrong type
         '{"text": "another good one"}\n',
         encoding="utf-8",
     )
@@ -306,6 +320,7 @@ def test_jsonl_records_non_text_fields_as_metadata(tmp_path):
 
 def test_dispatch_table_resolves_all_kinds(tmp_path):
     from knowledge_lake.ingest import ingestor_for
+
     store = Store(tmp_path / "kb.db")
     for kind, expected in (
         ("markdown", "MarkdownIngestor"),
@@ -368,6 +383,7 @@ def test_replace_chunks_stores_embeddings_when_embedder_provided(tmp_path):
     # Sanity: the row that was "neither" gets a [0, 0] embedding,
     # but the column is populated for every row.
     import sqlite3
+
     conn = sqlite3.connect(str(tmp_path / "kb.db"))
     rows = conn.execute("SELECT embedding FROM chunks ORDER BY chunk_index").fetchall()
     conn.close()
@@ -460,6 +476,7 @@ def test_get_chunk_exact_lookup(tmp_path):
 
 def test_embeddings_unconfigured_returns_none(monkeypatch):
     import knowledge_lake.embeddings as emb
+
     monkeypatch.delenv("CROWE_KB_EMBED_PROVIDER", raising=False)
     monkeypatch.delenv("AZURE_CORE_ENDPOINT", raising=False)
     monkeypatch.delenv("AZURE_CORE_API_KEY", raising=False)
@@ -477,27 +494,39 @@ def test_ingest_all_runs_each_registered_source(tmp_path, monkeypatch):
     # Two ready sources + one missing-root, in an isolated registry.
     md_root = tmp_path / "md-corpus"
     md_root.mkdir()
-    (md_root / "a.md").write_text("# Heading\n\nMycelium colonizes substrate.\n", encoding="utf-8")
+    (md_root / "a.md").write_text(
+        "# Heading\n\nMycelium colonizes substrate.\n", encoding="utf-8"
+    )
 
     jsonl_root = tmp_path / "jsonl-corpus"
     jsonl_root.mkdir()
-    (jsonl_root / "c.jsonl").write_text('{"text": "Pleurotus fruits at 18C."}\n', encoding="utf-8")
+    (jsonl_root / "c.jsonl").write_text(
+        '{"text": "Pleurotus fruits at 18C."}\n', encoding="utf-8"
+    )
 
     fake = {
-        "md-test": Source(name="md-test", kind="markdown", root=md_root, description=""),
-        "jsonl-test": Source(name="jsonl-test", kind="jsonl", root=jsonl_root, description=""),
-        "missing-test": Source(name="missing-test", kind="markdown", root=tmp_path / "nope", description=""),
+        "md-test": Source(
+            name="md-test", kind="markdown", root=md_root, description=""
+        ),
+        "jsonl-test": Source(
+            name="jsonl-test", kind="jsonl", root=jsonl_root, description=""
+        ),
+        "missing-test": Source(
+            name="missing-test", kind="markdown", root=tmp_path / "nope", description=""
+        ),
     }
     monkeypatch.setattr(sources_mod, "KNOWN_SOURCES", fake)
     monkeypatch.setattr("knowledge_lake.KNOWN_SOURCES", fake, raising=False)
     monkeypatch.setenv("CROWE_KB_DB", str(tmp_path / "kb.db"))
 
     from cli.crowe_logic import main
+
     runner = CliRunner()
     result = runner.invoke(main, ["kb", "ingest-all", "--json"])
     assert result.exit_code == 0, result.output
 
     import json as _json
+
     payload = _json.loads(result.output)
     assert payload["ingested"] == 2
     assert payload["failed"] == 1
@@ -506,3 +535,118 @@ def test_ingest_all_runs_each_registered_source(tmp_path, monkeypatch):
     assert by_name["jsonl-test"]["ok"] is True
     assert by_name["missing-test"]["ok"] is False
     assert "root missing" in by_name["missing-test"]["reason"]
+
+
+# ─── ollama embedding provider (local / offline RAG) ──────────────
+
+
+def _patch_httpx(monkeypatch, *, status, payload, captured):
+    """Patch httpx.Client with a context-manager double that records the POST."""
+    import httpx
+
+    class _Resp:
+        status_code = status
+
+        def json(self):
+            return payload
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+
+
+def _ollama_env(monkeypatch):
+    monkeypatch.delenv("AZURE_CORE_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_CORE_API_KEY", raising=False)
+    monkeypatch.setenv("CROWE_KB_EMBED_PROVIDER", "ollama")
+
+
+def test_ollama_provider_is_configured(monkeypatch):
+    import knowledge_lake.embeddings as emb
+
+    _ollama_env(monkeypatch)
+    assert emb.is_configured() is True
+
+
+def test_ollama_embed_text_posts_prompt_and_returns_vector(monkeypatch):
+    import knowledge_lake.embeddings as emb
+
+    _ollama_env(monkeypatch)
+    monkeypatch.setenv("CROWE_KB_EMBED_MODEL", "nomic-embed-text")
+    monkeypatch.setenv("CROWE_KB_OLLAMA_URL", "http://localhost:11434")
+    captured = {}
+    _patch_httpx(
+        monkeypatch,
+        status=200,
+        payload={"embedding": [0.1, 0.2, 0.3]},
+        captured=captured,
+    )
+
+    vec = emb.embed_text("mycelium")
+
+    assert vec == [0.1, 0.2, 0.3]
+    assert captured["url"] == "http://localhost:11434/api/embeddings"
+    assert captured["json"] == {"model": "nomic-embed-text", "prompt": "mycelium"}
+
+
+def test_ollama_embed_text_defaults_model_and_url(monkeypatch):
+    import knowledge_lake.embeddings as emb
+
+    _ollama_env(monkeypatch)
+    monkeypatch.delenv("CROWE_KB_EMBED_MODEL", raising=False)
+    monkeypatch.delenv("CROWE_KB_OLLAMA_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    captured = {}
+    _patch_httpx(
+        monkeypatch, status=200, payload={"embedding": [1.0]}, captured=captured
+    )
+
+    emb.embed_text("hello")
+
+    assert captured["url"] == "http://localhost:11434/api/embeddings"
+    assert captured["json"]["model"] == "nomic-embed-text"
+
+
+def test_ollama_normalizes_v1_suffix_in_base_url(monkeypatch):
+    """Reusing OLLAMA_BASE_URL (which carries /v1 for the OpenAI-compat path)
+    must not break the native /api/embeddings endpoint."""
+    import knowledge_lake.embeddings as emb
+
+    _ollama_env(monkeypatch)
+    monkeypatch.setenv("CROWE_KB_OLLAMA_URL", "http://100.74.77.88:11434/v1")
+    captured = {}
+    _patch_httpx(
+        monkeypatch, status=200, payload={"embedding": [0.5]}, captured=captured
+    )
+
+    emb.embed_text("hello")
+
+    assert captured["url"] == "http://100.74.77.88:11434/api/embeddings"
+
+
+def test_ollama_embed_text_none_on_error_status_after_attempt(monkeypatch):
+    import knowledge_lake.embeddings as emb
+
+    _ollama_env(monkeypatch)
+    captured = {}
+    _patch_httpx(monkeypatch, status=500, payload={}, captured=captured)
+
+    assert emb.embed_text("anything") is None
+    # A call was actually attempted (not the unconfigured short-circuit).
+    # Assert the behavior, not the host: OLLAMA_BASE_URL may be set in the
+    # environment by other tests that load agent_config.
+    assert (captured.get("url") or "").endswith("/api/embeddings")
