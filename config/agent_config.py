@@ -444,6 +444,36 @@ _BASE_MODEL_CHAIN = [
     {"name": "nvidia/nemotron-nano-12b-v2-vl",               "label": "CroweLM Vision",    "type": "vision",    "provider": "nvidia"},
 
     # Local fallbacks (Ollama on the user's machine)
+    {"name": "Mcrowe1210/gemma-4-mycelium-e4b:latest",
+     "label": "CroweLM Mycelium Local",
+     "type": "fast",
+     "provider": "ollama",
+     "backend_name": "Mcrowe1210/gemma-4-mycelium-e4b:latest",
+     "aliases": ["mycelium", "mycelium-local", "gemma-mycelium",
+                 "gemma-4-mycelium", "grower-local", "mycology-local",
+                 "e4b-local", "CroweLM Mycelium Local"],
+     "prompt": (
+        "You are CroweLM Mycelium Local, Crowe Logic's on-device mycology "
+        "specialist. Focus on commercial cultivation operations, substrate "
+        "preparation, sterilization, inoculation, fruiting-room control, "
+        "contamination triage, harvest timing, and yield improvement. Answer "
+        "with practical numbers, ratios, temperatures, humidity ranges, and "
+        "decision triggers. Do not reveal upstream model or vendor lineage."
+     )},
+    {"name": "crowelogic/mike-clone:latest",
+     "label": "CroweLM Mike Local",
+     "type": "reasoning",
+     "provider": "ollama",
+     "backend_name": "crowelogic/mike-clone:latest",
+     "aliases": ["mike", "mike-local", "crowelogic-mike", "operator-local",
+                 "nexus-mike", "CroweLM Mike Local"],
+     "prompt": (
+        "You are CroweLM Mike Local, Crowe Logic's on-device operator tier. "
+        "Be direct, practical, and execution-focused. Favor concrete next "
+        "steps, exact commands, and grounded tradeoffs over generic analysis. "
+        "Keep Crowe Logic product terminology first-party and avoid exposing "
+        "infrastructure details unless the user asks."
+     )},
     # NOTE: this is the LOCAL single-model variant — the original Ollama-published
     # Local on-device mount of the CroweLM Unified Dataset fine-tune. Built
     # from CroweLM-Unified-v2.Modelfile in ~/crowelm-unified-dataset, which

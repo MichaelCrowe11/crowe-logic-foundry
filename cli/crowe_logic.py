@@ -308,10 +308,10 @@ def _get_openrouter_provider(model_cfg: dict, *, system_instructions: str | None
 
 def _get_ollama_provider(model_cfg: dict, *, system_instructions: str | None = None):
     """Get or create an OllamaProvider for the given model."""
-    from config.agent_config import OLLAMA_BASE_URL
+    from config.agent_config import OLLAMA_BASE_URL, provider_model_name
     from providers.ollama import OllamaProvider
 
-    model_name = model_cfg["name"]
+    model_name = provider_model_name(model_cfg)
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(model_cfg)
     current = _model_state.get("ollama_provider")
@@ -2912,7 +2912,9 @@ def deploy():
                 # the local registry?", which `/api/show` answers in <100ms
                 # without touching the model. A failing tag yields HTTP 404.
                 import requests as _rq
-                show_url = OLLAMA_BASE_URL.replace("/v1", "").rstrip("/") + "/api/show"
+                from providers.ollama import select_ollama_base_url
+                base_url = select_ollama_base_url(name, OLLAMA_BASE_URL)
+                show_url = base_url.replace("/v1", "").rstrip("/") + "/api/show"
                 resp = _rq.post(
                     show_url, json={"name": name}, timeout=timeout_seconds,
                 )
