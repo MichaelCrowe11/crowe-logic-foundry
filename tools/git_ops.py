@@ -85,8 +85,73 @@ def git_clone(url: str, target_path: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+def git_ops(action: str, repo_path: str, args: str = "") -> str:
+    """
+    Run a structured git operation against a local repository.
+
+    Umbrella tool surfaced to agents that declare `git_ops` as a single
+    tool name rather than each subcommand individually (the Crowe Talon
+    agent in particular). Dispatches to the more specific helpers in
+    this module for known actions, and falls back to a raw forward of
+    the rest of the git CLI for actions in the allowlist.
+
+    :param action: Git subcommand. Allowlisted; unknown actions
+        are rejected before any shell call.
+    :param repo_path: Absolute path to the git repository to operate on.
+    :param args: Trailing arguments forwarded to git. Empty by default.
+        For `commit`, supply the message as a single quoted string.
+        For `add`, supply the path spec.
+    :return: JSON string with `output`/`stdout`, `stderr`, `return_code`.
+    :rtype: str
+    """
+    action = (action or "").strip().lower()
+    allowed = {
+        # Read-only
+        "status", "diff", "log", "show", "branch", "remote", "config",
+        "rev-parse", "describe", "ls-files", "blame", "shortlog",
+        # Mutating — agent prompt is expected to surface the command first
+        "add", "commit", "fetch", "pull", "push", "checkout", "switch",
+        "merge", "rebase", "tag", "stash", "restore", "reset", "rm", "mv",
+        "init",
+    }
+    if action not in allowed:
+        return json.dumps({
+            "error": f"git action {action!r} is not allowed",
+            "allowed": sorted(allowed),
+            "return_code": -1,
+        })
+
+    # Route through the dedicated helpers when available so their
+    # canonical flag choices (e.g. status --porcelain=v2) stay in
+    # one place.
+    if action == "status":
+        return git_status(repo_path)
+    if action == "diff":
+        return git_diff(repo_path, staged=args.strip() == "--staged" or "--cached" in args)
+    if action == "log":
+        try:
+            count = int(args) if args.strip().isdigit() else 10
+        except ValueError:
+            count = 10
+        return git_log(repo_path, count=count)
+
+    # Generic path for the rest of the allowlist.
+    import shlex as _shlex
+    try:
+        tail = _shlex.split(args) if args else []
+    except ValueError as exc:
+        return json.dumps({"error": f"could not parse args: {exc}", "return_code": -1})
+    return _git(repo_path, [action, *tail])
+
+
 def _git(repo_path: str, args: list) -> str:
-    """Run a git command in the given repo."""
+    """Run a git command in the given repo.
+
+    :param repo_path: Absolute path to the git repository.
+    :param args: Trailing argv passed straight to the git CLI.
+    :return: JSON with output / stderr / return_code, or an error envelope.
+    :rtype: str
+    """
     repo = os.path.expanduser(repo_path)
     if not os.path.isdir(os.path.join(repo, ".git")):
         return json.dumps({"error": f"Not a git repository: {repo_path}"})

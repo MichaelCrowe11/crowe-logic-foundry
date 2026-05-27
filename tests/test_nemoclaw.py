@@ -290,7 +290,7 @@ def test_talon_alias_resolves_to_nemoclaw_provider():
     cfg = resolve_model_config("talon-nemoclaw")
     assert cfg is not None, "talon-nemoclaw alias missing from model chain"
     assert cfg["provider"] == "openai_compat"
-    assert cfg["endpoint_env"] == "NEMOCLAW_ENDPOINT"
+    assert cfg["endpoint_env"] == "NEMOCLAW_SANDBOX_URL"
 
 
 def test_provider_model_name_interpolates_env_vars(monkeypatch):

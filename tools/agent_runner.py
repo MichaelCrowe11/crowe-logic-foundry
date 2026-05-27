@@ -32,7 +32,20 @@ AGENTS_DIR = os.path.join(
 
 
 def run_agent(agent_id: str, task: str, mode: str = "local") -> dict:
-    """Run a pipeline agent task with isolation."""
+    """Run a pipeline agent task with isolation.
+
+    :param agent_id: Snake-cased agent identifier (must match ``[A-Za-z0-9_-]+``).
+        Resolves against ``agents/<agent_id>.yaml`` plus the per-agent
+        scripts under ``agents/scripts/``.
+    :param task: Free-form task description handed to the agent runner.
+    :param mode: Execution mode. ``"local"`` runs the agent in a
+        subprocess with stripped credentials. ``"docker"`` runs inside
+        a container with read-only dataset mounts and a writable
+        staging volume. Default is ``"local"``.
+    :return: Dict with ``status`` (``"ok"`` / ``"error"``), ``run_id``,
+        ``message``, and any agent-emitted artifacts.
+    :rtype: dict
+    """
     if not _SAFE_ID.match(agent_id):
         return {"status": "error", "message": f"Invalid agent_id: {agent_id!r}"}
 
