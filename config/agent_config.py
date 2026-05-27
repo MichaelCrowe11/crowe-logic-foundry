@@ -371,10 +371,11 @@ _BASE_MODEL_CHAIN = [
 
     # ─── Premium fallback: proprietary managed endpoints ───────────────────
     {"name": "gpt-5.4-managed", "label": "CroweLM Titan Premium", "type": "reasoning",
-     "provider": "azure_openai", "backend_name": "gpt-5.4",
-     "endpoint_env": "AZURE_8909_ENDPOINT", "api_key_env": "AZURE_8909_API_KEY",
+     # Flagship backend upgraded gpt-5.4 -> gpt-5.5 (crowelm-prod-eastus2, capacity 50) 2026-05-26.
+     "provider": "azure_openai", "backend_name": "gpt-5.5",
+     "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY",
      "surface": "responses",
-     "aliases": ["titan-premium", "gpt54"],
+     "aliases": ["titan-premium", "gpt54", "gpt55"],
      "prompt": (
          "You are CroweLM Titan Premium, Crowe Logic's managed premium escalation tier. "
          "Operate at the executive level with maximal rigor and reliability."
@@ -763,6 +764,9 @@ SPECIALIZED_MODELS = {
 
     # Reranker (knowledge base query refinement)
     "rerank":          {"name": "nvidia/llama-3.2-nemoretriever-300m-embed-v1", "provider": "nvidia"},
+    # Azure Cohere retrieval (added 2026-05-26; consumed when provider routes to azure_openai)
+    "rerank_cohere":   {"name": "Cohere-rerank-v4-pro", "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY"},
+    "embed_cohere":    {"name": "Cohere-embed-v4", "provider": "azure_openai", "endpoint_env": "AZURE_CORE_ENDPOINT", "api_key_env": "AZURE_CORE_API_KEY"},
 
     # Safety / guardrails (runtime moderation)
     "safety_content":  {"name": "nvidia/llama-3.1-nemoguard-8b-content-safety", "provider": "nvidia"},
