@@ -53,6 +53,22 @@ def test_resolve_model_config_accepts_new_cloud_tier_aliases():
     assert eclipse["provider"] == "ollama"
 
 
+def test_resolve_model_config_accepts_recovered_local_ollama_aliases():
+    mycelium = resolve_model_config("mycelium-local")
+    mike = resolve_model_config("mike-local")
+    unified = resolve_model_config("unified-local")
+
+    assert mycelium is not None
+    assert mike is not None
+    assert unified is not None
+    assert mycelium["provider"] == "ollama"
+    assert mike["provider"] == "ollama"
+    assert unified["provider"] == "ollama"
+    assert provider_model_name(mycelium) == "crowelogic/gemma-4-mycelium-e4b"
+    assert provider_model_name(mike) == "crowelogic/mike-clone:latest"
+    assert provider_model_name(unified) == "crowelm-unified-v2:latest"
+
+
 def test_resolve_model_config_accepts_legacy_synapse_alias():
     """Legacy workstation settings still resolve after the Synapse rename."""
     synapse = resolve_model_config("CroweLM Synapse")
