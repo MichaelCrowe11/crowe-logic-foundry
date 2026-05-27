@@ -27,6 +27,9 @@ data/
 # Ad-hoc backup files left by registry edits (models.extra.json.bak3 etc.)
 *.bak
 *.bak[0-9]*
+*.bak-*
+# Env backups (.env.env.bak-cadence etc.) must never be stageable
+.env.*.bak*
 
 # Studio runtime data (camera captures, shoot manifests)
 studio_data/
