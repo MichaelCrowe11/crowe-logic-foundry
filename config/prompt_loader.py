@@ -16,6 +16,7 @@ Usage:
            "aliases": ["eclipse", "k26"], "prompt": "..."}
     prompt = system_prompt_for(cfg)
 """
+
 from __future__ import annotations
 
 import sys
@@ -33,13 +34,22 @@ def slug_for(model_cfg: dict) -> str:
     """Return the canonical filesystem slug for a model config.
 
     Preference order:
-        1. The first alias that does not contain provider prefixes.
+        1. The first filesystem-shaped alias (lowercase, no spaces, no
+           provider prefixes). Label-shaped aliases like "CroweLM Frontier"
+           are rejected here so resolution falls through to the label path,
+           which normalizes to the real slug ("frontier").
         2. The label, lowercased and stripped of "CroweLM " prefix.
         3. The full backend name with non-alphanumerics replaced by '-'.
     """
     aliases: list[str] = model_cfg.get("aliases") or []
     for alias in aliases:
-        if "/" not in alias and ":" not in alias:
+        if (
+            alias
+            and "/" not in alias
+            and ":" not in alias
+            and " " not in alias
+            and alias == alias.lower()
+        ):
             return alias
 
     label = model_cfg.get("label", "")
