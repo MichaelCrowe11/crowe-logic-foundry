@@ -49,6 +49,8 @@ def test_normalize_collapses_tier_suffixed_duplicates():
     assert normalize_slug("dense-legacy") == "dense"
     assert normalize_slug("talon-super") == "talon"
     assert normalize_slug("talon-nano") == "talon"
+    assert normalize_slug("talon-vision") == "talon"
+    assert normalize_slug("crowelm-talon-nemoclaw") == "talon"
     assert normalize_slug("vanguard-super") == "vanguard"
     assert normalize_slug("vanguard-nano") == "vanguard"
     assert normalize_slug("titan") == "titan"
