@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import json
 import html
+import math
 
 from cli.session_runtime import format_transcript_markdown, load_session_runtime
 
@@ -32,20 +33,101 @@ RESET = "\033[0m"
 
 # Glyph alphabet. Selected for legibility in monospace fonts and
 # absence of ambiguous-width characters.
-MARK = "\u25c6"          # signature mark (fallback when no inline image)
-RULE = "\u2500"          # hairline horizontal rule
-RULE_HEAVY = "\u2501"    # heavy horizontal rule
-DOT = "\u00b7"           # inline separator
-BAR = "\u2502"           # vertical rail
-CHECK = "\u2713"         # success
-CROSS = "\u2717"         # failure
-ARROW = "\u203a"         # prompt continuation, running tool
+MARK = "\u25c6"  # signature mark (fallback when no inline image)
+RULE = "\u2500"  # hairline horizontal rule
+RULE_HEAVY = "\u2501"  # heavy horizontal rule
+DOT = "\u00b7"  # inline separator
+BAR = "\u2502"  # vertical rail
+CHECK = "\u2713"  # success
+CROSS = "\u2717"  # failure
+ARROW = "\u203a"  # prompt continuation, running tool
 
 # Layout
-GUTTER = 2               # left indent for non-centered content
+GUTTER = 2  # left indent for non-centered content
 TRANSCRIPT_MAX_WIDTH = 96
 HUD_MAX_WIDTH = 112
 RECENT_ACTION_LIMIT = 6
+
+
+# ── Thinking spinner (animated, color-drifting) ──────────────
+# A warm-gold shimmer, on-brand for Crowe Logic. The travelling crest drifts
+# through these palette stops as it works.
+_SPINNER_PALETTE = ("#bfa669", "#d4a645", "#e8c87a", "#a8915a")
+_PULSE_BLOCKS = "▁▂▃▄▅▆▇█"  # ▁▂▃▄▅▆▇█
+
+
+def _lerp_hex(a: str, b: str, t: float) -> str:
+    """Linear blend between two #rrggbb colors; t in 0..1. Pure."""
+    t = 0.0 if t < 0 else 1.0 if t > 1 else t
+    ar, ag, ab = int(a[1:3], 16), int(a[3:5], 16), int(a[5:7], 16)
+    br, bg, bb = int(b[1:3], 16), int(b[3:5], 16), int(b[5:7], 16)
+    r = round(ar + (br - ar) * t)
+    g = round(ag + (bg - ag) * t)
+    bl = round(ab + (bb - ab) * t)
+    return f"#{r:02x}{g:02x}{bl:02x}"
+
+
+def _crest_color(phase: float) -> str:
+    """The crest hue at a continuous phase, cycling smoothly around the palette."""
+    n = len(_SPINNER_PALETTE)
+    pos = (phase % n + n) % n  # wrap into 0..n
+    i = int(pos)
+    return _lerp_hex(_SPINNER_PALETTE[i], _SPINNER_PALETTE[(i + 1) % n], pos - i)
+
+
+class ThinkingSpinner:
+    """Crowe Logic 'working' animation: reasoning lanes pulsing in parallel with
+    a warm-gold crest that drifts in color as it travels, anchored by the ◆ mark.
+
+    Motion and color derive from the wall clock (not a frame counter), so the
+    animation stays continuous whether the renderable persists across refreshes
+    (single-pane Live) or is rebuilt every frame (dual-pane layout).
+    """
+
+    def __init__(
+        self,
+        label: str = "thinking",
+        *,
+        lanes: int = 5,
+        speed: float = 2.6,
+        spread: float = 0.7,
+        hue_speed: float = 0.35,
+    ):
+        self._label = label
+        self._lanes = lanes
+        self._speed = speed  # radians/sec of pulse travel
+        self._spread = spread  # phase offset between lanes (crest travel)
+        self._hue_speed = hue_speed  # palette stops advanced per second
+
+    def frame(self, now: float):
+        """Build the frame for an absolute wall-clock time (pure; render + tests)."""
+        from rich.text import Text
+
+        text = Text()
+        crest = _crest_color(now * self._hue_speed)  # this frame's drifting hue
+        text.append(f"{MARK} ", style=f"bold {crest}")
+        for i in range(self._lanes):
+            level = (math.sin(now * self._speed - i * self._spread) + 1) / 2  # 0..1
+            if level > 0.72:
+                style = f"bold {crest}"
+            elif level > 0.4:
+                style = _lerp_hex("#4a4030", crest, 0.6)
+            else:
+                style = GOLD_DIM_HEX
+            text.append(
+                _PULSE_BLOCKS[round(level * (len(_PULSE_BLOCKS) - 1))], style=style
+            )
+        text.append(f"  {self._label}…", style="dim")
+        return text
+
+    def __rich__(self):
+        return self.frame(_time.monotonic())
+
+
+def thinking_spinner(label: str = "thinking") -> "ThinkingSpinner":
+    """A fresh Crowe Logic thinking animation. Drive it inside a `rich.live.Live`."""
+    return ThinkingSpinner(label)
+
 
 # ── Layout primitives ────────────────────────────────────────
 def term_width() -> int:
@@ -82,6 +164,7 @@ def _strip_ansi(text: str) -> str:
     global _ANSI_RE
     if _ANSI_RE is None:
         import re
+
         _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07")
     return _ANSI_RE.sub("", text)
 
@@ -166,7 +249,9 @@ def _panel_title(label: str, meta: str = "", accent: str = GOLD_HEX):
     return title
 
 
-def build_transcript_markdown(console, text: str, *, title: str = "answer", meta: str = ""):
+def build_transcript_markdown(
+    console, text: str, *, title: str = "answer", meta: str = ""
+):
     """Build the primary transcript renderable for assistant answer text."""
     from rich.markdown import Markdown
     from rich.padding import Padding
@@ -187,12 +272,16 @@ def build_transcript_markdown(console, text: str, *, title: str = "answer", meta
     return Padding(panel, (0, 0, 0, GUTTER))
 
 
-def render_transcript_markdown(console, text: str, *, title: str = "answer", meta: str = ""):
+def render_transcript_markdown(
+    console, text: str, *, title: str = "answer", meta: str = ""
+):
     """Print a static transcript block."""
     console.print(build_transcript_markdown(console, text, title=title, meta=meta))
 
 
-def build_reasoning_panel(console, text: str, *, live: bool = False, meta: str | None = None):
+def build_reasoning_panel(
+    console, text: str, *, live: bool = False, meta: str | None = None
+):
     """Build the muted reasoning block used before or between answer segments."""
     from rich.padding import Padding
     from rich.panel import Panel
@@ -201,7 +290,11 @@ def build_reasoning_panel(console, text: str, *, live: bool = False, meta: str |
 
     if meta is None:
         meta = "live" if live else "captured"
-    body = Text(text, style="dim") if text.strip() else Text("thinking...", style="dim italic")
+    body = (
+        Text(text, style="dim")
+        if text.strip()
+        else Text("thinking...", style="dim italic")
+    )
     panel = Panel(
         body,
         title=_panel_title("reasoning", meta),
@@ -223,6 +316,7 @@ def _is_iterm_compatible():
 def _inline_image_seq(path: str, width: int = 10, inline: bool = True) -> str:
     """Return the iTerm2/compatible inline image escape sequence."""
     import base64
+
     if not os.path.exists(path):
         return ""
     with open(path, "rb") as f:
@@ -233,6 +327,7 @@ def _inline_image_seq(path: str, width: int = 10, inline: bool = True) -> str:
 # ── Avatar preprocessing ─────────────────────────────────────
 _clean_avatar_cache = None
 
+
 def _prepare_avatar(icon_path: str) -> str:
     """Remove outer white background while keeping the face inside the circle."""
     global _clean_avatar_cache
@@ -242,15 +337,25 @@ def _prepare_avatar(icon_path: str) -> str:
     clean_path = "/tmp/.crowe-logic-avatar.png"
     try:
         subprocess.run(
-            ["magick", icon_path,
-             "-fuzz", "10%",
-             "-fill", "none",
-             "-draw", "color 0,0 floodfill",
-             "-draw", "color 0,%[fx:h-1] floodfill",
-             "-draw", "color %[fx:w-1],0 floodfill",
-             "-draw", "color %[fx:w-1],%[fx:h-1] floodfill",
-             clean_path],
-            capture_output=True, timeout=5
+            [
+                "magick",
+                icon_path,
+                "-fuzz",
+                "10%",
+                "-fill",
+                "none",
+                "-draw",
+                "color 0,0 floodfill",
+                "-draw",
+                "color 0,%[fx:h-1] floodfill",
+                "-draw",
+                "color %[fx:w-1],0 floodfill",
+                "-draw",
+                "color %[fx:w-1],%[fx:h-1] floodfill",
+                clean_path,
+            ],
+            capture_output=True,
+            timeout=5,
         )
         if os.path.exists(clean_path):
             _clean_avatar_cache = clean_path
@@ -262,6 +367,7 @@ def _prepare_avatar(icon_path: str) -> str:
 
 # ── Mini favicon (inline cursor icon) ────────────────────────
 _favicon_cache = None
+
 
 def get_favicon() -> str:
     """Return a tiny inline avatar for use next to the agent label."""
@@ -389,19 +495,20 @@ import time as _time
 session_state = {
     "started_at": 0.0,
     "tool_count": 0,
-    "api_status": "ok",       # ok | throttled | down
+    "api_status": "ok",  # ok | throttled | down
     "retry_seconds": 0,
     "session_id": "",
-    "active_model": "",       # current model label for toolbar
+    "active_model": "",  # current model label for toolbar
     "steering_instruction": "",
     "dataset_selection": "all",
-    "last_tokens": 0,         # tokens from last response
-    "last_tps": 0.0,          # tokens/sec from last response
-    "total_tokens": 0,        # cumulative tokens this session
+    "last_tokens": 0,  # tokens from last response
+    "last_tps": 0.0,  # tokens/sec from last response
+    "total_tokens": 0,  # cumulative tokens this session
     "last_answer_text": "",
     "last_reasoning_text": "",
-    "recent_actions": [],     # newest action cards / timeline entries
+    "recent_actions": [],  # newest action cards / timeline entries
 }
+
 
 def ensure_session_state(state: dict | None = None) -> dict:
     """Backfill any newly added session-state keys for older callers/tests."""
@@ -427,6 +534,7 @@ def ensure_session_state(state: dict | None = None) -> dict:
     if state.get("cost_tracker") is None:
         try:
             from cli.cost_model import SessionCostTracker
+
             state["cost_tracker"] = SessionCostTracker()
         except Exception:
             state["cost_tracker"] = None
@@ -451,7 +559,9 @@ def reset_session_state():
     session_state["recent_actions"] = []
 
 
-def show_last_transcript(console, state: dict | None = None, *, use_pager: bool = False) -> None:
+def show_last_transcript(
+    console, state: dict | None = None, *, use_pager: bool = False
+) -> None:
     """Render the last captured answer/reasoning transcript for the session."""
     from rich.markdown import Markdown
 
@@ -462,16 +572,20 @@ def show_last_transcript(console, state: dict | None = None, *, use_pager: bool 
             persisted = load_session_runtime(session_id)
             current["last_answer_text"] = persisted.get("last_answer_text", "")
             current["last_reasoning_text"] = persisted.get("last_reasoning_text", "")
-            current["active_model"] = current.get("active_model") or persisted.get("last_model", "")
+            current["active_model"] = current.get("active_model") or persisted.get(
+                "last_model", ""
+            )
 
     model = current.get("active_model", "")
     answer_text = current.get("last_answer_text", "")
     reasoning_text = current.get("last_reasoning_text", "")
-    markdown = format_transcript_markdown({
-        "last_model": model,
-        "last_answer_text": answer_text,
-        "last_reasoning_text": reasoning_text,
-    })
+    markdown = format_transcript_markdown(
+        {
+            "last_model": model,
+            "last_answer_text": answer_text,
+            "last_reasoning_text": reasoning_text,
+        }
+    )
     if use_pager:
         with console.pager(styles=True):
             console.print(Markdown(markdown))
@@ -481,7 +595,9 @@ def show_last_transcript(console, state: dict | None = None, *, use_pager: bool 
     if answer_text.strip():
         render_transcript_markdown(console, answer_text, title="answer", meta="last")
     if reasoning_text.strip():
-        console.print(build_reasoning_panel(console, reasoning_text, live=False, meta="full"))
+        console.print(
+            build_reasoning_panel(console, reasoning_text, live=False, meta="full")
+        )
     if not answer_text.strip() and not reasoning_text.strip():
         render_transcript_markdown(console, markdown, title="answer", meta="last")
     console.print()
@@ -501,12 +617,15 @@ def _action_summary(name: str, status: str, result: str) -> str:
         return first_line or "failed"
 
 
-def record_action(session_state: dict | None, *,
-                  name: str,
-                  status: str,
-                  result: str = "",
-                  duration_ms: int = 0,
-                  args: str = "") -> dict:
+def record_action(
+    session_state: dict | None,
+    *,
+    name: str,
+    status: str,
+    result: str = "",
+    duration_ms: int = 0,
+    args: str = "",
+) -> dict:
     """Append a recent action entry for HUD/status rendering."""
     state = ensure_session_state(session_state)
     entry = {
@@ -582,11 +701,14 @@ def _get_tracker_snapshot(session_state: dict) -> dict | None:
         return None
 
 
-def build_session_hud(console, *,
-                      state: dict | None = None,
-                      cwd: str | None = None,
-                      title: str = "session",
-                      meta: str = "live"):
+def build_session_hud(
+    console,
+    *,
+    state: dict | None = None,
+    cwd: str | None = None,
+    title: str = "session",
+    meta: str = "live",
+):
     """Build the compact session HUD shown ahead of transcript turns."""
     from rich.console import Group
     from rich.padding import Padding
@@ -619,12 +741,20 @@ def build_session_hud(console, *,
     grid.add_row(
         _metric_line("WORKSPACE", cwd_label, accent=WHITE_HEX),
         _metric_line("TOOLS", str(current.get("tool_count", 0)), accent=GOLD_HEX),
-        _metric_line("TOTAL", f"{total_tokens:,} tok" if total_tokens else "0 tok", accent=GOLD_HEX),
+        _metric_line(
+            "TOTAL",
+            f"{total_tokens:,} tok" if total_tokens else "0 tok",
+            accent=GOLD_HEX,
+        ),
     )
     if tokens > 0 or latest_action:
         tps_str = f"{tps:.0f}" if tps >= 10 else f"{tps:.1f}"
         grid.add_row(
-            _metric_line("LAST", f"{tokens} tok @ {tps_str}/s" if tokens > 0 else "—", accent=WHITE_HEX),
+            _metric_line(
+                "LAST",
+                f"{tokens} tok @ {tps_str}/s" if tokens > 0 else "—",
+                accent=WHITE_HEX,
+            ),
             _metric_line("LATEST", latest_action or "no actions yet", accent=WHITE_HEX),
             Text(""),
         )
@@ -635,7 +765,9 @@ def build_session_hud(console, *,
         credits_str = f"{credits_val} cr" if credits_val else "—"
         cache_ratio = ""
         if tracker_snap["cached_turns"]:
-            cache_ratio = f" · {tracker_snap['cached_turns']}/{tracker_snap['turn_count']} cached"
+            cache_ratio = (
+                f" · {tracker_snap['cached_turns']}/{tracker_snap['turn_count']} cached"
+            )
         grid.add_row(
             _metric_line("COST", f"{usd_str}{cache_ratio}", accent=GOLD_HEX),
             _metric_line("CREDITS", credits_str, accent=GOLD_HEX),
@@ -654,19 +786,23 @@ def build_session_hud(console, *,
     return Padding(panel, (0, 0, 0, GUTTER))
 
 
-def render_session_hud(console, *,
-                       state: dict | None = None,
-                       cwd: str | None = None,
-                       title: str = "session",
-                       meta: str = "live"):
+def render_session_hud(
+    console,
+    *,
+    state: dict | None = None,
+    cwd: str | None = None,
+    title: str = "session",
+    meta: str = "live",
+):
     """Print the compact session HUD."""
-    console.print(build_session_hud(console, state=state, cwd=cwd, title=title, meta=meta))
+    console.print(
+        build_session_hud(console, state=state, cwd=cwd, title=title, meta=meta)
+    )
 
 
-def build_recent_actions_panel(console, *,
-                               state: dict | None = None,
-                               title: str = "timeline",
-                               meta: str = "recent"):
+def build_recent_actions_panel(
+    console, *, state: dict | None = None, title: str = "timeline", meta: str = "recent"
+):
     """Build the recent-actions timeline panel."""
     from rich.padding import Padding
     from rich.panel import Panel
@@ -714,12 +850,13 @@ def build_recent_actions_panel(console, *,
     return Padding(panel, (0, 0, 0, GUTTER))
 
 
-def render_recent_actions(console, *,
-                          state: dict | None = None,
-                          title: str = "timeline",
-                          meta: str = "recent"):
+def render_recent_actions(
+    console, *, state: dict | None = None, title: str = "timeline", meta: str = "recent"
+):
     """Print the recent-actions timeline."""
-    console.print(build_recent_actions_panel(console, state=state, title=title, meta=meta))
+    console.print(
+        build_recent_actions_panel(console, state=state, title=title, meta=meta)
+    )
 
 
 # ── Tool result summarizer ───────────────────────────────────
@@ -788,9 +925,14 @@ def summarize_tool_result(tool_name: str, result: str) -> str:
 
 
 # ── Hybrid tool card renderer ────────────────────────────────
-def render_tool_card(console, name: str, args: str,
-                     status: str = "running",
-                     result: str = "", duration_ms: int = 0):
+def render_tool_card(
+    console,
+    name: str,
+    args: str,
+    status: str = "running",
+    result: str = "",
+    duration_ms: int = 0,
+):
     """Render a tool execution card.
 
     Three states:
@@ -922,7 +1064,10 @@ def show_retry_countdown(console, wait_seconds: float, attempt: int, max_attempt
             pct = min(elapsed / wait_seconds, 1.0)
 
             display = Text()
-            display.append(f"  Rate limited \u2014 retry {attempt}/{max_attempts} in {remaining:.0f}s\n", style="#d4a645")
+            display.append(
+                f"  Rate limited \u2014 retry {attempt}/{max_attempts} in {remaining:.0f}s\n",
+                style="#d4a645",
+            )
             # Build a text-based progress bar
             bar_width = min(40, _term_width() - 8)
             filled = int(bar_width * pct)
@@ -940,10 +1085,17 @@ def show_retry_countdown(console, wait_seconds: float, attempt: int, max_attempt
 def is_rate_limit_error(error_msg: str) -> bool:
     """Check if an error message indicates rate limiting."""
     lower = error_msg.lower()
-    return any(s in lower for s in (
-        "429", "rate limit", "too many requests", "throttl",
-        "server_error", "sorry, something went wrong",
-    ))
+    return any(
+        s in lower
+        for s in (
+            "429",
+            "rate limit",
+            "too many requests",
+            "throttl",
+            "server_error",
+            "sorry, something went wrong",
+        )
+    )
 
 
 # ── Bottom toolbar builder ───────────────────────────────────
@@ -981,15 +1133,21 @@ def build_toolbar():
 
     latest_action = latest_action_summary(current)
     if latest_action:
-        parts.append(f'<style fg="{WHITE_HEX}">last {html.escape(latest_action)}</style>')
+        parts.append(
+            f'<style fg="{WHITE_HEX}">last {html.escape(latest_action)}</style>'
+        )
 
     if current.get("steering_instruction", "").strip():
         parts.append(f'<style fg="{AMBER_HEX}">steer</style>')
 
     dataset_selection = str(current.get("dataset_selection", "all") or "all").strip()
     if dataset_selection != "all":
-        label = "data off" if dataset_selection == "off" else f"data {dataset_selection}"
-        parts.append(f'<style fg="{WHITE_HEX}">{html.escape(_truncate(label, 24))}</style>')
+        label = (
+            "data off" if dataset_selection == "off" else f"data {dataset_selection}"
+        )
+        parts.append(
+            f'<style fg="{WHITE_HEX}">{html.escape(_truncate(label, 24))}</style>'
+        )
 
     model_label = current.get("active_model", "")
     if model_label:
@@ -1000,27 +1158,28 @@ def build_toolbar():
     left = f'<style fg="{GOLD_HEX}">CroweLM v{AGENT_VERSION}</style>'
     right = sep.join(parts)
 
-    return HTML(f' {left}      {right} ')
+    return HTML(f" {left}      {right} ")
 
 
 # ── Slash command completer ──────────────────────────────────
 from prompt_toolkit.completion import Completer, Completion
 
+
 class SlashCompleter(Completer):
     """Tab-complete for slash commands with descriptions."""
 
     COMMANDS = {
-        "/tools":  "List available tools",
-        "/model":  "Show/switch models",
-        "/data":   "CroweLM training data telemetry",
+        "/tools": "List available tools",
+        "/model": "Show/switch models",
+        "/data": "CroweLM training data telemetry",
         "/dataset": "Show/set injected dataset context",
-        "/steer":  "Persist steering for this session",
+        "/steer": "Persist steering for this session",
         "/transcript": "Show last full answer/reasoning",
         "/status": "Show agent info",
-        "/clear":  "Clear screen",
-        "/help":   "Show commands",
-        "/exit":   "Quit session",
-        "/quit":   "Quit session",
+        "/clear": "Clear screen",
+        "/help": "Show commands",
+        "/exit": "Quit session",
+        "/quit": "Quit session",
     }
 
     def get_completions(self, document, complete_event):
@@ -1051,8 +1210,8 @@ def create_chat_keybindings(console=None, state: dict | None = None):
 
         ml_prompt = HTML(
             '<style fg="#bfa669" bg="#1a1a1a">'
-            'MULTI-LINE (Ctrl+D to send, Esc to cancel)\n'
-            '</style>'
+            "MULTI-LINE (Ctrl+D to send, Esc to cancel)\n"
+            "</style>"
             '<style fg="#bfa669">\u00b7 </style>'
         )
         try:
