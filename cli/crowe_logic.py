@@ -205,8 +205,20 @@ def _auto_route_enabled() -> bool:
     return True
 
 
+def _personal_lane_enabled() -> bool:
+    """True when the Mike-only local lane is opted in via CROWE_LOGIC_PERSONAL_LANE."""
+    val = os.environ.get("CROWE_LOGIC_PERSONAL_LANE", "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
 def _auto_route_available(model_cfg: dict) -> bool:
-    """Return True when a routed model is usable in the current environment."""
+    """Return True when a routed model is usable in the current environment.
+
+    Local (Ollama) tiers are a Mike-only personal lane: excluded from customer
+    auto-routing unless CROWE_LOGIC_PERSONAL_LANE is set.
+    """
+    if model_cfg.get("provider") == "ollama" and not _personal_lane_enabled():
+        return False
     return _model_switch_error(model_cfg) is None
 
 
