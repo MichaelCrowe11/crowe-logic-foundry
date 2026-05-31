@@ -791,7 +791,7 @@
       "label": "CroweLM Vision",
       "provider": "azure_openai",
       "type": "vision",
-      "backend_name": "Llama-4-Scout",
+      "backend_name": "gpt-4o",
       "endpoint_env": "AZURE_CORE_ENDPOINT",
       "api_key_env": "AZURE_CORE_API_KEY",
       "aliases": [

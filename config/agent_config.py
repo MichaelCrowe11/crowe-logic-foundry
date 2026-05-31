@@ -441,8 +441,32 @@ _BASE_MODEL_CHAIN = [
     {"name": "qwen/qwen3-next-80b-a3b-thinking",              "label": "CroweLM Mesh Legacy","type": "reasoning", "provider": "nvidia"},
     {"name": "openai/gpt-oss-20b",                           "label": "CroweLM Lite",      "type": "reasoning", "provider": "nvidia"},
 
-    # Vision (multimodal)
-    {"name": "nvidia/nemotron-nano-12b-v2-vl",               "label": "CroweLM Vision",    "type": "vision",    "provider": "nvidia"},
+    # Vision (multimodal) — gpt-4o on crowelm-prod-eastus2 (AZURE_CORE).
+    # Upgraded 2026-05-31 from nvidia/nemotron-nano-12b-v2-vl (and the
+    # non-multimodal Llama-4-Scout override): gpt-4o is a far stronger
+    # multimodal model, credit-funded and in-region. The live deployment
+    # pointer is carried by config/models.extra.json; the prompt + brand guard
+    # live here so they survive `crowe-logic models sync`.
+    {
+        "name": "gpt-4o",
+        "label": "CroweLM Vision",
+        "type": "vision",
+        "provider": "azure_openai",
+        "backend_name": "gpt-4o",
+        "endpoint_env": "AZURE_CORE_ENDPOINT",
+        "api_key_env": "AZURE_CORE_API_KEY",
+        "aliases": ["vision", "crowelm-vision", "CroweLM Vision", "see", "image"],
+        "prompt": (
+            "You are CroweLM Vision, Crowe Logic's multimodal grounding tier. "
+            "Analyze images with precise, evidence-anchored observation: describe what is "
+            "visibly present, then reason from it. Your priority domain is commercial "
+            "mushroom cultivation (Southwest Mushrooms lineage) — assess colonization stage, "
+            "contamination signs, substrate condition, and fruiting health from grow-room "
+            "photos, and give practical next-step guidance with concrete numbers. "
+            "Stay decisive and first-party branded as Crowe Logic. "
+            "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
+        ),
+    },
 
     # Local fallbacks (Ollama on the user's machine)
     {"name": "Mcrowe1210/gemma-4-mycelium-e4b:latest",
