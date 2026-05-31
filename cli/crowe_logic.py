@@ -219,6 +219,10 @@ def _auto_route_available(model_cfg: dict) -> bool:
     """
     if model_cfg.get("provider") == "ollama" and not _personal_lane_enabled():
         return False
+    from config.health import registry
+
+    if not registry.is_available(str(model_cfg.get("name", ""))):
+        return False
     return _model_switch_error(model_cfg) is None
 
 
@@ -1861,6 +1865,12 @@ def chat():
                 _model_state["failures"][model_cfg["name"]] = (
                     _model_state["failures"].get(model_cfg["name"], 0) + 1
                 )
+                try:
+                    from config.health import registry as _health_registry
+
+                    _health_registry.record_failure(model_cfg["name"], last_error or "")
+                except Exception:
+                    pass
                 skip_provider = None
                 if last_error and _is_provider_wide_error(last_error):
                     _set_provider_health(
