@@ -64,44 +64,128 @@ _ARITHMETIC_INLINE_PATTERN = re.compile(
 )
 
 _TRIVIAL_PHRASES = {
-    "hi", "hello", "hey", "yo", "sup", "thanks", "thank you", "ty",
-    "ok", "okay", "k", "cool", "nice", "great", "good", "yes", "no",
-    "yep", "nope", "sure", "got it", "understood", "ack",
+    "hi",
+    "hello",
+    "hey",
+    "yo",
+    "sup",
+    "thanks",
+    "thank you",
+    "ty",
+    "ok",
+    "okay",
+    "k",
+    "cool",
+    "nice",
+    "great",
+    "good",
+    "yes",
+    "no",
+    "yep",
+    "nope",
+    "sure",
+    "got it",
+    "understood",
+    "ack",
 }
 
 _CODE_KEYWORDS = (
-    " refactor", " rewrite", " implement", " function ", " class ", " method ",
-    " bug ", " stack trace", " compile", " lint", " test ", " unit test",
-    " regex", " snippet", " endpoint", " schema", " migration", " diff ",
+    " refactor",
+    " rewrite",
+    " implement",
+    " function ",
+    " class ",
+    " method ",
+    " bug ",
+    " stack trace",
+    " compile",
+    " lint",
+    " test ",
+    " unit test",
+    " regex",
+    " snippet",
+    " endpoint",
+    " schema",
+    " migration",
+    " diff ",
 )
 _CODE_FENCES = re.compile(
     r"```|^\s*(def |class |function |const |let |var )", re.MULTILINE
 )
 
 _VISION_KEYWORDS = (
-    "screenshot", "screen shot", "image", "photo", "picture", "diagram",
-    "look at this", "see this", "in the image", "from the photo",
-    "plate", "contam", "contamination",  # mycology lab vision
+    "screenshot",
+    "screen shot",
+    "image",
+    "photo",
+    "picture",
+    "diagram",
+    "look at this",
+    "see this",
+    "in the image",
+    "from the photo",
+    "plate",
+    "contam",
+    "contamination",  # mycology lab vision
 )
 
 _DOMAIN_KEYWORDS = (
     # Mycology / cultivation
-    "mushroom", "mycology", "myceli", "fruiting", "substrate", "spawn",
-    "lion's mane", "lions mane", "oyster", "shiitake", "reishi",
-    "grow log", "grow tent", "incubation", "pinhead", "primordia",
+    "mushroom",
+    "mycology",
+    "myceli",
+    "fruiting",
+    "substrate",
+    "spawn",
+    "lion's mane",
+    "lions mane",
+    "oyster",
+    "shiitake",
+    "reishi",
+    "grow log",
+    "grow tent",
+    "incubation",
+    "pinhead",
+    "primordia",
     # Drug discovery / psychedelics
-    "psilocybin", "psilocin", "tryptamine", "serotonin receptor",
-    "drug discovery", "lead optimization", "ic50", "binding affinity",
-    "docking", "smiles", "compound", "scaffold",
+    "psilocybin",
+    "psilocin",
+    "tryptamine",
+    "serotonin receptor",
+    "drug discovery",
+    "lead optimization",
+    "ic50",
+    "binding affinity",
+    "docking",
+    "smiles",
+    "compound",
+    "scaffold",
     # Biotech / lab
-    "assay", "ph", "agar", "sterilization", "autoclave", "petri",
-    "fermentation", "extract", "potency",
+    "assay",
+    "ph",
+    "agar",
+    "sterilization",
+    "autoclave",
+    "petri",
+    "fermentation",
+    "extract",
+    "potency",
 )
 
 _DEEP_KEYWORDS = (
-    "architect", "architecture", "strategy", "strategic", "design doc",
-    "long-form", "write a plan", "write a spec", "deep dive",
-    "trade-off", "tradeoff", "evaluate options", "analyze in depth",
+    "architect",
+    "architecture",
+    "strategy",
+    "strategic",
+    "design doc",
+    "long-form",
+    "write a plan",
+    "write a spec",
+    "deep dive",
+    "trade-off",
+    "tradeoff",
+    "evaluate options",
+    "analyze in depth",
 )
 
 LOW_CONFIDENCE_THRESHOLD = 0.60
@@ -223,35 +307,54 @@ def classify_with_confidence(text: str) -> tuple[str, float]:
 # passes the optional availability check.
 _INTENT_PREFERENCES: dict[str, tuple[str, ...]] = {
     "capability_question": ("CroweLM Nano", "nano", "CroweLM Lite", "CroweLM Swift"),
-    "arithmetic":          ("CroweLM Nano", "nano", "CroweLM Lite"),
-    "trivial":             ("CroweLM Nano", "nano", "CroweLM Lite"),
-    "ambiguous":           ("CroweLM Nano", "nano", "CroweLM Swift", "CroweLM Nexus"),
-    "vision":              ("CroweLM Vision", "vision"),
-    "code":                ("CroweLM Coder", "CroweLM Dev", "CroweLM Apex", "CroweLM Titan"),
-    "domain":              ("CroweLM Apex", "CroweLM Titan", "CroweLM Sovereign", "CroweLM Prime"),
-    "deep":                ("CroweLM Titan", "CroweLM Apex", "CroweLM Sovereign", "CroweLM Frontier"),
-    "general":             ("CroweLM Nexus", "CroweLM Apex", "CroweLM Titan"),
+    "arithmetic": ("CroweLM Nano", "nano", "CroweLM Lite"),
+    "trivial": ("CroweLM Nano", "nano", "CroweLM Lite"),
+    "ambiguous": ("CroweLM Nano", "nano", "CroweLM Swift", "CroweLM Nexus"),
+    "vision": ("CroweLM Vision", "vision"),
+    "code": ("CroweLM Coder", "CroweLM Dev", "CroweLM Apex", "CroweLM Titan"),
+    "domain": ("CroweLM Apex", "CroweLM Titan", "CroweLM Sovereign", "CroweLM Prime"),
+    "deep": ("CroweLM Titan", "CroweLM Apex", "CroweLM Sovereign", "CroweLM Frontier"),
+    "general": ("CroweLM Nexus", "CroweLM Apex", "CroweLM Titan"),
 }
+
+# Multi-provider fast floor used when an intent's preferred tiers are all
+# unavailable. Ordered same-provider-first (Azure Foundry) then cross-provider
+# (NVIDIA NIM Talon) so an Azure-wide outage still has somewhere to land.
+# NEVER lead with Supreme — this is the fix for "every prompt hangs on Supreme".
+FAST_BACKSTOP: tuple[str, ...] = (
+    "grok-4-1-fast-non-r",
+    "CroweLM Swift Raw",  # Azure, sub-second
+    "gpt-5.4-nano",
+    "CroweLM Cinder",  # Azure
+    "gpt-5.4-mini",
+    "CroweLM Talon Nano",
+    "crowelm-talon-nano",  # NIM cross-provider floor
+    "Llama-4-Scout",
+    "Kimi-K2-6",  # Azure mid
+    "CroweLM Talon",
+    "crowelm-talon",  # NIM mid
+)
 
 # Companions for parallel fan-out. When a turn is dispatched in
 # ``present_both`` or ``ensemble_synthesis`` fusion mode, these labels are
 # added alongside the primary. Empty by default - fan-out is opt-in per call site.
 _INTENT_COMPANIONS: dict[str, tuple[str, ...]] = {
     "domain": ("DeepParallel",),  # second opinion via local 8-chain
-    "deep":   ("DeepParallel",),
+    "deep": ("DeepParallel",),
 }
 
 
 # ── Route decision ────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class RouteDecision:
     """Routing outcome: classified intent, primary + fallback chain, optional companions."""
 
     intent: str
-    primary: dict                   # model_cfg from MODEL_CHAIN
-    fallbacks: tuple[dict, ...]     # ordered same-turn fallbacks
-    companions: tuple[dict, ...]    # parallel-dispatch companions (may be empty)
+    primary: dict  # model_cfg from MODEL_CHAIN
+    fallbacks: tuple[dict, ...]  # ordered same-turn fallbacks
+    companions: tuple[dict, ...]  # parallel-dispatch companions (may be empty)
     reason: str
     confidence: float = 0.50
 
@@ -282,8 +385,12 @@ class RouteDecision:
             "selected_label": self.selected_label,
             "selected_name": self.selected_name,
             "selected_type": self.selected_type,
-            "fallbacks": [str(c.get("label", c.get("name", ""))) for c in self.fallbacks],
-            "companions": [str(c.get("label", c.get("name", ""))) for c in self.companions],
+            "fallbacks": [
+                str(c.get("label", c.get("name", ""))) for c in self.fallbacks
+            ],
+            "companions": [
+                str(c.get("label", c.get("name", ""))) for c in self.companions
+            ],
             "confidence": self.confidence,
             "low_confidence": self.low_confidence,
             "reason": self.reason,
@@ -360,11 +467,17 @@ def _resolve_in_chain(selector: str, chain: list[dict]) -> dict | None:
         return None
 
     for model_cfg in chain:
-        if any(_selector_key(candidate) == needle for candidate in _model_selectors(model_cfg)):
+        if any(
+            _selector_key(candidate) == needle
+            for candidate in _model_selectors(model_cfg)
+        ):
             return model_cfg
 
     for model_cfg in chain:
-        if any(needle in _selector_key(candidate) for candidate in _model_selectors(model_cfg)):
+        if any(
+            needle in _selector_key(candidate)
+            for candidate in _model_selectors(model_cfg)
+        ):
             return model_cfg
 
     return None
@@ -385,6 +498,7 @@ def route_prompt(
     """
     if chain is None:
         from config.agent_config import MODEL_CHAIN as active_chain
+
         chain = active_chain
     heuristic_intent, heuristic_confidence = classify_with_confidence(text)
     intent, confidence, fallback_reason = _maybe_apply_deepparallel_fallback(
@@ -394,22 +508,36 @@ def route_prompt(
     )
 
     preferences = _INTENT_PREFERENCES.get(intent, ())
-    backstop = ("CroweLM Nexus", "CroweLM Apex", "CroweLM Titan")
-    available = _resolve_all((*preferences, *backstop), chain, availability)
+    available = _resolve_all((*preferences, *FAST_BACKSTOP), chain, availability)
 
     if not available:
+        # Nothing in preferences or the fast backstop resolved AND passed the
+        # availability check. Fall to the first chain entry that is itself
+        # available — never blindly the chain head (which is Supreme).
         primary = next(
-            (cfg for cfg in chain if cfg.get("provider") != "auto"),
-            chain[0] if chain else {},
+            (
+                cfg
+                for cfg in chain
+                if cfg.get("provider") != "auto"
+                and (availability is None or availability(cfg))
+            ),
+            None,
         )
+        if primary is None:
+            # Truly nothing available: last-resort chain head so the turn
+            # still produces a route (fail-open).
+            primary = next(
+                (cfg for cfg in chain if cfg.get("provider") != "auto"),
+                chain[0] if chain else {},
+            )
         return RouteDecision(
             intent=intent,
             primary=primary,
             fallbacks=(),
             companions=(),
             reason=(
-                f"intent={intent}; no preferred tier resolved; "
-                f"fell back to chain head ({primary.get('label', '?')})"
+                f"intent={intent}; no preferred/backstop tier available; "
+                f"fell back to first available tier ({primary.get('label', '?')})"
                 f"{fallback_reason}"
             ),
             confidence=confidence,
@@ -420,7 +548,8 @@ def route_prompt(
 
     companion_selectors = _INTENT_COMPANIONS.get(intent, ())
     companions = tuple(
-        cfg for cfg in _resolve_all(companion_selectors, chain, availability)
+        cfg
+        for cfg in _resolve_all(companion_selectors, chain, availability)
         if id(cfg) != id(primary)
     )
 
