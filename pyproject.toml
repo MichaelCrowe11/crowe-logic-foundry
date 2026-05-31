@@ -87,3 +87,5 @@ include = ["cli*", "tools*", "config*", "scripts*", "providers*", "crowe_synapse
 cli = ["icon.png", "icons/*.icns"]
 crowe_synapse_engine = ["templates/*.yaml"]
 iterm = ["daemon.py"]
+config = ["*.md", "*.json", "*.yaml", "*.yml", "*.txt", "system_prompts/*.md", "system_prompts/*.txt", "system_prompts/*.json"]
+"*" = ["*.md", "*.json", "*.yaml", "*.yml", "*.txt"]
