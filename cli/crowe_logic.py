@@ -226,6 +226,18 @@ def _auto_route_available(model_cfg: dict) -> bool:
     return _model_switch_error(model_cfg) is None
 
 
+def _hedge_banner(*, target_label: str, reason: str) -> str:
+    """Calm, intentional routing-hedge line (a reroute, not an error)."""
+    reason_txt = {
+        "timeout": "slow start",
+        "error": "provider error",
+        "unavailable": "tier unavailable",
+    }.get(reason, reason)
+    return (
+        f"  [dim #bfa669]Routing onward → {target_label} ({reason_txt})[/dim #bfa669]"
+    )
+
+
 def _apply_route_decision(decision, session_state: dict, prompt: str = "") -> bool:
     """Switch the active chain index to the routed tier when it differs.
 
@@ -1891,9 +1903,15 @@ def chat():
                     if next_model is not None and next_index is not None:
                         auto_route_index = next_index
                         model_cfg = next_model
+                        _reason = (
+                            "timeout"
+                            if (last_error and "ttft" in last_error.lower())
+                            else "error"
+                        )
                         console.print(
-                            f"  [dim #bfa669]Auto route failed — switching to "
-                            f"{next_model['label']}...[/dim #bfa669]"
+                            _hedge_banner(
+                                target_label=next_model["label"], reason=_reason
+                            )
                         )
                         continue
 
