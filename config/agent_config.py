@@ -1425,7 +1425,9 @@ _TIER_RUNTIME_PARAMS: dict[str, dict] = {
 # tracks what's actually deployed regardless of the friendly label.
 _REASONING_BACKENDS = frozenset(
     {
-        # OpenAI gpt-5.4 family (all reasoning).
+        # OpenAI gpt-5 family (all reasoning). gpt-5.5 backs CroweLM Supreme,
+        # so it must use max_completion_tokens or it 400s on max_tokens.
+        "gpt-5.5",
         "gpt-5.4",
         "gpt-5.4-pro",
         "gpt-5.4-nano",
