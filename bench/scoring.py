@@ -95,7 +95,10 @@ def score_results_file(raw_path, scored_path, *, judge=None) -> None:
             elif qtype == "numeric":
                 row["score"] = score_numeric(ans, exp)
             elif qtype == "code":
-                row["score"] = None  # code scoring handled in a later task
+                tests = row.get("tests", "")
+                row["score"] = (
+                    score_code(row.get("answer", ""), tests) if tests else None
+                )
             else:
                 row["score"] = None
         elif row.get("track") == "b":
@@ -109,3 +112,31 @@ def score_results_file(raw_path, scored_path, *, judge=None) -> None:
             row["score"] = None
         out_lines.append(json.dumps(row))
     scored_path.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+
+
+def score_code(answer: str, tests: str, *, timeout: int = 10) -> float:
+    """Run candidate code + assertion tests in a subprocess; 1.0 if all pass.
+
+    The answer (a function definition) and the tests (assert statements) are
+    concatenated into one temp module and executed in a fresh subprocess so a
+    crash, infinite loop (via timeout), or bad code cannot affect the harness.
+    """
+    import os
+    import subprocess
+    import sys
+    import tempfile
+    import textwrap
+
+    program = textwrap.dedent(answer) + "\n" + textwrap.dedent(tests) + "\n"
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(program)
+        proc = subprocess.run(
+            [sys.executable, tmp], capture_output=True, text=True, timeout=timeout
+        )
+        return 1.0 if proc.returncode == 0 else 0.0
+    except subprocess.TimeoutExpired:
+        return 0.0
+    finally:
+        os.unlink(tmp)

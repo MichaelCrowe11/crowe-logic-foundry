@@ -34,6 +34,7 @@ def run_track_a(questions, tiers, results_dir: Path) -> Path:
                     question_id=q["id"],
                     qtype=q.get("type", ""),
                     expected=q.get("answer", ""),
+                    tests=q.get("tests", ""),
                     answer=r.answer,
                     tokens=r.tokens,
                     elapsed_ms=r.elapsed_ms,
