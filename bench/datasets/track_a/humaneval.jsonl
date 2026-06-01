@@ -1,0 +1,2 @@
+{"id":"he1","question":"Write a Python function add(a, b) that returns the sum of a and b.","answer":"def add(a, b):\n    return a + b","type":"code","tests":"assert add(2, 3) == 5\nassert add(-1, 1) == 0"}
+{"id":"he2","question":"Write a Python function is_even(n) that returns True if n is even.","answer":"def is_even(n):\n    return n % 2 == 0","type":"code","tests":"assert is_even(4) is True\nassert is_even(3) is False"}

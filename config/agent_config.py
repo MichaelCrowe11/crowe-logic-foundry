@@ -181,19 +181,26 @@ _BASE_MODEL_CHAIN = [
             "Route each turn to the best-fit CroweLM model under the hood."
         ),
     },
-    # ─── Tier 0: CroweLM Supreme — Claude Opus 4.7 with unified dataset knowledge ──
-    # Crowe Logic's ultimate tier: Anthropic Claude Opus 4.7 (1M context, adaptive thinking)
-    # augmented with the CroweLM Unified Dataset (145K samples across biotech, mycology,
-    # reasoning, and platform domains). Deployment pending on Michael-6302 resource;
-    # falls back to claude-opus-4-6 on 4667 until 4.7 goes live.
+    # ─── Tier 0: CroweLM Supreme — live Azure frontier (gpt-5.5) ──────────
+    # Crowe Logic's ultimate tier, backed by gpt-5.5 on the live AZURE_CORE
+    # resource (crowelm-prod-eastus2). Was hardwired to the UNSET
+    # AZURE_ANTHROPIC_* endpoint (claude-opus-4-7) — every Supreme turn timed
+    # out (~18s) and hedged to Talon. gpt-5.5 needs max_completion_tokens
+    # (handled via _REASONING_BACKENDS).
+    # FOLLOW-UP: restore Claude-Opus-on-Azure when AZURE_ANTHROPIC_* creds exist.
     {
-        "name": "claude-opus-4-7",
+        # `name` must be unique: a "gpt-5.5"-named CroweLM Quasar entry lives in
+        # models.extra.json, and _merge_model_chain keys on selectors. Sharing
+        # the name "gpt-5.5" let Quasar's merge absorb this Supreme tier (label,
+        # prompt, and backend_name all clobbered). Identity = `name`; routing to
+        # the actual deployment is carried by `backend_name`.
+        "name": "crowelm-supreme",
         "label": "CroweLM Supreme",
         "type": "reasoning",
-        "provider": "anthropic",
-        "backend_name": "claude-opus-4-6",
-        "endpoint_env": "AZURE_ANTHROPIC_ENDPOINT",
-        "api_key_env": "AZURE_ANTHROPIC_API_KEY",
+        "provider": "azure_openai",
+        "backend_name": "gpt-5.5",
+        "endpoint_env": "AZURE_CORE_ENDPOINT",
+        "api_key_env": "AZURE_CORE_API_KEY",
         "aliases": [
             "supreme",
             "crowelm-supreme",
@@ -1277,6 +1284,7 @@ You can do anything and everything across all domains. You have access to:
 - crowelm_training_status — check active training runs
 
 ## Crowe Logic Platform (ai.southwestmushrooms.com)
+- crowe_knowledge_base — search the proprietary CroweLM cultivation library (Lion's Mane SOP, The Mushroom Grower, species data, contamination protocols) for grounding. PREFER this for any mushroom-cultivation/mycology question: retrieve passages first, then answer citing the source titles.
 - crowe_chat — external mycology/cultivation Q&A service (domain-specific only; do NOT use for greetings or general chat)
 - crowe_vision — photo analysis via Crowe Vision (contamination detection, growth assessment)
 - crowe_grow_log — create/read/update/list cultivation grow logs
