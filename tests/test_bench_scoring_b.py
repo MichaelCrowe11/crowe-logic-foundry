@@ -20,6 +20,15 @@ def test_parse_judge_clamps_to_0_5_range():
     assert parse_judge_score("the year 1999") is None
 
 
+def test_parse_judge_ignores_fraction_denominator():
+    # "N/5" phrasing must not let the denominator 5 inflate the score via the
+    # bare-digit fallback; the explicit SCORE: marker still wins.
+    assert parse_judge_score("I rate it 4/5") == 4
+    assert parse_judge_score("SCORE: 2 (that's 2/5)") == 2
+    # a pure ratio with no standalone 0-5 digit yields None, not the denominator
+    assert parse_judge_score("ratio 9/5") is None
+
+
 def test_build_judge_prompt_includes_all_parts():
     p = build_judge_prompt(question="Q?", source_passage="SRC", answer="ANS")
     assert "Q?" in p and "SRC" in p and "ANS" in p

@@ -52,12 +52,17 @@ def parse_judge_score(judge_text: str) -> int | None:
     """Extract a 0-5 integer score from judge output, or None if absent.
 
     Prefers an explicit 'SCORE: N' marker; otherwise the first standalone
-    0-5 digit. Numbers outside 0-5 are not treated as scores.
+    0-5 digit. Numbers outside 0-5 are not treated as scores, and digits that
+    are part of a fraction/ratio (e.g. "9/5", "5/10") are ignored so a
+    "rate it N/5" phrasing can't inflate the score via its denominator.
     """
     m = re.search(r"SCORE\s*[:=]?\s*([0-5])\b", judge_text.upper())
     if m:
         return int(m.group(1))
-    m2 = re.search(r"\b([0-5])\b", judge_text)
+    # Fallback: a 0-5 digit that is NOT a fraction denominator (not preceded by
+    # '/') and not part of a larger number. So "4/5" -> 4 (numerator is the
+    # score), "9/5" -> None (9 is out of range, 5 is a denominator), "1999" -> None.
+    m2 = re.search(r"(?<![\d/])([0-5])(?!\d)", judge_text)
     return int(m2.group(1)) if m2 else None
 
 
