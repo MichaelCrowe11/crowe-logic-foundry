@@ -43,6 +43,53 @@ def run_track_a(questions, tiers, results_dir: Path) -> Path:
     return results_dir
 
 
+def _all_chat_tiers() -> list[str]:
+    """All MODEL_CHAIN tier names except non-chat backends (embeddings/video/router)."""
+    from config.agent_config import MODEL_CHAIN
+
+    nonchat = {"Cohere-embed-v4", "text-embedding-3-large", "sora-2", "model-router"}
+    return [c["name"] for c in MODEL_CHAIN if c.get("name") not in nonchat]
+
+
+def resolve_tiers(*, all_tiers: bool, explicit):
+    """Explicit tiers win; else all chat tiers if --all; else the flagship smoke set."""
+    from bench import config
+
+    if explicit:
+        return list(explicit)
+    if all_tiers:
+        return _all_chat_tiers()
+    return config.FLAGSHIP_TIERS
+
+
+def main() -> int:
+    import argparse
+
+    p = argparse.ArgumentParser(prog="bench", description="CroweLM benchmark runner")
+    p.add_argument("--track", choices=["a", "b", "both"], default="both")
+    p.add_argument("--all", action="store_true", help="Run ALL chat tiers (expensive).")
+    p.add_argument("--tiers", nargs="*", help="Explicit tier names (overrides --all).")
+    p.add_argument("--limit", type=int, default=5, help="Max questions per benchmark.")
+    args = p.parse_args()
+
+    tiers = resolve_tiers(all_tiers=args.all, explicit=args.tiers)
+    n_a = args.limit if args.track in ("a", "both") else 0
+    n_b = args.limit if args.track in ("b", "both") else 0
+    runs = n_a * len(tiers) + n_b * len(tiers) * 2
+    print(
+        f"Tiers: {len(tiers)} | est. runs: {runs} "
+        f"(Track A: {n_a * len(tiers)}, Track B: {n_b * len(tiers) * 2}). "
+        "Dataset dispatch is wired in a later task; this prints the plan only."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())
+
+
 def run_track_b(questions, tiers, results_dir: Path) -> Path:
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
