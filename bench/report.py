@@ -18,8 +18,26 @@ def _load(path: Path) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+def _brand_labels() -> dict[str, str]:
+    """Map each MODEL_CHAIN backend `name` to its CroweLM `label`.
+
+    The scoreboard is public/website-facing, so it must show CroweLM brand
+    names (e.g. "CroweLM Helio"), never the underlying backend (e.g. gpt-5.4).
+    """
+    try:
+        from config.agent_config import MODEL_CHAIN
+    except Exception:
+        return {}
+    return {c["name"]: c.get("label", c["name"]) for c in MODEL_CHAIN if c.get("name")}
+
+
 def build_scoreboard(scored_path: Path) -> str:
     rows = _load(scored_path)
+    labels = _brand_labels()
+
+    def brand(tier: str) -> str:
+        return labels.get(tier, tier)
+
     out = ["# CroweLM Benchmark Scoreboard", ""]
 
     # Track A: tier -> mean accuracy
@@ -29,14 +47,14 @@ def build_scoreboard(scored_path: Path) -> str:
             a[r["tier"]].append(r["score"])
     if a:
         out += [
-            "## Track A — public benchmarks (backend baseline)",
+            "## Track A — public benchmarks (baseline)",
             "",
-            "| Tier (backend) | Accuracy | N |",
+            "| CroweLM tier | Accuracy | N |",
             "|---|---|---|",
         ]
-        for tier, scores in sorted(a.items()):
+        for tier, scores in sorted(a.items(), key=lambda kv: brand(kv[0])):
             out.append(
-                f"| {tier} | {statistics.mean(scores) * 100:.1f}% | {len(scores)} |"
+                f"| {brand(tier)} | {statistics.mean(scores) * 100:.1f}% | {len(scores)} |"
             )
         out.append("")
 
@@ -49,7 +67,7 @@ def build_scoreboard(scored_path: Path) -> str:
         out += [
             "## Track B — mycology: grounded vs bare (the CroweLM delta)",
             "",
-            "| Tier (backend) | Grounded | Bare | Δ (delta) |",
+            "| CroweLM tier | Grounded | Bare | Δ (delta) |",
             "|---|---|---|---|",
         ]
         scored = []
@@ -58,7 +76,7 @@ def build_scoreboard(scored_path: Path) -> str:
             bare = statistics.mean(conds["bare"]) if conds["bare"] else 0.0
             scored.append((tier, g, bare, g - bare))
         for tier, g, bare, d in sorted(scored, key=lambda x: -x[3]):
-            out.append(f"| {tier} | {g:.2f} | {bare:.2f} | {d:+.2f} |")
+            out.append(f"| {brand(tier)} | {g:.2f} | {bare:.2f} | {d:+.2f} |")
         out.append("")
         out.append(
             "_Δ = grounded − bare on a 0–5 scale. The delta is the platform's "
