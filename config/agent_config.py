@@ -189,7 +189,12 @@ _BASE_MODEL_CHAIN = [
     # (handled via _REASONING_BACKENDS).
     # FOLLOW-UP: restore Claude-Opus-on-Azure when AZURE_ANTHROPIC_* creds exist.
     {
-        "name": "gpt-5.5",
+        # `name` must be unique: a "gpt-5.5"-named CroweLM Quasar entry lives in
+        # models.extra.json, and _merge_model_chain keys on selectors. Sharing
+        # the name "gpt-5.5" let Quasar's merge absorb this Supreme tier (label,
+        # prompt, and backend_name all clobbered). Identity = `name`; routing to
+        # the actual deployment is carried by `backend_name`.
+        "name": "crowelm-supreme",
         "label": "CroweLM Supreme",
         "type": "reasoning",
         "provider": "azure_openai",
