@@ -1284,6 +1284,7 @@ You can do anything and everything across all domains. You have access to:
 - crowelm_training_status — check active training runs
 
 ## Crowe Logic Platform (ai.southwestmushrooms.com)
+- crowe_knowledge_base — search the proprietary CroweLM cultivation library (Lion's Mane SOP, The Mushroom Grower, species data, contamination protocols) for grounding. PREFER this for any mushroom-cultivation/mycology question: retrieve passages first, then answer citing the source titles.
 - crowe_chat — external mycology/cultivation Q&A service (domain-specific only; do NOT use for greetings or general chat)
 - crowe_vision — photo analysis via Crowe Vision (contamination detection, growth assessment)
 - crowe_grow_log — create/read/update/list cultivation grow logs

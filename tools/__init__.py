@@ -19,27 +19,47 @@ from tools.git_ops import git_status, git_diff, git_log, git_commit, git_clone
 
 # Browser automation (Playwright)
 from tools.playwright_browser import (
-    browser_navigate, browser_click, browser_type_text,
-    browser_snapshot, browser_screenshot,
+    browser_navigate,
+    browser_click,
+    browser_type_text,
+    browser_snapshot,
+    browser_screenshot,
 )
 
 # Talon Music Engine
 from tools.talon_music import (
-    talon_generate_chords, talon_generate_drums, talon_generate_melody,
-    talon_quantum_melody, talon_quantum_chord, talon_compose_emotion,
-    talon_full_composition, talon_import_midi, talon_analyze,
-    talon_list_grooves, talon_list_emotions,
+    talon_generate_chords,
+    talon_generate_drums,
+    talon_generate_melody,
+    talon_quantum_melody,
+    talon_quantum_chord,
+    talon_compose_emotion,
+    talon_full_composition,
+    talon_import_midi,
+    talon_analyze,
+    talon_list_grooves,
+    talon_list_emotions,
 )
 
 # Substrate Album Engine
 from tools.substrate import (
-    substrate_list_tracks, substrate_render_track, substrate_render_album,
-    substrate_render_status, substrate_vocal_status, substrate_mix_vocals,
-    substrate_open_track, substrate_dna,
+    substrate_list_tracks,
+    substrate_render_track,
+    substrate_render_album,
+    substrate_render_status,
+    substrate_vocal_status,
+    substrate_mix_vocals,
+    substrate_open_track,
+    substrate_dna,
 )
 
 # Quantum computing
-from tools.quantum import run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline
+from tools.quantum import (
+    run_quantum_circuit,
+    synapse_evaluate,
+    qubit_flow_execute,
+    trinity_pipeline,
+)
 
 # Vision
 from tools.vision import analyze_image, screenshot_and_analyze
@@ -47,23 +67,34 @@ from tools.video_generation import sora_generate_video
 
 # Studio capture (iPhone / webcam / screen via AVFoundation)
 from tools.capture import (
-    list_capture_devices, find_iphone_device,
-    capture_clip, capture_still,
-    start_live_capture, stop_live_capture, list_live_captures,
+    list_capture_devices,
+    find_iphone_device,
+    capture_clip,
+    capture_still,
+    start_live_capture,
+    stop_live_capture,
+    list_live_captures,
     get_session_chunks,
-    preview_device, stop_preview, enable_center_stage,
+    preview_device,
+    stop_preview,
+    enable_center_stage,
 )
 
 # Studio routing — drops clips into any tenant pipeline registered in
 # config/studio_tenants.yaml (toxicteetv, southwest-mushrooms, etc).
 from tools.studio_route import (
-    list_tenants, get_tenant, route_clip_to_tenant, tenant_inbox_peek,
+    list_tenants,
+    get_tenant,
+    route_clip_to_tenant,
+    tenant_inbox_peek,
 )
 
 # Presentation — script ingestion, teleprompter, zoom effects, chapter splits
 from tools.presentation import (
-    load_script, launch_teleprompter,
-    list_zoom_effects, apply_zoom_effect,
+    load_script,
+    launch_teleprompter,
+    list_zoom_effects,
+    apply_zoom_effect,
     split_recording_by_chapters,
 )
 
@@ -72,8 +103,11 @@ from tools.control_center import start_control_center
 
 # Shoot — multi-camera orchestration (camera registry + start_shoot/stop_shoot)
 from tools.shoot import (
-    list_cameras, get_camera,
-    start_shoot, stop_shoot, list_shoots,
+    list_cameras,
+    get_camera,
+    start_shoot,
+    stop_shoot,
+    list_shoots,
     register_cloud_camera,
 )
 
@@ -88,15 +122,23 @@ from tools.sync import sync_shoot, get_sync_offsets
 
 # Training store — records shot-selection decisions for future fine-tune
 from tools.training_store import (
-    record_shot_selection, training_stats, export_finetune_jsonl,
+    record_shot_selection,
+    training_stats,
+    export_finetune_jsonl,
 )
 
 # CroweLM training data
 from tools.crowelm import (
-    crowelm_list_datasets, crowelm_dataset_stats, crowelm_search_examples,
+    crowelm_list_datasets,
+    crowelm_dataset_stats,
+    crowelm_search_examples,
     crowelm_inspect_config,
-    crowelm_add_example, crowelm_remove_example, crowelm_export_curated,
-    crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
+    crowelm_add_example,
+    crowelm_remove_example,
+    crowelm_export_curated,
+    crowelm_prepare_training,
+    crowelm_upload_dataset,
+    crowelm_training_status,
 )
 
 # CroweLM pipeline infrastructure
@@ -116,7 +158,13 @@ from tools.public_records import (
 )
 
 # Crowe Logic platform
-from tools.crowe_logic_ai import crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop
+from tools.crowe_logic_ai import (
+    crowe_chat,
+    crowe_vision,
+    crowe_grow_log,
+    crowe_generate_sop,
+)
+from tools.cultivation_kb import crowe_knowledge_base
 
 # DeepParallel local reasoning
 from tools.deepparallel import deepparallel_query, deepparallel_status
@@ -151,13 +199,24 @@ from tools.portfolio_tools import (
 
 # iTerm2 terminal control
 from tools.iterm2_control import (
-    iterm_create_window, iterm_create_tab, iterm_split_pane,
-    iterm_send_text, iterm_read_screen, iterm_inject_output,
-    iterm_list_sessions, iterm_focus_session, iterm_set_fullscreen,
-    iterm_get_theme, iterm_set_profile_colors, iterm_set_badge,
-    iterm_broadcast, iterm_stop_broadcast,
-    iterm_alert, iterm_prompt_input,
-    iterm_set_variable, iterm_get_variable,
+    iterm_create_window,
+    iterm_create_tab,
+    iterm_split_pane,
+    iterm_send_text,
+    iterm_read_screen,
+    iterm_inject_output,
+    iterm_list_sessions,
+    iterm_focus_session,
+    iterm_set_fullscreen,
+    iterm_get_theme,
+    iterm_set_profile_colors,
+    iterm_set_badge,
+    iterm_broadcast,
+    iterm_stop_broadcast,
+    iterm_alert,
+    iterm_prompt_input,
+    iterm_set_variable,
+    iterm_get_variable,
 )
 
 # Crowe Terminal proxy is imported AFTER user_functions is defined below,
@@ -166,72 +225,141 @@ from tools.iterm2_control import (
 # All user-facing functions the agent can call
 user_functions = {
     # Filesystem
-    read_file, write_file, edit_file, list_directory,
+    read_file,
+    write_file,
+    edit_file,
+    list_directory,
     # Shell
     execute_shell,
     # Search
-    web_search, grep_search,
+    web_search,
+    grep_search,
     # Web browsing
     browse_url,
     # macOS
-    run_applescript, open_application, send_notification,
+    run_applescript,
+    open_application,
+    send_notification,
     # Git
-    git_status, git_diff, git_log, git_commit, git_clone,
+    git_status,
+    git_diff,
+    git_log,
+    git_commit,
+    git_clone,
     # Playwright browser
-    browser_navigate, browser_click, browser_type_text,
-    browser_snapshot, browser_screenshot,
+    browser_navigate,
+    browser_click,
+    browser_type_text,
+    browser_snapshot,
+    browser_screenshot,
     # Talon Music
-    talon_generate_chords, talon_generate_drums, talon_generate_melody,
-    talon_quantum_melody, talon_quantum_chord, talon_compose_emotion,
-    talon_full_composition, talon_import_midi, talon_analyze,
-    talon_list_grooves, talon_list_emotions,
+    talon_generate_chords,
+    talon_generate_drums,
+    talon_generate_melody,
+    talon_quantum_melody,
+    talon_quantum_chord,
+    talon_compose_emotion,
+    talon_full_composition,
+    talon_import_midi,
+    talon_analyze,
+    talon_list_grooves,
+    talon_list_emotions,
     # Substrate Album
-    substrate_list_tracks, substrate_render_track, substrate_render_album,
-    substrate_render_status, substrate_vocal_status, substrate_mix_vocals,
-    substrate_open_track, substrate_dna,
+    substrate_list_tracks,
+    substrate_render_track,
+    substrate_render_album,
+    substrate_render_status,
+    substrate_vocal_status,
+    substrate_mix_vocals,
+    substrate_open_track,
+    substrate_dna,
     # Quantum
-    run_quantum_circuit, synapse_evaluate, qubit_flow_execute, trinity_pipeline,
+    run_quantum_circuit,
+    synapse_evaluate,
+    qubit_flow_execute,
+    trinity_pipeline,
     # Vision
-    analyze_image, screenshot_and_analyze,
+    analyze_image,
+    screenshot_and_analyze,
     # Video generation
     sora_generate_video,
     # CroweLM training data
-    crowelm_list_datasets, crowelm_dataset_stats, crowelm_search_examples,
+    crowelm_list_datasets,
+    crowelm_dataset_stats,
+    crowelm_search_examples,
     crowelm_inspect_config,
-    crowelm_add_example, crowelm_remove_example, crowelm_export_curated,
-    crowelm_prepare_training, crowelm_upload_dataset, crowelm_training_status,
+    crowelm_add_example,
+    crowelm_remove_example,
+    crowelm_export_curated,
+    crowelm_prepare_training,
+    crowelm_upload_dataset,
+    crowelm_training_status,
     # CroweLM pipeline infrastructure
-    crowelm_audit_log, crowelm_list_staging, crowelm_promote_approved, crowelm_run_agent,
+    crowelm_audit_log,
+    crowelm_list_staging,
+    crowelm_promote_approved,
+    crowelm_run_agent,
     # Arizona public records
-    maricopa_assessor_search_property, maricopa_assessor_search_rental,
-    maricopa_assessor_get_parcel_details, maricopa_recorder_document_url,
-    adre_entity_license_search, adre_entity_license_details,
+    maricopa_assessor_search_property,
+    maricopa_assessor_search_rental,
+    maricopa_assessor_get_parcel_details,
+    maricopa_recorder_document_url,
+    adre_entity_license_search,
+    adre_entity_license_details,
     arizona_apartment_public_records_lookup,
     # Crowe Logic platform
-    crowe_chat, crowe_vision, crowe_grow_log, crowe_generate_sop,
+    crowe_chat,
+    crowe_vision,
+    crowe_grow_log,
+    crowe_generate_sop,
+    crowe_knowledge_base,
     # DeepParallel local reasoning
-    deepparallel_query, deepparallel_status,
+    deepparallel_query,
+    deepparallel_status,
     # NemoClaw sandbox
-    nemoclaw_shell, nemoclaw_health,
+    nemoclaw_shell,
+    nemoclaw_health,
     # ChatGPT Agents Studio (Responses API)
-    chatgpt_agent_invoke, chatgpt_agent_health,
+    chatgpt_agent_invoke,
+    chatgpt_agent_health,
     # Azure AI Foundry Agents
-    azure_agent_list, azure_agent_invoke, azure_agent_create,
+    azure_agent_list,
+    azure_agent_invoke,
+    azure_agent_create,
     # MCP ecosystem
-    mcp_search, mcp_list_tools, mcp_call_tool, mcp_stop_server,
+    mcp_search,
+    mcp_list_tools,
+    mcp_call_tool,
+    mcp_stop_server,
     # Crowe Portfolio knowledge plane (registry, agents, datasets, code KB)
-    portfolio_search_code, portfolio_find_canonical, portfolio_list_repos,
-    portfolio_show_repo, portfolio_list_clusters,
-    portfolio_list_agents, portfolio_get_agent,
-    portfolio_list_datasets, portfolio_stale_repos,
+    portfolio_search_code,
+    portfolio_find_canonical,
+    portfolio_list_repos,
+    portfolio_show_repo,
+    portfolio_list_clusters,
+    portfolio_list_agents,
+    portfolio_get_agent,
+    portfolio_list_datasets,
+    portfolio_stale_repos,
     # iTerm2 terminal control
-    iterm_create_window, iterm_create_tab, iterm_split_pane,
-    iterm_send_text, iterm_read_screen, iterm_inject_output,
-    iterm_list_sessions, iterm_focus_session, iterm_set_fullscreen,
-    iterm_get_theme, iterm_set_profile_colors, iterm_set_badge,
-    iterm_broadcast, iterm_stop_broadcast,
-    iterm_alert, iterm_prompt_input,
-    iterm_set_variable, iterm_get_variable,
+    iterm_create_window,
+    iterm_create_tab,
+    iterm_split_pane,
+    iterm_send_text,
+    iterm_read_screen,
+    iterm_inject_output,
+    iterm_list_sessions,
+    iterm_focus_session,
+    iterm_set_fullscreen,
+    iterm_get_theme,
+    iterm_set_profile_colors,
+    iterm_set_badge,
+    iterm_broadcast,
+    iterm_stop_broadcast,
+    iterm_alert,
+    iterm_prompt_input,
+    iterm_set_variable,
+    iterm_get_variable,
 }
 
 # Crowe Terminal control plane (active when CROWE_AGENT_TOOLS=1 and the
