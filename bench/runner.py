@@ -62,8 +62,22 @@ def resolve_tiers(*, all_tiers: bool, explicit):
     return config.FLAGSHIP_TIERS
 
 
+def _load_jsonl(path) -> list[dict]:
+    from pathlib import Path
+
+    p = Path(path)
+    if not p.exists():
+        return []
+    return [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+
+
 def main() -> int:
     import argparse
+    import datetime
+
+    from bench import config
+    from bench.report import build_scoreboard
+    from bench.scoring import score_results_file
 
     p = argparse.ArgumentParser(prog="bench", description="CroweLM benchmark runner")
     p.add_argument("--track", choices=["a", "b", "both"], default="both")
@@ -78,9 +92,28 @@ def main() -> int:
     runs = n_a * len(tiers) + n_b * len(tiers) * 2
     print(
         f"Tiers: {len(tiers)} | est. runs: {runs} "
-        f"(Track A: {n_a * len(tiers)}, Track B: {n_b * len(tiers) * 2}). "
-        "Dataset dispatch is wired in a later task; this prints the plan only."
+        f"(Track A: {n_a * len(tiers)}, Track B: {n_b * len(tiers) * 2})."
     )
+
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = config.RESULTS_DIR / ts
+
+    if args.track in ("a", "both"):
+        qa = _load_jsonl(config.DATASETS_DIR / "track_a" / "gsm8k.jsonl")[: args.limit]
+        qa += _load_jsonl(config.DATASETS_DIR / "track_a" / "mmlu.jsonl")[: args.limit]
+        run_track_a(qa, tiers, out_dir)
+    if args.track in ("b", "both"):
+        qb = _load_jsonl(config.DATASETS_DIR / "track_b" / "mycology.jsonl")[
+            : args.limit
+        ]
+        run_track_b(qb, tiers, out_dir)
+
+    raw = out_dir / "raw.jsonl"
+    if raw.exists():
+        scored = out_dir / "scored.jsonl"
+        score_results_file(raw, scored)
+        (out_dir / "scoreboard.md").write_text(build_scoreboard(scored))
+        print(f"scoreboard: {out_dir / 'scoreboard.md'}")
     return 0
 
 
@@ -105,6 +138,7 @@ def run_track_b(questions, tiers, results_dir: Path) -> Path:
                         condition=condition,
                         tier=tier,
                         question_id=q["id"],
+                        question=q.get("question", ""),
                         source_passage=q.get("source_passage", ""),
                         reference_answer=q.get("reference_answer", ""),
                         answer=r.answer,

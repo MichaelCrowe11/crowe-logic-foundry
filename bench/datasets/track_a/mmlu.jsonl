@@ -1,0 +1,3 @@
+{"id":"mmlu1","question":"The powerhouse of the cell is the: (A) nucleus (B) mitochondria (C) ribosome (D) golgi apparatus","answer":"B","type":"multiple_choice"}
+{"id":"mmlu2","question":"Which is the chemical symbol for water? (A) NaCl (B) H2O (C) NH3 (D) CH4","answer":"B","type":"multiple_choice"}
+{"id":"mmlu3","question":"The capital of France is: (A) Berlin (B) Madrid (C) Paris (D) Rome","answer":"C","type":"multiple_choice"}
