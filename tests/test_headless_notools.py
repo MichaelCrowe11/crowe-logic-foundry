@@ -1,4 +1,6 @@
-import subprocess, sys, json, os
+import json
+import subprocess
+import sys
 
 
 def _run(prompt, extra_args):
@@ -92,5 +94,8 @@ def test_no_tools_skips_tool_loading(monkeypatch):
 
 
 def test_tools_enabled_loads_tools(monkeypatch):
+    # This is the anti-vacuous-pass guard for test_no_tools_skips_tool_loading:
+    # if stream_response ever crashed BEFORE the tool-loading gate, this test
+    # would fail (load_tools never fires), exposing the false negative.
     p = _make_base_provider()
     assert _stream_with_tools(p, tools_enabled=True, monkeypatch=monkeypatch) is True

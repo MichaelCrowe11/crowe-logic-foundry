@@ -83,7 +83,12 @@ class DeepParallelProvider:
         renderer=None,
         tools_enabled=True,  # noqa: ARG002 - cluster mode never surfaces tools
     ) -> str:
-        """Run cluster mode for the latest user message, stream the answer back."""
+        """Run cluster mode for the latest user message, stream the answer back.
+
+        ``tools_enabled`` is accepted for interface parity with the other
+        providers but ignored — cluster mode never loads or surfaces per-stage
+        tools, so a caller passing False already gets a tool-free answer.
+        """
         if not self.messages:
             raise RuntimeError(
                 "DeepParallelProvider.stream_response called with no user message"
