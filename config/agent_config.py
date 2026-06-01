@@ -181,19 +181,21 @@ _BASE_MODEL_CHAIN = [
             "Route each turn to the best-fit CroweLM model under the hood."
         ),
     },
-    # ─── Tier 0: CroweLM Supreme — Claude Opus 4.7 with unified dataset knowledge ──
-    # Crowe Logic's ultimate tier: Anthropic Claude Opus 4.7 (1M context, adaptive thinking)
-    # augmented with the CroweLM Unified Dataset (145K samples across biotech, mycology,
-    # reasoning, and platform domains). Deployment pending on Michael-6302 resource;
-    # falls back to claude-opus-4-6 on 4667 until 4.7 goes live.
+    # ─── Tier 0: CroweLM Supreme — live Azure frontier (gpt-5.5) ──────────
+    # Crowe Logic's ultimate tier, backed by gpt-5.5 on the live AZURE_CORE
+    # resource (crowelm-prod-eastus2). Was hardwired to the UNSET
+    # AZURE_ANTHROPIC_* endpoint (claude-opus-4-7) — every Supreme turn timed
+    # out (~18s) and hedged to Talon. gpt-5.5 needs max_completion_tokens
+    # (handled via _REASONING_BACKENDS).
+    # FOLLOW-UP: restore Claude-Opus-on-Azure when AZURE_ANTHROPIC_* creds exist.
     {
-        "name": "claude-opus-4-7",
+        "name": "gpt-5.5",
         "label": "CroweLM Supreme",
         "type": "reasoning",
-        "provider": "anthropic",
-        "backend_name": "claude-opus-4-6",
-        "endpoint_env": "AZURE_ANTHROPIC_ENDPOINT",
-        "api_key_env": "AZURE_ANTHROPIC_API_KEY",
+        "provider": "azure_openai",
+        "backend_name": "gpt-5.5",
+        "endpoint_env": "AZURE_CORE_ENDPOINT",
+        "api_key_env": "AZURE_CORE_API_KEY",
         "aliases": [
             "supreme",
             "crowelm-supreme",
