@@ -258,13 +258,27 @@ class AnthropicProvider:
         return full_response
 
     def stream_response(
-        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+        self,
+        console,
+        render_tool_card,
+        session_state,
+        _get_orchestrator,
+        renderer=None,
+        tools_enabled=True,
     ):
-        """Stream a response with tool-calling loop using Anthropic API."""
-        from tools import user_functions
+        """Stream a response with tool-calling loop using Anthropic API.
 
-        tool_map = {f.__name__: f for f in user_functions}
-        tool_schemas = self._build_tool_schemas()
+        ``tools_enabled=False`` skips tool loading for a bare answer
+        (grounded-vs-bare benchmarks).
+        """
+        if tools_enabled:
+            from tools import user_functions
+
+            tool_map = {f.__name__: f for f in user_functions}
+            tool_schemas = self._build_tool_schemas()
+        else:
+            tool_map = {}
+            tool_schemas = []
 
         if renderer is None:
             from cli.renderer import StreamRenderer

@@ -454,7 +454,13 @@ class BaseOpenAIProvider:
         return full_response
 
     def stream_response(
-        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+        self,
+        console,
+        render_tool_card,
+        session_state,
+        _get_orchestrator,
+        renderer=None,
+        tools_enabled=True,
     ):
         """Stream a response with the tool-calling loop.
 
@@ -468,8 +474,12 @@ class BaseOpenAIProvider:
         same interface (``start``, ``set_spinner``, ``stop_spinner``,
         ``feed``, ``feed_reasoning``, ``end_segment``, ``finish``,
         ``current_segment_text``).
+
+        ``tools_enabled`` (default True) gates tool/MCP availability. When
+        False, no tool schemas are loaded or offered to the model, yielding
+        a bare answer — used by grounded-vs-bare benchmarks.
         """
-        tool_schemas, tool_map = load_tools()
+        tool_schemas, tool_map = load_tools() if tools_enabled else ([], {})
 
         if renderer is None:
             from cli.renderer import StreamRenderer

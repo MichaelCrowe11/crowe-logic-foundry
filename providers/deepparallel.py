@@ -81,6 +81,7 @@ class DeepParallelProvider:
         session_state,
         _get_orchestrator,
         renderer=None,
+        tools_enabled=True,  # noqa: ARG002 - cluster mode never surfaces tools
     ) -> str:
         """Run cluster mode for the latest user message, stream the answer back."""
         if not self.messages:

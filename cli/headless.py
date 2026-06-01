@@ -555,6 +555,19 @@ def main() -> int:
         default="auto",
         help="Model id from MODEL_CHAIN (default: first entry)",
     )
+    parser.add_argument(
+        "--tools",
+        dest="tools",
+        action="store_true",
+        default=True,
+        help="Enable agent tools / dataset MCP (default).",
+    )
+    parser.add_argument(
+        "--no-tools",
+        dest="tools",
+        action="store_false",
+        help="Disable all tools/MCP — bare model answer (for grounded-vs-bare benchmarks).",
+    )
     args = parser.parse_args()
 
     try:
@@ -648,6 +661,7 @@ def main() -> int:
             session_state=session_state,
             _get_orchestrator=_get_orchestrator,
             renderer=renderer,
+            tools_enabled=args.tools,
         )
     except KeyboardInterrupt:
         renderer.abort(session_state=session_state)

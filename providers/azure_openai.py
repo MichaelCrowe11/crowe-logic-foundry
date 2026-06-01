@@ -377,10 +377,20 @@ class AzureResponsesProvider:
         return full_response
 
     def stream_response(
-        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+        self,
+        console,
+        render_tool_card,
+        session_state,
+        _get_orchestrator,
+        renderer=None,
+        tools_enabled=True,
     ):
-        """Run a Responses API loop with local function-tool execution."""
-        tool_schemas, tool_map = load_tools()
+        """Run a Responses API loop with local function-tool execution.
+
+        ``tools_enabled=False`` skips tool loading for a bare answer
+        (grounded-vs-bare benchmarks).
+        """
+        tool_schemas, tool_map = load_tools() if tools_enabled else ([], {})
         response_tools = self._to_response_tools(tool_schemas)
 
         if renderer is None:

@@ -146,9 +146,15 @@ class WatsonxProvider:
 
     # ----------------------------------------------------------- main entry
     def stream_response(
-        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+        self,
+        console,
+        render_tool_card,
+        session_state,
+        _get_orchestrator,
+        renderer=None,
+        tools_enabled=True,
     ):
-        tool_schemas, tool_map = load_tools()
+        tool_schemas, tool_map = load_tools() if tools_enabled else ([], {})
 
         if renderer is None:
             from cli.renderer import StreamRenderer
