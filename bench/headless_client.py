@@ -5,7 +5,25 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
+
+# Substrings marking a *transient* throughput throttle (TPM/RPM) — these clear
+# in seconds, so a bounded backoff usually recovers them. Distinct from hard
+# failures (quota=0, unsupported provider) where retrying only wastes time.
+_TRANSIENT_MARKERS = (
+    "429",
+    "rate limit",
+    "ratelimitreached",
+    "too many requests",
+)
+
+
+def _is_transient(error: str | None) -> bool:
+    if not error:
+        return False
+    low = error.lower()
+    return any(marker in low for marker in _TRANSIENT_MARKERS)
 
 
 @dataclass
@@ -51,10 +69,10 @@ def parse_event_stream(text: str) -> RunResult:
     return r
 
 
-def run_headless(
+def _run_once(
     prompt: str, model: str, *, tools: bool = True, timeout: int = 300
 ) -> RunResult:
-    """Invoke crowe-logic-command for one question; return a parsed RunResult."""
+    """One headless subprocess invocation; return a parsed RunResult."""
     args = [
         sys.executable,
         "-m",
@@ -75,4 +93,28 @@ def run_headless(
     result = parse_event_stream(proc.stdout)
     if result.error is None and proc.returncode != 0:
         result.error = (proc.stderr or "nonzero exit").strip()[:500]
+    return result
+
+
+def run_headless(
+    prompt: str,
+    model: str,
+    *,
+    tools: bool = True,
+    timeout: int = 300,
+    retries: int = 2,
+    backoff_base: float = 2.0,
+) -> RunResult:
+    """Invoke crowe-logic headless for one question; return a parsed RunResult.
+
+    Retries up to ``retries`` times on *transient* throughput throttles (429 /
+    rate-limit), with exponential backoff. Hard errors (unsupported provider,
+    quota=0, timeout) fail fast — retrying them only wastes time and tokens.
+    """
+    result = _run_once(prompt, model, tools=tools, timeout=timeout)
+    attempt = 0
+    while _is_transient(result.error) and attempt < retries:
+        time.sleep(backoff_base * (2**attempt))
+        attempt += 1
+        result = _run_once(prompt, model, tools=tools, timeout=timeout)
     return result
