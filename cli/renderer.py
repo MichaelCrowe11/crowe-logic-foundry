@@ -15,7 +15,6 @@ import time
 import re
 from rich.text import Text
 from rich.live import Live
-from rich.spinner import Spinner
 
 from cli.branding import (
     DOT,
@@ -24,6 +23,7 @@ from cli.branding import (
     GOLD_DIM_HEX as DIM_GOLD,
     build_reasoning_panel,
     build_transcript_markdown,
+    thinking_spinner,
 )
 from cli.session_runtime import update_session_runtime
 
@@ -130,6 +130,7 @@ class StreamRenderer:
         if _gr_env not in {"off", "0", "false", "no", "disable", "disabled"}:
             try:
                 from cli.guardrail_pipeline import pipeline_for_session
+
                 self._guardrail_chain = pipeline_for_session()
             except ImportError:
                 pass  # guardrail module not available; behave as before
@@ -228,7 +229,9 @@ class StreamRenderer:
             now = time.monotonic()
             if now - self._last_md_update >= (1.0 / _STREAM_FPS):
                 self._last_md_update = now
-                self._md_live.update(self._build_answer_panel("".join(self._text_chunks), live=True))
+                self._md_live.update(
+                    self._build_answer_panel("".join(self._text_chunks), live=True)
+                )
 
     def feed_reasoning(self, token: str):
         """Append a reasoning/thinking token.
@@ -272,7 +275,9 @@ class StreamRenderer:
             if now - self._last_reason_update >= (1.0 / _REASONING_FPS):
                 self._last_reason_update = now
                 self._reasoning_live.update(
-                    self._build_reasoning_panel("".join(self._reasoning_chunks), live=True)
+                    self._build_reasoning_panel(
+                        "".join(self._reasoning_chunks), live=True
+                    )
                 )
 
     def end_segment(self):
@@ -295,9 +300,7 @@ class StreamRenderer:
                 self._full_text_chunks.append(tail)
                 if self._md_live is not None:
                     self._md_live.update(
-                        self._build_answer_panel(
-                            "".join(self._text_chunks), live=True
-                        )
+                        self._build_answer_panel("".join(self._text_chunks), live=True)
                     )
             # Belt-and-suspenders block scrub on the assembled segment text,
             # in case a credential straddled the hold-back/flush boundary.
@@ -338,6 +341,7 @@ class StreamRenderer:
             )
             try:
                 from cli.guardrail_pipeline import telemetry_summary
+
                 self._guardrail_telemetry = telemetry_summary(self._guardrail_chain)
             except ImportError:
                 self._guardrail_telemetry = None
@@ -351,7 +355,9 @@ class StreamRenderer:
         # Telemetry footer
         elapsed = self._t_end - self._t_start
         ttft = (self._t_first_token - self._t_start) if self._t_first_token > 0 else 0
-        stream_time = (self._t_end - self._t_first_token) if self._t_first_token > 0 else elapsed
+        stream_time = (
+            (self._t_end - self._t_first_token) if self._t_first_token > 0 else elapsed
+        )
         tps = self._token_count / stream_time if stream_time > 0 else 0
 
         parts = []
@@ -376,7 +382,9 @@ class StreamRenderer:
         if session_state is not None:
             session_state["last_tokens"] = self._token_count
             session_state["last_tps"] = tps
-            session_state["total_tokens"] = session_state.get("total_tokens", 0) + self._token_count
+            session_state["total_tokens"] = (
+                session_state.get("total_tokens", 0) + self._token_count
+            )
             self._persist_transcript(session_state)
 
     def abort(self, session_state=None):
@@ -421,8 +429,10 @@ class StreamRenderer:
 
     def _start_spinner(self, label: str):
         self._stop_spinner()
-        self._spinner = Spinner("dots", text=f"  [{GOLD}]{label}[/]", style=GOLD)
-        self._spin_live = Live(self._spinner, console=self.console, refresh_per_second=12, transient=True)
+        self._spinner = thinking_spinner(label)
+        self._spin_live = Live(
+            self._spinner, console=self.console, refresh_per_second=12, transient=True
+        )
         self._spin_live.start()
 
     def _persist_transcript(self, session_state: dict) -> None:
@@ -486,7 +496,9 @@ class StreamRenderer:
         """Select full vs compact reasoning text and panel metadata."""
         if not self._compact_reasoning:
             return text, "live" if live else "captured"
-        return self._compact_reasoning_text(text, live=live), "live" if live else "summary"
+        return self._compact_reasoning_text(
+            text, live=live
+        ), "live" if live else "summary"
 
     def _stop_spinner(self):
         if self._spin_live:

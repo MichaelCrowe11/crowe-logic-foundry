@@ -317,7 +317,8 @@
         "crowelm deepseek v3 1",
         "deepseek-v3-1",
         "DeepSeek-V3-1"
-      ]
+      ],
+      "backend_name": "DeepSeek-V4-Pro"
     },
     {
       "name": "DeepSeek-V4-Flash",
@@ -466,7 +467,8 @@
         "CroweLM Grok 4 20 Reasoning",
         "crowelm grok 4 20 reasoning",
         "grok-4-20-reasoning"
-      ]
+      ],
+      "backend_name": "grok-4-3"
     },
     {
       "name": "grok-4-3",
@@ -507,7 +509,8 @@
         "crowelm kimi k2.5",
         "kimi-k2.5",
         "Kimi-K2.5"
-      ]
+      ],
+      "backend_name": "Kimi-K2-6"
     },
     {
       "name": "Llama-3-3-70B",
@@ -788,7 +791,7 @@
       "label": "CroweLM Vision",
       "provider": "azure_openai",
       "type": "vision",
-      "backend_name": "Llama-4-Scout",
+      "backend_name": "gpt-4o",
       "endpoint_env": "AZURE_CORE_ENDPOINT",
       "api_key_env": "AZURE_CORE_API_KEY",
       "aliases": [
@@ -823,14 +826,26 @@
       ]
     },
     {
-      "name": "crowelm-dense",
-      "label": "CroweLM Dense",
+      "name": "crowelm-deepcore",
+      "label": "CroweLM Deepcore",
       "provider": "azure_openai",
       "type": "reasoning",
-      "deploy_probe": "metadata",
-      "backend_name": "Cohere-Command-A",
+      "backend_name": "DeepSeek-V3-1",
       "endpoint_env": "AZURE_CORE_ENDPOINT",
       "api_key_env": "AZURE_CORE_API_KEY",
+      "aliases": [
+        "CroweLM Deepcore",
+        "deepcore",
+        "crowelm-deepcore"
+      ]
+    },
+    {
+      "name": "crowelm-dense",
+      "label": "CroweLM Dense",
+      "provider": "ollama",
+      "type": "reasoning",
+      "deploy_probe": "metadata",
+      "backend_name": "glm-5.1:cloud",
       "aliases": [
         "CroweLM Dense",
         "dense"
@@ -907,10 +922,10 @@
     {
       "name": "DeepSeek-R1",
       "label": "CroweLM Reason",
-      "provider": "watsonx",
-      "backend_name": "meta-llama/llama-3-3-70b-instruct",
-      "endpoint_env": "WATSONX_URL",
-      "api_key_env": "WATSONX_APIKEY",
+      "provider": "azure_openai",
+      "backend_name": "DeepSeek-R1-0528",
+      "endpoint_env": "AZURE_CORE_ENDPOINT",
+      "api_key_env": "AZURE_CORE_API_KEY",
       "aliases": [
         "reason",
         "crowelm-reason",

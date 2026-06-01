@@ -16,6 +16,7 @@ Usage:
            "aliases": ["eclipse", "k26"], "prompt": "..."}
     prompt = system_prompt_for(cfg)
 """
+
 from __future__ import annotations
 
 import sys
@@ -28,18 +29,49 @@ BASE_FILE = PROMPTS_DIR / "_base.md"
 
 _warned_variants: set[str] = set()
 
+# Tier/size/lineage suffixes that denote the SAME persona as a base slug.
+# Collapsed so e.g. titan-premium and titan share one prompt file.
+_BASE_ALIAS = {
+    "titan-premium": "titan",
+    "apex-premium": "apex",
+    "sovereign-premium": "sovereign",
+    "prime-premium": "prime",
+    "dense-managed": "dense",
+    "dense-legacy": "dense",
+    "talon-super": "talon",
+    "talon-nano": "talon",
+    "talon-vision": "talon",
+    "crowelm-talon-nemoclaw": "talon",
+    "vanguard-super": "vanguard",
+    "vanguard-nano": "vanguard",
+}
 
-def slug_for(model_cfg: dict) -> str:
+
+def normalize_slug(slug: str) -> str:
+    """Collapse tier/size/lineage-suffixed slugs onto their base persona."""
+    return _BASE_ALIAS.get(slug, slug)
+
+
+def _raw_slug_for(model_cfg: dict) -> str:
     """Return the canonical filesystem slug for a model config.
 
     Preference order:
-        1. The first alias that does not contain provider prefixes.
+        1. The first filesystem-shaped alias (lowercase, no spaces, no
+           provider prefixes). Label-shaped aliases like "CroweLM Frontier"
+           are rejected here so resolution falls through to the label path,
+           which normalizes to the real slug ("frontier").
         2. The label, lowercased and stripped of "CroweLM " prefix.
         3. The full backend name with non-alphanumerics replaced by '-'.
     """
     aliases: list[str] = model_cfg.get("aliases") or []
     for alias in aliases:
-        if "/" not in alias and ":" not in alias:
+        if (
+            alias
+            and "/" not in alias
+            and ":" not in alias
+            and " " not in alias
+            and alias == alias.lower()
+        ):
             return alias
 
     label = model_cfg.get("label", "")
@@ -50,6 +82,11 @@ def slug_for(model_cfg: dict) -> str:
 
     name = model_cfg.get("name", "unknown")
     return "".join(ch if ch.isalnum() else "_" for ch in name).strip("_").lower()
+
+
+def slug_for(model_cfg: dict) -> str:
+    """Canonical filesystem slug, with tier-suffixed duplicates collapsed."""
+    return normalize_slug(_raw_slug_for(model_cfg))
 
 
 def _read_text(path: Path) -> str:

@@ -20,11 +20,12 @@ Design notes:
     - The watchdog only watches the FIRST token. Once a stream has produced
       something, we assume the provider is alive and the user can decide
       whether to wait. ScopeBudget handles the ratio problem after that.
-    - Default deadline is 60 seconds. Tunable via env var
+    - Default deadline is 5 seconds. Tunable via env var
       `CROWELM_TTFT_DEADLINE_SECONDS` for ops to dial in per environment.
     - The wrapper is generator-based, not threading-based, to avoid
       cross-thread provider state issues.
 """
+
 from __future__ import annotations
 
 import os
@@ -33,7 +34,7 @@ from typing import Any, Callable, Generator, Iterable, Iterator
 
 
 DEFAULT_TTFT_DEADLINE_SECONDS = float(
-    os.environ.get("CROWELM_TTFT_DEADLINE_SECONDS", "60.0")
+    os.environ.get("CROWELM_TTFT_DEADLINE_SECONDS", "5.0")
 )
 
 

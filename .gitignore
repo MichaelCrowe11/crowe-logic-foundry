@@ -42,3 +42,7 @@ training/youtube_corpus/sw-mushrooms/
 # them ARE committed; the data is local-only because it contains material
 # extracted from proprietary SOPs.
 data/training/
+
+# Local env backups (may contain live keys) — never commit
+.env*.bak*
+.env.env.bak-*

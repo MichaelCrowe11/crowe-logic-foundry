@@ -24,10 +24,9 @@ from rich.layout import Layout
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.spinner import Spinner
 from rich.text import Text
 
-from cli.branding import GOLD_HEX, GOLD_DIM_HEX, DOT, GUTTER
+from cli.branding import GOLD_HEX, GOLD_DIM_HEX, DOT, GUTTER, thinking_spinner
 from cli.queue_renderer import PaneEvent
 
 
@@ -42,7 +41,7 @@ class _PaneState:
     content: list[str] = field(default_factory=list)
     reasoning: list[str] = field(default_factory=list)
     spinner_label: str | None = "thinking..."
-    status: str = "thinking"   # thinking | streaming | done | error | aborted
+    status: str = "thinking"  # thinking | streaming | done | error | aborted
     tokens: int = 0
     reasoning_tokens: int = 0
     tps: float = 0.0
@@ -111,7 +110,9 @@ class DualPaneRenderer:
         )
         self._live.start()
         self._drain_thread = threading.Thread(
-            target=self._drain_loop, name="dual-renderer-drain", daemon=True,
+            target=self._drain_loop,
+            name="dual-renderer-drain",
+            daemon=True,
         )
         self._drain_thread.start()
 
@@ -122,7 +123,9 @@ class DualPaneRenderer:
         """
         deadline = None if timeout is None else time.monotonic() + timeout
         for event in self._done_flags.values():
-            remaining = None if deadline is None else max(0, deadline - time.monotonic())
+            remaining = (
+                None if deadline is None else max(0, deadline - time.monotonic())
+            )
             if not event.wait(timeout=remaining):
                 return False
         return True
@@ -206,14 +209,16 @@ class DualPaneRenderer:
         elif kind == "spinner_stop":
             pane.spinner_label = None
         elif kind == "end_segment":
-            pass   # buffer stays; we keep the running transcript in the pane
+            pass  # buffer stays; we keep the running transcript in the pane
         elif kind == "finish":
             pane.status = "done"
             pane.finished = True
             pane.spinner_label = None
             if isinstance(ev.payload, dict):
                 pane.tokens = ev.payload.get("tokens", pane.tokens)
-                pane.reasoning_tokens = ev.payload.get("reasoning_tokens", pane.reasoning_tokens)
+                pane.reasoning_tokens = ev.payload.get(
+                    "reasoning_tokens", pane.reasoning_tokens
+                )
                 pane.tps = ev.payload.get("tps", 0.0)
                 pane.ttft_ms = ev.payload.get("ttft_ms", 0.0)
                 pane.elapsed_ms = ev.payload.get("elapsed_ms", 0.0)
@@ -307,12 +312,7 @@ class DualPaneRenderer:
         if text:
             blocks.append(Markdown(text))
         if not blocks:
-            spinner = Spinner(
-                "dots",
-                text=Text(pane.spinner_label or "thinking...", style=GOLD_DIM_HEX),
-                style=GOLD_HEX,
-            )
-            blocks.append(spinner)
+            blocks.append(thinking_spinner(pane.spinner_label or "thinking"))
 
         return Group(*blocks)
 
@@ -357,4 +357,5 @@ class DualPaneRenderer:
                 padding=(0, 1),
             )
             from rich.padding import Padding
+
             self.console.print(Padding(panel, (0, 0, 0, GUTTER)))
