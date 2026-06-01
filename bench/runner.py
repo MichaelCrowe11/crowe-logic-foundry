@@ -101,6 +101,8 @@ def main() -> int:
     if args.track in ("a", "both"):
         qa = _load_jsonl(config.DATASETS_DIR / "track_a" / "gsm8k.jsonl")[: args.limit]
         qa += _load_jsonl(config.DATASETS_DIR / "track_a" / "mmlu.jsonl")[: args.limit]
+        # humaneval.jsonl is committed but intentionally not dispatched here:
+        # code (pass@1) scoring is wired separately; include it once score_code lands.
         run_track_a(qa, tiers, out_dir)
     if args.track in ("b", "both"):
         qb = _load_jsonl(config.DATASETS_DIR / "track_b" / "mycology.jsonl")[

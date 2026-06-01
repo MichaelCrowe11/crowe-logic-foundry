@@ -21,8 +21,45 @@ def test_mycology_set_has_source_grounding():
     rows = _rows(path)
     assert rows
     for r in rows:
-        assert {"id", "question", "source_passage", "reference_answer"} <= set(r)
+        assert {
+            "id",
+            "question",
+            "source_passage",
+            "source_doc",
+            "reference_answer",
+        } <= set(r)
         assert r["source_passage"].strip()
+
+
+def test_track_b_judge_grades_against_real_question(tmp_path):
+    """The spec's key fix: Track B must forward the actual question text (not
+    the question_id) into the judge prompt. Capture the prompt the judge sees."""
+    from bench.scoring import score_results_file
+
+    raw = tmp_path / "raw.jsonl"
+    raw.write_text(
+        json.dumps(
+            {
+                "track": "b",
+                "condition": "grounded",
+                "tier": "t",
+                "question_id": "m1",
+                "question": "What moisture content suits oyster blocks?",
+                "source_passage": "Oysters fruit at 60-65% moisture.",
+                "reference_answer": "60-65%",
+                "answer": "About 60-65%.",
+            }
+        )
+    )
+    seen = {}
+
+    def fake_judge(prompt):
+        seen["prompt"] = prompt
+        return "SCORE: 4"
+
+    score_results_file(raw, tmp_path / "scored.jsonl", judge=fake_judge)
+    assert "What moisture content suits oyster blocks?" in seen["prompt"]
+    assert "m1" not in seen["prompt"].split("QUESTION")[1][:60]  # not the id
 
 
 def test_score_results_file_scores_track_a(tmp_path):
