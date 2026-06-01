@@ -11,6 +11,7 @@ continues until the model produces a final assistant message.
 
 Credentials are loaded from ``~/.crowe-logic/ibm.env`` by the adapter.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,8 +34,14 @@ class WatsonxProvider:
     SUPPORTS_REASONING: bool = False
     MAX_ROUNDS: int = 20
 
-    def __init__(self, model: str, system_instructions: str, label: str = "CroweLM",
-                 max_tokens: int = 2048, temperature: float = 0.7):
+    def __init__(
+        self,
+        model: str,
+        system_instructions: str,
+        label: str = "CroweLM",
+        max_tokens: int = 2048,
+        temperature: float = 0.7,
+    ):
         # `model` here is the CroweLM brand_id (e.g. "crowelm-nexus") OR the
         # upstream watsonx model id (e.g. "ibm/granite-3-8b-instruct").
         # `watsonx_adapter.resolve` accepts either form.
@@ -97,10 +104,12 @@ class WatsonxProvider:
 
     # --------------------------------------------------------- forced finish
     def _force_final_response(self, renderer, session_state, full_response: str) -> str:
-        self.messages.append({
-            "role": "user",
-            "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
-        })
+        self.messages.append(
+            {
+                "role": "user",
+                "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+            }
+        )
 
         try:
             renderer.set_spinner("finalizing answer...")
@@ -136,12 +145,14 @@ class WatsonxProvider:
         return full_response
 
     # ----------------------------------------------------------- main entry
-    def stream_response(self, console, render_tool_card, session_state,
-                        _get_orchestrator, renderer=None):
+    def stream_response(
+        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+    ):
         tool_schemas, tool_map = load_tools()
 
         if renderer is None:
             from cli.renderer import StreamRenderer
+
             favicon = session_state.get("favicon", "")
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
@@ -190,8 +201,12 @@ class WatsonxProvider:
                     auto_continues_used < MAX_AUTO_CONTINUES
                     and looks_like_stalled_announcement(response_text)
                 ):
-                    self.messages.append({"role": "assistant", "content": response_text})
-                    self.messages.append({"role": "user", "content": AUTO_CONTINUE_NUDGE})
+                    self.messages.append(
+                        {"role": "assistant", "content": response_text}
+                    )
+                    self.messages.append(
+                        {"role": "user", "content": AUTO_CONTINUE_NUDGE}
+                    )
                     auto_continues_used += 1
                     renderer.end_segment()
                     continue
@@ -215,12 +230,16 @@ class WatsonxProvider:
                 if not isinstance(args_json, str):
                     args_json = json.dumps(args_json)
                 local_id = self._next_tool_call_id()
-                assistant_msg["tool_calls"].append({
-                    "id": local_id,
-                    "type": "function",
-                    "function": {"name": name, "arguments": args_json},
-                })
-                normalized_calls.append({"id": local_id, "name": name, "arguments": args_json})
+                assistant_msg["tool_calls"].append(
+                    {
+                        "id": local_id,
+                        "type": "function",
+                        "function": {"name": name, "arguments": args_json},
+                    }
+                )
+                normalized_calls.append(
+                    {"id": local_id, "name": name, "arguments": args_json}
+                )
             self.messages.append(assistant_msg)
 
             round_tool_names: list[str] = []
@@ -235,10 +254,12 @@ class WatsonxProvider:
                 func = tool_map.get(name)
                 failed = False
                 if name == "invalid_tool_call":
-                    result_str = json.dumps({
-                        "error": "Model emitted a tool call without a function name.",
-                        "raw_arguments": args_json[:2000],
-                    })
+                    result_str = json.dumps(
+                        {
+                            "error": "Model emitted a tool call without a function name.",
+                            "raw_arguments": args_json[:2000],
+                        }
+                    )
                     failed = True
                 elif func:
                     try:
@@ -256,13 +277,16 @@ class WatsonxProvider:
                 renderer.stop_spinner()
 
                 render_tool_card(
-                    console, name, args_json,
+                    console,
+                    name,
+                    args_json,
                     status="fail" if failed else "ok",
                     result=result_str,
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
                 from cli.branding import record_action
+
                 record_action(
                     session_state,
                     name=name,
@@ -279,17 +303,25 @@ class WatsonxProvider:
                     duration_ms=duration_ms,
                 )
 
-                self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": call["id"],
-                    "content": result_str[:50000],
-                })
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": result_str[:50000],
+                    }
+                )
 
-            if should_send_tool_budget_warning(_round + 1, round_tool_names, budget_warning_sent):
-                self.messages.append({
-                    "role": "user",
-                    "content": build_tool_budget_warning(_round + 1, self.MAX_ROUNDS),
-                })
+            if should_send_tool_budget_warning(
+                _round + 1, round_tool_names, budget_warning_sent
+            ):
+                self.messages.append(
+                    {
+                        "role": "user",
+                        "content": build_tool_budget_warning(
+                            _round + 1, self.MAX_ROUNDS
+                        ),
+                    }
+                )
                 budget_warning_sent = True
         else:
             return self._force_final_response(renderer, session_state, full_response)

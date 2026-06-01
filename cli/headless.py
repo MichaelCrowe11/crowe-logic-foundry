@@ -80,7 +80,9 @@ def emit_error(message: str, kind: str = "runtime") -> None:
     emit("error", message=message, kind=kind)
 
 
-def _meter_turn(*, tokens: int, reasoning_tokens: int, model_label: str, elapsed_ms: int) -> None:
+def _meter_turn(
+    *, tokens: int, reasoning_tokens: int, model_label: str, elapsed_ms: int
+) -> None:
     """POST a credit-consume request to the control plane.
 
     Fire-and-forget. The PAT identifies which workspace to debit; if
@@ -96,7 +98,7 @@ def _meter_turn(*, tokens: int, reasoning_tokens: int, model_label: str, elapsed
         "CROWE_LOGIC_API_URL", "https://api.crowelogic.com"
     ).rstrip("/")
     # Extract workspace id from the PAT format: crowe_pat_<workspace>_<secret>
-    body = pat[len("crowe_pat_"):]
+    body = pat[len("crowe_pat_") :]
     parts = body.split("_", 1)
     if len(parts) != 2:
         return
@@ -106,18 +108,21 @@ def _meter_turn(*, tokens: int, reasoning_tokens: int, model_label: str, elapsed
     amount = max(1, (total_tokens + 249) // 250)
     try:
         import urllib.request, json as _json
+
         req = urllib.request.Request(
             f"{base_url}/api/workspaces/{workspace_id}/credits/consume",
-            data=_json.dumps({
-                "amount": amount,
-                "reason": "turn",
-                "model_label": model_label,
-                "metadata": {
-                    "tokens": int(tokens),
-                    "reasoning_tokens": int(reasoning_tokens),
-                    "elapsed_ms": int(elapsed_ms),
-                },
-            }).encode("utf-8"),
+            data=_json.dumps(
+                {
+                    "amount": amount,
+                    "reason": "turn",
+                    "model_label": model_label,
+                    "metadata": {
+                        "tokens": int(tokens),
+                        "reasoning_tokens": int(reasoning_tokens),
+                        "elapsed_ms": int(elapsed_ms),
+                    },
+                }
+            ).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {pat}",
@@ -201,7 +206,8 @@ class JsonStreamRenderer:
         self._persist_transcript()
         ttft_ms = (
             int((self._t_first_token - self._t_start) * 1000)
-            if self._t_first_token > 0 else 0
+            if self._t_first_token > 0
+            else 0
         )
         elapsed_ms = int((self._t_end - self._t_start) * 1000)
         emit(
@@ -288,10 +294,13 @@ def _get_orchestrator():
         return _orchestrator_singleton
     try:
         from crowe_synapse_engine import Orchestrator
+
         _orchestrator_singleton = Orchestrator(
             db_path=os.path.expanduser("~/.crowe-logic/memory.db"),
             agents_dir=os.path.join(_PACKAGE_ROOT, "agents"),
-            templates_dir=os.path.join(_PACKAGE_ROOT, "crowe_synapse_engine", "templates"),
+            templates_dir=os.path.join(
+                _PACKAGE_ROOT, "crowe_synapse_engine", "templates"
+            ),
         )
     except Exception:
         _orchestrator_singleton = _NoopOrchestrator()
@@ -306,14 +315,16 @@ def _get_orchestrator():
 # skipped during auto-selection so the chain falls through to the next
 # supported entry instead of raising "Headless mode does not support
 # provider kind 'X'".
-_HEADLESS_SUPPORTED_PROVIDERS = frozenset({
-    "openrouter",
-    "ollama",
-    "nvidia",
-    "openai_compat",
-    "azure_openai",
-    "anthropic",
-})
+_HEADLESS_SUPPORTED_PROVIDERS = frozenset(
+    {
+        "openrouter",
+        "ollama",
+        "nvidia",
+        "openai_compat",
+        "azure_openai",
+        "anthropic",
+    }
+)
 
 
 def _is_provider_credentialed(cfg: dict) -> bool:
@@ -330,17 +341,22 @@ def _is_provider_credentialed(cfg: dict) -> bool:
     if kind == "ollama":
         return True
     if kind == "nvidia":
-        return bool(os.environ.get("NVIDIA_NIM_ENDPOINT", "")) and bool(os.environ.get("NVIDIA_API_KEY", ""))
+        return bool(os.environ.get("NVIDIA_NIM_ENDPOINT", "")) and bool(
+            os.environ.get("NVIDIA_API_KEY", "")
+        )
     if kind == "openai_compat":
         endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
         return bool(os.environ.get(endpoint_var, ""))
     if kind == "azure_openai":
         from config.agent_config import azure_openai_runtime_config
+
         return not azure_openai_runtime_config(cfg)["missing"]
     if kind == "anthropic":
         endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
         api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
-        return bool(os.environ.get(endpoint_var, "")) and bool(os.environ.get(api_key_var, ""))
+        return bool(os.environ.get(endpoint_var, "")) and bool(
+            os.environ.get(api_key_var, "")
+        )
     return False
 
 
@@ -373,7 +389,11 @@ def _build_provider(model_id: str, *, session_id: str = ""):
     qualifying model. For an explicit model_id naming an unsupported
     provider, we still raise so the caller sees what went wrong.
     """
-    from config.agent_config import MODEL_CHAIN, resolve_model_config, provider_model_name
+    from config.agent_config import (
+        MODEL_CHAIN,
+        resolve_model_config,
+        provider_model_name,
+    )
 
     chain = list(MODEL_CHAIN)
     if not chain:
@@ -403,6 +423,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
     if provider_kind == "openrouter":
         from config.agent_config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL
         from providers.openrouter import OpenRouterProvider
+
         if not OPENROUTER_API_KEY:
             raise RuntimeError("OPENROUTER_API_KEY is not set")
         return OpenRouterProvider(
@@ -416,6 +437,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
     if provider_kind == "ollama":
         from config.agent_config import OLLAMA_BASE_URL
         from providers.ollama import OllamaProvider
+
         return OllamaProvider(
             model=name,
             system_instructions=system_instructions,
@@ -426,6 +448,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
     if provider_kind == "nvidia":
         from config.agent_config import NVIDIA_NIM_ENDPOINT, NVIDIA_API_KEY
         from providers.nvidia import NvidiaProvider
+
         if not NVIDIA_NIM_ENDPOINT or not NVIDIA_API_KEY:
             raise RuntimeError(
                 "NVIDIA_NIM_ENDPOINT and NVIDIA_API_KEY must both be set "
@@ -441,14 +464,14 @@ def _build_provider(model_id: str, *, session_id: str = ""):
 
     if provider_kind == "openai_compat":
         from providers.hosted_openai import HostedOpenAIProvider
+
         endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
         api_key_var = cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
         endpoint = os.environ.get(endpoint_var, "")
         api_key = os.environ.get(api_key_var, "")
         if not endpoint:
             raise RuntimeError(
-                f"Hosted model '{label}' is missing an endpoint "
-                f"({endpoint_var})"
+                f"Hosted model '{label}' is missing an endpoint ({endpoint_var})"
             )
         return HostedOpenAIProvider(
             model=name,
@@ -461,13 +484,18 @@ def _build_provider(model_id: str, *, session_id: str = ""):
     if provider_kind == "azure_openai":
         from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
         from config.agent_config import azure_openai_runtime_config
+
         runtime = azure_openai_runtime_config(cfg)
         if runtime["missing"]:
             raise RuntimeError(
                 f"Azure model '{label}' is missing credentials "
                 f"({' / '.join(runtime['missing'])})"
             )
-        provider_cls = AzureResponsesProvider if cfg.get("surface") == "responses" else AzureOpenAIProvider
+        provider_cls = (
+            AzureResponsesProvider
+            if cfg.get("surface") == "responses"
+            else AzureOpenAIProvider
+        )
         return provider_cls(
             model=runtime["model"],
             system_instructions=system_instructions,
@@ -478,6 +506,7 @@ def _build_provider(model_id: str, *, session_id: str = ""):
 
     if provider_kind == "anthropic":
         from providers.anthropic import AnthropicProvider
+
         endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
         api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
         endpoint = os.environ.get(endpoint_var, "")
@@ -495,7 +524,9 @@ def _build_provider(model_id: str, *, session_id: str = ""):
             label=label,
         )
 
-    raise RuntimeError(f"Headless mode does not support provider kind '{provider_kind}'")
+    raise RuntimeError(
+        f"Headless mode does not support provider kind '{provider_kind}'"
+    )
 
 
 # ── Main ────────────────────────────────────────────────────────────────
@@ -516,9 +547,14 @@ def main() -> int:
         prog="crowe-logic-command",
         description="Run one Crowe Logic Command turn and emit JSON events.",
     )
-    parser.add_argument("--input", help="Read JSON input from this file instead of stdin")
-    parser.add_argument("--model", default="auto",
-                        help="Model id from MODEL_CHAIN (default: first entry)")
+    parser.add_argument(
+        "--input", help="Read JSON input from this file instead of stdin"
+    )
+    parser.add_argument(
+        "--model",
+        default="auto",
+        help="Model id from MODEL_CHAIN (default: first entry)",
+    )
     args = parser.parse_args()
 
     try:
@@ -540,7 +576,8 @@ def main() -> int:
     # only the user message landed in history). Filtering here covers
     # every caller that talks to this script, not just the IDE.
     messages = [
-        m for m in messages
+        m
+        for m in messages
         if isinstance(m, dict)
         and m.get("role") in ("user", "assistant")
         and isinstance(m.get("content"), str)
@@ -556,11 +593,19 @@ def main() -> int:
     model_id = payload.get("model") or args.model
     session_id = payload.get("session") or "headless"
 
-    local_response = handle_local_control_command(messages[-1].get("content") or "", session_id=session_id)
+    local_response = handle_local_control_command(
+        messages[-1].get("content") or "", session_id=session_id
+    )
     if local_response is not None:
         emit("ready")
         emit("token", delta=local_response)
-        emit("done", tokens=max(1, len(local_response.split())), reasoning_tokens=0, elapsed_ms=0, ttft_ms=0)
+        emit(
+            "done",
+            tokens=max(1, len(local_response.split())),
+            reasoning_tokens=0,
+            elapsed_ms=0,
+            ttft_ms=0,
+        )
         return 0
 
     try:
@@ -581,7 +626,9 @@ def main() -> int:
             continue
         role = msg.get("role")
         if role in ("user", "assistant"):
-            provider.messages.append({"role": role, "content": msg.get("content") or ""})
+            provider.messages.append(
+                {"role": role, "content": msg.get("content") or ""}
+            )
     provider.add_user_message(messages[-1].get("content") or "")
 
     session_state = {
@@ -590,7 +637,9 @@ def main() -> int:
         "session_id": session_id,
         "active_model": getattr(provider, "label", ""),
     }
-    renderer = JsonStreamRenderer(session_id=session_id, model_label=getattr(provider, "label", ""))
+    renderer = JsonStreamRenderer(
+        session_id=session_id, model_label=getattr(provider, "label", "")
+    )
 
     try:
         provider.stream_response(

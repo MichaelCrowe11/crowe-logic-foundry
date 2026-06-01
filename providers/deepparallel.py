@@ -84,7 +84,9 @@ class DeepParallelProvider:
     ) -> str:
         """Run cluster mode for the latest user message, stream the answer back."""
         if not self.messages:
-            raise RuntimeError("DeepParallelProvider.stream_response called with no user message")
+            raise RuntimeError(
+                "DeepParallelProvider.stream_response called with no user message"
+            )
         prompt = self.messages[-1]["content"]
 
         # Honor session-level system instructions by prepending them to the
@@ -93,19 +95,25 @@ class DeepParallelProvider:
         # in markdown", "be concise") still flows through this prefix.
         if self.system_instructions:
             effective_prompt = (
-                f"Session context:\n{self.system_instructions}\n\n"
-                f"Question:\n{prompt}"
+                f"Session context:\n{self.system_instructions}\n\nQuestion:\n{prompt}"
             )
         else:
             effective_prompt = prompt
 
         if renderer is None:
             from cli.renderer import StreamRenderer
-            favicon = session_state.get("favicon", "") if isinstance(session_state, dict) else ""
+
+            favicon = (
+                session_state.get("favicon", "")
+                if isinstance(session_state, dict)
+                else ""
+            )
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
         renderer.start()
-        renderer.set_spinner("CroweLM DeepParallel — analyzing across persona clusters...")
+        renderer.set_spinner(
+            "CroweLM DeepParallel — analyzing across persona clusters..."
+        )
 
         # Resolve the cluster entry point. This import lives inside
         # stream_response so the provider module load doesn't fail when
@@ -132,15 +140,19 @@ class DeepParallelProvider:
         heartbeat_stop = {"stop": False}
 
         async def _run_cluster_with_heartbeat():
-            cluster_task = asyncio.create_task(self._cluster_query(
-                prompt=effective_prompt,
-                preset=self.preset,
-                budget_usd=5.00,  # cluster cost ceiling; sized for ~10x typical
-                timeout_s=self.timeout_s,
-                grounding_enabled=self.grounding_enabled,
-                judge_backend=self.judge_backend,
-            ))
-            heartbeat_task = asyncio.create_task(self._heartbeat(renderer, heartbeat_stop))
+            cluster_task = asyncio.create_task(
+                self._cluster_query(
+                    prompt=effective_prompt,
+                    preset=self.preset,
+                    budget_usd=5.00,  # cluster cost ceiling; sized for ~10x typical
+                    timeout_s=self.timeout_s,
+                    grounding_enabled=self.grounding_enabled,
+                    judge_backend=self.judge_backend,
+                )
+            )
+            heartbeat_task = asyncio.create_task(
+                self._heartbeat(renderer, heartbeat_stop)
+            )
             try:
                 result = await cluster_task
             finally:
@@ -168,10 +180,13 @@ class DeepParallelProvider:
             # fall back to the next tier in MODEL_CHAIN.
             import logging
             import uuid
+
             error_id = uuid.uuid4().hex[:12]
             logging.getLogger(__name__).error(
                 "deepparallel.cluster_failure error_id=%s exc=%s: %s",
-                error_id, type(exc).__name__, exc,
+                error_id,
+                type(exc).__name__,
+                exc,
             )
             if isinstance(session_state, dict):
                 session_state["deepparallel_last_error"] = {
@@ -180,8 +195,9 @@ class DeepParallelProvider:
                     "message": str(exc)[:500],
                 }
             renderer.stop_spinner()
-            renderer.abort(session_state=session_state) if hasattr(renderer, "abort") \
-                else renderer.finish(session_state=session_state)
+            renderer.abort(session_state=session_state) if hasattr(
+                renderer, "abort"
+            ) else renderer.finish(session_state=session_state)
             # Re-raise so the foundry CLI's existing exception-handling
             # path (tier fallback, error display, retry-with-different-model)
             # can engage. The error_id is in the log for support correlation.
@@ -193,7 +209,10 @@ class DeepParallelProvider:
         renderer.stop_spinner()
         renderer.begin_stream()
 
-        text = result.synthesized_answer or "(CroweLM DeepParallel returned no synthesized answer.)"
+        text = (
+            result.synthesized_answer
+            or "(CroweLM DeepParallel returned no synthesized answer.)"
+        )
 
         # Surface synthesis-fallback signal: when the judge call failed and
         # the orchestrator fell back to cluster concatenation (or single-
@@ -204,10 +223,12 @@ class DeepParallelProvider:
         synthesis_mode = result.synthesis_metadata.get("synthesis")
         if fallback_active or synthesis_mode == "single_cluster_passthrough":
             import logging
+
             reason = result.synthesis_metadata.get("fallback_reason") or synthesis_mode
             logging.getLogger(__name__).warning(
                 "deepparallel.synthesis_fallback ledger_id=%s reason=%s",
-                result.ledger_id, reason,
+                result.ledger_id,
+                reason,
             )
             text = text + (
                 "\n\n---\n*CroweLM DeepParallel synthesis backstop engaged; "
@@ -225,17 +246,21 @@ class DeepParallelProvider:
         # The brand-mask render keeps customer-visible fields branded; the
         # _internal_* keys are present for cost reconciliation only.
         if isinstance(session_state, dict):
-            session_state.setdefault("deepparallel_runs", []).append({
-                "preset": self.preset,
-                "total_cost_usd": result.total_cost_usd,
-                "total_latency_ms": result.total_latency_ms,
-                "surviving_clusters": result.synthesis_metadata.get("surviving_clusters"),
-                "cluster_count": result.synthesis_metadata.get("cluster_count"),
-                "dropped_personas": list(result.dropped_cluster_personas),
-                "judge_model": result.synthesis_metadata.get("judge_model"),
-                "ledger_id": result.ledger_id,
-                "synthesis_fallback": fallback_active,
-            })
+            session_state.setdefault("deepparallel_runs", []).append(
+                {
+                    "preset": self.preset,
+                    "total_cost_usd": result.total_cost_usd,
+                    "total_latency_ms": result.total_latency_ms,
+                    "surviving_clusters": result.synthesis_metadata.get(
+                        "surviving_clusters"
+                    ),
+                    "cluster_count": result.synthesis_metadata.get("cluster_count"),
+                    "dropped_personas": list(result.dropped_cluster_personas),
+                    "judge_model": result.synthesis_metadata.get("judge_model"),
+                    "ledger_id": result.ledger_id,
+                    "synthesis_fallback": fallback_active,
+                }
+            )
 
         renderer.end_segment()
         renderer.finish(session_state=session_state)

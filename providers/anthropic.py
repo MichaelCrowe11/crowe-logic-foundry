@@ -34,8 +34,14 @@ class AnthropicProvider:
     SUPPORTS_REASONING: bool = True
     MAX_ROUNDS: int = 20
 
-    def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
-                 label: str = "Claude"):
+    def __init__(
+        self,
+        model: str,
+        system_instructions: str,
+        endpoint: str,
+        api_key: str,
+        label: str = "Claude",
+    ):
         from anthropic import Anthropic
 
         self.model = model
@@ -91,7 +97,10 @@ class AnthropicProvider:
         output = delta.get("output_tokens", start.get("output_tokens", 0))
 
         session_state["last_input_tokens"] = (
-            session_state.get("last_input_tokens", 0) + fresh_in + cache_read + cache_write
+            session_state.get("last_input_tokens", 0)
+            + fresh_in
+            + cache_read
+            + cache_write
         )
         session_state["last_cached_input_tokens"] = (
             session_state.get("last_cached_input_tokens", 0) + cache_read
@@ -116,12 +125,16 @@ class AnthropicProvider:
         if not raw_input:
             return {}, None
         from cli.tool_args import parse_tool_arguments
+
         try:
             parsed, _recovered = parse_tool_arguments(raw_input)
         except Exception as exc:
             return {}, f"{type(exc).__name__}: {exc}"
         if not isinstance(parsed, dict):
-            return {}, f"TypeError: tool arguments must decode to an object, got {type(parsed).__name__}"
+            return (
+                {},
+                f"TypeError: tool arguments must decode to an object, got {type(parsed).__name__}",
+            )
         return parsed, None
 
     def _build_tool_schemas(self) -> list[dict]:
@@ -172,15 +185,17 @@ class AnthropicProvider:
                 if param.default is inspect.Parameter.empty:
                     required.append(pname)
 
-            tools.append({
-                "name": func.__name__,
-                "description": description,
-                "input_schema": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
-                },
-            })
+            tools.append(
+                {
+                    "name": func.__name__,
+                    "description": description,
+                    "input_schema": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required,
+                    },
+                }
+            )
 
         # Mark the last tool with cache_control so the whole tools array
         # is treated as a cacheable prefix. Anthropic applies caching
@@ -192,10 +207,12 @@ class AnthropicProvider:
 
     def _force_final_response(self, renderer, session_state, full_response: str) -> str:
         """Run one final no-tools pass after the hard tool budget is exhausted."""
-        self.messages.append({
-            "role": "user",
-            "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
-        })
+        self.messages.append(
+            {
+                "role": "user",
+                "content": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+            }
+        )
 
         try:
             renderer.set_spinner("finalizing answer...")
@@ -240,8 +257,9 @@ class AnthropicProvider:
         renderer.finish(session_state=session_state)
         return full_response
 
-    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
-                        renderer=None):
+    def stream_response(
+        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+    ):
         """Stream a response with tool-calling loop using Anthropic API."""
         from tools import user_functions
 
@@ -250,6 +268,7 @@ class AnthropicProvider:
 
         if renderer is None:
             from cli.renderer import StreamRenderer
+
             favicon = session_state.get("favicon", "")
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
@@ -287,13 +306,23 @@ class AnthropicProvider:
                     # fresh input tokens distinguish cache-hits from cold).
                     if event.type == "message_start":
                         msg = getattr(event, "message", None)
-                        usage_obj = getattr(msg, "usage", None) if msg is not None else None
+                        usage_obj = (
+                            getattr(msg, "usage", None) if msg is not None else None
+                        )
                         if usage_obj is not None:
                             usage_start = {
-                                "input_tokens": getattr(usage_obj, "input_tokens", 0) or 0,
-                                "cache_creation_input_tokens": getattr(usage_obj, "cache_creation_input_tokens", 0) or 0,
-                                "cache_read_input_tokens": getattr(usage_obj, "cache_read_input_tokens", 0) or 0,
-                                "output_tokens": getattr(usage_obj, "output_tokens", 0) or 0,
+                                "input_tokens": getattr(usage_obj, "input_tokens", 0)
+                                or 0,
+                                "cache_creation_input_tokens": getattr(
+                                    usage_obj, "cache_creation_input_tokens", 0
+                                )
+                                or 0,
+                                "cache_read_input_tokens": getattr(
+                                    usage_obj, "cache_read_input_tokens", 0
+                                )
+                                or 0,
+                                "output_tokens": getattr(usage_obj, "output_tokens", 0)
+                                or 0,
                             }
 
                     # Content block start
@@ -326,7 +355,8 @@ class AnthropicProvider:
                                 block_index = getattr(event, "index", None)
                                 target_block = (
                                     tool_use_blocks_by_index.get(block_index)
-                                    if block_index is not None else None
+                                    if block_index is not None
+                                    else None
                                 ) or tool_use_blocks[-1]
                                 target_block["input"] += event.delta.partial_json
 
@@ -335,7 +365,8 @@ class AnthropicProvider:
                         usage_obj = getattr(event, "usage", None)
                         if usage_obj is not None:
                             usage_delta = {
-                                "output_tokens": getattr(usage_obj, "output_tokens", 0) or 0,
+                                "output_tokens": getattr(usage_obj, "output_tokens", 0)
+                                or 0,
                             }
 
                     # Message stop
@@ -382,12 +413,14 @@ class AnthropicProvider:
             if response_text.strip():
                 assistant_content.append({"type": "text", "text": response_text})
             for tb in tool_use_blocks:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tb["id"],
-                    "name": tb["name"],
-                    "input": tb["parsed_input"],
-                })
+                assistant_content.append(
+                    {
+                        "type": "tool_use",
+                        "id": tb["id"],
+                        "name": tb["name"],
+                        "input": tb["parsed_input"],
+                    }
+                )
 
             self.messages.append({"role": "assistant", "content": assistant_content})
 
@@ -402,15 +435,18 @@ class AnthropicProvider:
                 func = tool_map.get(name)
                 failed = False
                 if tb.get("input_error"):
-                    result_str = json.dumps({
-                        "error": f"Invalid tool arguments for {name}: {tb['input_error']}",
-                        "raw_arguments": args_json[:2000],
-                    })
+                    result_str = json.dumps(
+                        {
+                            "error": f"Invalid tool arguments for {name}: {tb['input_error']}",
+                            "raw_arguments": args_json[:2000],
+                        }
+                    )
                     failed = True
                 elif func:
                     try:
                         args = tb.get("parsed_input", {})
                         from providers._shared import _coerce_tool_args
+
                         args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
@@ -425,44 +461,61 @@ class AnthropicProvider:
                 renderer.stop_spinner()
 
                 render_tool_card(
-                    console, name, json.dumps(args_json) if isinstance(args_json, dict) else args_json,
+                    console,
+                    name,
+                    json.dumps(args_json) if isinstance(args_json, dict) else args_json,
                     status="fail" if failed else "ok",
                     result=result_str,
                     duration_ms=duration_ms,
                 )
                 session_state["tool_count"] += 1
                 from cli.branding import record_action
+
                 record_action(
                     session_state,
                     name=name,
                     status="fail" if failed else "ok",
                     result=result_str,
                     duration_ms=duration_ms,
-                    args=json.dumps(args_json) if isinstance(args_json, dict) else args_json,
+                    args=json.dumps(args_json)
+                    if isinstance(args_json, dict)
+                    else args_json,
                 )
 
                 _get_orchestrator().record_execution(
                     tool_name=name,
-                    arguments=json.dumps(args_json) if isinstance(args_json, dict) else args_json,
+                    arguments=json.dumps(args_json)
+                    if isinstance(args_json, dict)
+                    else args_json,
                     output=result_str[:10000],
                     duration_ms=duration_ms,
                 )
 
                 # Anthropic requires tool_result blocks
-                self.messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tb["id"],
-                        "content": result_str[:50000],
-                    }],
-                })
+                self.messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tb["id"],
+                                "content": result_str[:50000],
+                            }
+                        ],
+                    }
+                )
 
-            if should_send_tool_budget_warning(_round + 1, round_tool_names, budget_warning_sent):
-                self.messages.append({
-                    "role": "user",
-                    "content": build_tool_budget_warning(_round + 1, self.MAX_ROUNDS),
-                })
+            if should_send_tool_budget_warning(
+                _round + 1, round_tool_names, budget_warning_sent
+            ):
+                self.messages.append(
+                    {
+                        "role": "user",
+                        "content": build_tool_budget_warning(
+                            _round + 1, self.MAX_ROUNDS
+                        ),
+                    }
+                )
                 budget_warning_sent = True
         else:
             return self._force_final_response(renderer, session_state, full_response)

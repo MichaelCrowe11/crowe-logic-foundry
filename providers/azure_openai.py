@@ -49,8 +49,14 @@ class AzureOpenAIProvider(BaseOpenAIProvider):
     DefaultAzureCredential, no Azure AI Agents SDK, no `.agent_id` file.
     """
 
-    def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
-                 label: str = "CroweLM"):
+    def __init__(
+        self,
+        model: str,
+        system_instructions: str,
+        endpoint: str,
+        api_key: str,
+        label: str = "CroweLM",
+    ):
         super().__init__(model, system_instructions, label)
 
         # Azure surface looks like:
@@ -77,8 +83,14 @@ class AzureResponsesProvider:
         "summary": "auto",
     }
 
-    def __init__(self, model: str, system_instructions: str, endpoint: str, api_key: str,
-                 label: str = "CroweLM"):
+    def __init__(
+        self,
+        model: str,
+        system_instructions: str,
+        endpoint: str,
+        api_key: str,
+        label: str = "CroweLM",
+    ):
         self.model = model
         self.label = label
         self.system_instructions = system_instructions
@@ -102,12 +114,14 @@ class AzureResponsesProvider:
         response_tools = []
         for schema in tool_schemas:
             fn = schema.get("function", {})
-            response_tools.append({
-                "type": "function",
-                "name": fn.get("name", ""),
-                "description": fn.get("description", ""),
-                "parameters": fn.get("parameters", {}),
-            })
+            response_tools.append(
+                {
+                    "type": "function",
+                    "name": fn.get("name", ""),
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {}),
+                }
+            )
         return response_tools
 
     def _build_input_items(self) -> list[dict]:
@@ -117,33 +131,39 @@ class AzureResponsesProvider:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role in ("user", "system", "developer"):
-                items.append({
-                    "type": "message",
-                    "role": role,
-                    "content": [{"type": "input_text", "text": str(content)}],
-                })
+                items.append(
+                    {
+                        "type": "message",
+                        "role": role,
+                        "content": [{"type": "input_text", "text": str(content)}],
+                    }
+                )
             elif role == "assistant":
                 # Responses API doesn't accept a bare assistant role in Message
                 # input items, so preserve prior assistant turns as developer
                 # context on the first call.
-                items.append({
-                    "type": "message",
-                    "role": "developer",
-                    "content": [{
-                        "type": "input_text",
-                        "text": f"Previous assistant reply for context:\n{content}",
-                    }],
-                })
+                items.append(
+                    {
+                        "type": "message",
+                        "role": "developer",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": f"Previous assistant reply for context:\n{content}",
+                            }
+                        ],
+                    }
+                )
         self.messages = []
         return items
 
     @staticmethod
     def _emit_final_reasoning(response: Any, renderer) -> None:
         """Flush reasoning summaries from the final response if streaming missed them."""
-        for item in (getattr(response, "output", []) or []):
+        for item in getattr(response, "output", []) or []:
             if getattr(item, "type", None) != "reasoning":
                 continue
-            for summary in (getattr(item, "summary", []) or []):
+            for summary in getattr(item, "summary", []) or []:
                 text = getattr(summary, "text", "") or ""
                 if text:
                     renderer.feed_reasoning(text)
@@ -198,7 +218,8 @@ class AzureResponsesProvider:
     ) -> list[Any]:
         """Return function calls from the final response, or stream fallback."""
         function_calls = [
-            item for item in (getattr(response, "output", []) or [])
+            item
+            for item in (getattr(response, "output", []) or [])
             if getattr(item, "type", None) == "function_call"
         ]
         if function_calls:
@@ -208,12 +229,14 @@ class AzureResponsesProvider:
         for _, call in sorted(stream_function_calls.items()):
             if not any(call.values()):
                 continue
-            fallback_calls.append(SimpleNamespace(
-                type="function_call",
-                call_id=call["call_id"],
-                name=call["name"],
-                arguments=call["arguments"],
-            ))
+            fallback_calls.append(
+                SimpleNamespace(
+                    type="function_call",
+                    call_id=call["call_id"],
+                    name=call["name"],
+                    arguments=call["arguments"],
+                )
+            )
         return fallback_calls
 
     @staticmethod
@@ -227,10 +250,13 @@ class AzureResponsesProvider:
         assistant_text: str,
     ) -> None:
         """Keep enough local history to recover when Azure drops response.completed."""
-        self.messages.extend({
-            "role": msg.get("role", "user"),
-            "content": msg.get("content", ""),
-        } for msg in queued_messages)
+        self.messages.extend(
+            {
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", ""),
+            }
+            for msg in queued_messages
+        )
         if assistant_text.strip():
             self.messages.append({"role": "assistant", "content": assistant_text})
 
@@ -262,14 +288,18 @@ class AzureResponsesProvider:
     ) -> str:
         """Run one final no-tools pass after the hard tool budget is exhausted."""
         final_input = list(pending_input)
-        final_input.append({
-            "type": "message",
-            "role": "developer",
-            "content": [{
-                "type": "input_text",
-                "text": build_forced_final_answer_prompt(self.MAX_ROUNDS),
-            }],
-        })
+        final_input.append(
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": build_forced_final_answer_prompt(self.MAX_ROUNDS),
+                    }
+                ],
+            }
+        )
 
         saw_reasoning_delta = False
         saw_text_delta = False
@@ -346,14 +376,16 @@ class AzureResponsesProvider:
         renderer.finish(session_state=session_state)
         return full_response
 
-    def stream_response(self, console, render_tool_card, session_state, _get_orchestrator,
-                        renderer=None):
+    def stream_response(
+        self, console, render_tool_card, session_state, _get_orchestrator, renderer=None
+    ):
         """Run a Responses API loop with local function-tool execution."""
         tool_schemas, tool_map = load_tools()
         response_tools = self._to_response_tools(tool_schemas)
 
         if renderer is None:
             from cli.renderer import StreamRenderer
+
             favicon = session_state.get("favicon", "")
             renderer = StreamRenderer(console, self.label, favicon=favicon)
 
@@ -480,7 +512,9 @@ class AzureResponsesProvider:
             if response_text:
                 full_response += response_text
 
-            function_calls = self._extract_function_calls(response, stream_function_calls)
+            function_calls = self._extract_function_calls(
+                response, stream_function_calls
+            )
 
             if not function_calls:
                 # Detect content-filter / policy refusals so we don't
@@ -489,13 +523,16 @@ class AzureResponsesProvider:
                 refusal = getattr(response, "refusal", None) or ""
                 if not refusal and response_text:
                     _lower = response_text.lower()
-                    if any(phrase in _lower for phrase in (
-                        "i cannot assist",
-                        "i'm unable to",
-                        "i can't help with",
-                        "i'm not able to",
-                        "as an ai",
-                    )):
+                    if any(
+                        phrase in _lower
+                        for phrase in (
+                            "i cannot assist",
+                            "i'm unable to",
+                            "i can't help with",
+                            "i'm not able to",
+                            "as an ai",
+                        )
+                    ):
                         refusal = response_text
 
                 if refusal:
@@ -535,13 +572,20 @@ class AzureResponsesProvider:
                 failed = False
                 if func:
                     try:
-                        args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+                        args = (
+                            json.loads(arguments_json)
+                            if isinstance(arguments_json, str)
+                            else arguments_json
+                        )
                         from providers._shared import _coerce_tool_args
+
                         args = _coerce_tool_args(func, args)
                         result = func(**args)
                         result_str = str(result) if result is not None else ""
                     except Exception as exc:
-                        result_str = json.dumps({"error": f"{type(exc).__name__}: {exc}"})
+                        result_str = json.dumps(
+                            {"error": f"{type(exc).__name__}: {exc}"}
+                        )
                         failed = True
                 else:
                     result_str = json.dumps({"error": f"Unknown tool: {name}"})
@@ -560,6 +604,7 @@ class AzureResponsesProvider:
                 )
                 session_state["tool_count"] += 1
                 from cli.branding import record_action
+
                 record_action(
                     session_state,
                     name=name,
@@ -582,21 +627,31 @@ class AzureResponsesProvider:
                         "cannot safely submit tool output."
                     )
 
-                pending_input.append({
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": result_str[:50000],
-                })
+                pending_input.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": result_str[:50000],
+                    }
+                )
 
-            if should_send_tool_budget_warning(round_index + 1, round_tool_names, budget_warning_sent):
-                pending_input.append({
-                    "type": "message",
-                    "role": "developer",
-                    "content": [{
-                        "type": "input_text",
-                        "text": build_tool_budget_warning(round_index + 1, self.MAX_ROUNDS),
-                    }],
-                })
+            if should_send_tool_budget_warning(
+                round_index + 1, round_tool_names, budget_warning_sent
+            ):
+                pending_input.append(
+                    {
+                        "type": "message",
+                        "role": "developer",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": build_tool_budget_warning(
+                                    round_index + 1, self.MAX_ROUNDS
+                                ),
+                            }
+                        ],
+                    }
+                )
                 budget_warning_sent = True
 
             previous_response_id = response_id
