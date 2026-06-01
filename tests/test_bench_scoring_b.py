@@ -1,4 +1,6 @@
-from bench.scoring import build_judge_prompt, parse_judge_score
+import json
+
+from bench.scoring import build_judge_prompt, parse_judge_score, score_results_file
 
 
 def test_parse_judge_extracts_score():
@@ -27,6 +29,36 @@ def test_parse_judge_ignores_fraction_denominator():
     assert parse_judge_score("SCORE: 2 (that's 2/5)") == 2
     # a pure ratio with no standalone 0-5 digit yields None, not the denominator
     assert parse_judge_score("ratio 9/5") is None
+
+
+def test_empty_answer_is_not_judged_and_scores_none(tmp_path):
+    """A blank answer (silent failure, no error field) carries no signal. It
+    must NOT be sent to the judge, and must score None so the scoreboard
+    excludes it — otherwise a dead tier surfaces as a real-looking 0.00."""
+    raw = tmp_path / "raw.jsonl"
+    scored = tmp_path / "scored.jsonl"
+    raw.write_text(
+        json.dumps(
+            {
+                "track": "b",
+                "condition": "grounded",
+                "tier": "gpt-5.4",
+                "question_id": "m1",
+                "question": "Q?",
+                "answer": "   ",  # whitespace-only: produced nothing
+            }
+        )
+    )
+    calls = []
+
+    def judge(prompt):
+        calls.append(prompt)
+        return "SCORE: 0"
+
+    score_results_file(raw, scored, judge=judge)
+    out = [json.loads(line) for line in scored.read_text().splitlines() if line.strip()]
+    assert out[0]["score"] is None
+    assert calls == [], "empty answer must not reach the judge"
 
 
 def test_build_judge_prompt_includes_all_parts():

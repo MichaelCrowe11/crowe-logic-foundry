@@ -107,12 +107,19 @@ def score_results_file(raw_path, scored_path, *, judge=None) -> None:
             else:
                 row["score"] = None
         elif row.get("track") == "b":
-            prompt = build_judge_prompt(
-                question=row.get("question", ""),
-                source_passage=row.get("source_passage", ""),
-                answer=row.get("answer", ""),
-            )
-            row["score"] = parse_judge_score(judge(prompt))
+            answer = row.get("answer", "") or ""
+            if not answer.strip():
+                # A blank answer (silent failure with no error field) carries no
+                # signal. Don't ask the judge to grade "" — that scores 0 and
+                # makes a dead tier surface as a real-looking 0.00. None == no data.
+                row["score"] = None
+            else:
+                prompt = build_judge_prompt(
+                    question=row.get("question", ""),
+                    source_passage=row.get("source_passage", ""),
+                    answer=answer,
+                )
+                row["score"] = parse_judge_score(judge(prompt))
         else:
             row["score"] = None
         out_lines.append(json.dumps(row))

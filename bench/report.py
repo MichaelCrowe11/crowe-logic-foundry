@@ -71,13 +71,23 @@ def build_scoreboard(scored_path: Path) -> str:
             "|---|---|---|---|",
         ]
         scored = []
+        excluded = []
         for tier, conds in b.items():
-            g = statistics.mean(conds["grounded"]) if conds["grounded"] else 0.0
-            bare = statistics.mean(conds["bare"]) if conds["bare"] else 0.0
+            # A grounded-vs-bare delta is undefined without BOTH sides. If either
+            # condition has no scored rows (all errored/blank), exclude the tier
+            # rather than fabricate a 0.00 placeholder for the missing side.
+            if not conds["grounded"] or not conds["bare"]:
+                excluded.append(tier)
+                continue
+            g = statistics.mean(conds["grounded"])
+            bare = statistics.mean(conds["bare"])
             scored.append((tier, g, bare, g - bare))
         for tier, g, bare, d in sorted(scored, key=lambda x: -x[3]):
             out.append(f"| {brand(tier)} | {g:.2f} | {bare:.2f} | {d:+.2f} |")
         out.append("")
+        if excluded:
+            names = ", ".join(sorted(brand(t) for t in excluded))
+            out.append(f"_Excluded (incomplete grounded/bare data this run): {names}._")
         out.append(
             "_Δ = grounded − bare on a 0–5 scale. The delta is the platform's "
             "contribution over the base model._"
