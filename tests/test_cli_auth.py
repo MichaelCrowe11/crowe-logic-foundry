@@ -90,3 +90,41 @@ def test_whoami_and_logout(tmp_path, monkeypatch):
     auth.logout()
     with pytest.raises(auth.NotLoggedIn):
         auth.whoami()
+
+
+def test_build_creds_from_exchange(monkeypatch, tmp_path):
+    monkeypatch.setattr(auth, "STORE_PATH", str(tmp_path / "auth.json"))
+    monkeypatch.setattr(
+        auth,
+        "_token_exchange",
+        lambda code, verifier, redirect: {
+            "access_token": "A",
+            "refresh_token": "R",
+            "expires_in": 300,
+        },
+    )
+    monkeypatch.setattr(
+        auth,
+        "_decode_claims",
+        lambda t: {"preferred_username": "u@x", "crowe_tier": "enterprise"},
+    )
+    creds = auth._build_creds_from_exchange(
+        "code123", "verifier", "http://localhost:8765/callback"
+    )
+    assert creds["username"] == "u@x" and creds["crowe_tier"] == "enterprise"
+    assert creds["access_token"] == "A" and creds["refresh_token"] == "R"
+    assert creds["expires_at"] > 0
+
+
+def test_pkce_challenge_is_s256(monkeypatch):
+    # The verifier->challenge transform must be base64url(SHA256(verifier)), unpadded.
+    import base64
+    import hashlib
+
+    verifier = "test-verifier-string"
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    assert auth._s256_challenge(verifier) == expected
