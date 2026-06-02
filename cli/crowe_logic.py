@@ -2625,6 +2625,43 @@ def route(prompt: str, as_json: bool):
     console.print()
 
 
+@main.command(name="login")
+def login_cmd():
+    """Sign in to Crowe ID in the browser (PKCE)."""
+    from cli import auth
+
+    try:
+        who = auth.login_pkce()
+    except Exception as exc:  # surface any sign-in failure as a clean exit
+        console.print(f"  [#bf6f6f]Sign-in failed:[/] {exc}")
+        raise SystemExit(1)
+    console.print(
+        f"  [#bfa669]Signed in as {who['username']} ({who['crowe_tier']}).[/]"
+    )
+
+
+@main.command(name="logout")
+def logout_cmd():
+    """Forget the stored Crowe ID session."""
+    from cli import auth
+
+    auth.logout()
+    console.print("  Signed out.")
+
+
+@main.command(name="whoami")
+def whoami_cmd():
+    """Show the signed-in Crowe ID identity."""
+    from cli import auth
+
+    try:
+        who = auth.whoami()
+    except auth.NotLoggedIn:
+        console.print("  Not signed in. Run `crowe-logic login`.")
+        raise SystemExit(1)
+    console.print(f"  {who['username']} (tier: {who['crowe_tier']})")
+
+
 @main.command(name="synapse-doctor")
 @click.option(
     "--telemetry-tail",
@@ -2846,6 +2883,42 @@ def run(prompt: str):
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
+
+    # ── Signed-in users route execution through the gateway (no local keys, no
+    # cascade). The gateway holds every provider key server-side and owns
+    # fallback, so a missing local key can never trigger the tier cascade.
+    # CROWE_LOGIC_LOCAL=1 is the explicit escape hatch back to local keys. ──
+    use_local = os.environ.get("CROWE_LOGIC_LOCAL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not use_local:
+        from cli import auth, gateway_client
+
+        try:
+            auth.load_creds()  # raises NotLoggedIn when no session is stored
+            signed_in = True
+        except auth.NotLoggedIn:
+            signed_in = False  # fall through to the local provider path below
+
+        if signed_in:
+            from rich.markdown import Markdown
+
+            try:
+                resp = gateway_client.chat(
+                    model=model_cfg.get("name", model_cfg.get("label")),
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            except gateway_client.PlanDenied as exc:
+                console.print(f"  [#bf6f6f]Plan does not allow this model:[/] {exc}")
+                return
+            except auth.NotLoggedIn as exc:
+                console.print(f"  [#bf6f6f]{exc}[/]")
+                return
+            console.print(Markdown(resp.get("content", "")))
+            console.print()
+            return
 
     provider_kind = model_cfg.get("provider")
     try:
