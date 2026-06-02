@@ -88,36 +88,53 @@ class ThinkingSpinner:
         self,
         label: str = "thinking",
         *,
-        lanes: int = 5,
+        lanes: int = 20,
+        rows: int = 3,
         speed: float = 2.6,
-        spread: float = 0.7,
+        spread: float = 0.45,
+        row_phase: float = 1.1,
         hue_speed: float = 0.35,
     ):
         self._label = label
         self._lanes = lanes
+        self._rows = rows  # reasoning lanes stacked into a field
         self._speed = speed  # radians/sec of pulse travel
         self._spread = spread  # phase offset between lanes (crest travel)
+        self._row_phase = row_phase  # phase offset between rows (they desync)
         self._hue_speed = hue_speed  # palette stops advanced per second
 
     def frame(self, now: float):
-        """Build the frame for an absolute wall-clock time (pure; render + tests)."""
+        """Build the frame for an absolute wall-clock time (pure; render + tests).
+
+        An amplified multi-row field of gold reasoning lanes, each row's crest
+        travelling at a desynced phase so the whole field shimmers. Row 0 carries
+        the anchoring mark + label, so the first span stays the ◆ crest hue.
+        """
         from rich.text import Text
 
         text = Text()
         crest = _crest_color(now * self._hue_speed)  # this frame's drifting hue
-        text.append(f"{MARK} ", style=f"bold {crest}")
-        for i in range(self._lanes):
-            level = (math.sin(now * self._speed - i * self._spread) + 1) / 2  # 0..1
-            if level > 0.72:
-                style = f"bold {crest}"
-            elif level > 0.4:
-                style = _lerp_hex("#4a4030", crest, 0.6)
+        for r in range(self._rows):
+            if r == 0:
+                text.append(f"{MARK} ", style=f"bold {crest}")
             else:
-                style = GOLD_DIM_HEX
-            text.append(
-                _PULSE_BLOCKS[round(level * (len(_PULSE_BLOCKS) - 1))], style=style
-            )
-        text.append(f"  {self._label}…", style="dim")
+                text.append("\n  ")  # continuation rows indent under the mark
+            for i in range(self._lanes):
+                level = (
+                    math.sin(now * self._speed - i * self._spread - r * self._row_phase)
+                    + 1
+                ) / 2  # 0..1
+                if level > 0.72:
+                    style = f"bold {crest}"
+                elif level > 0.4:
+                    style = _lerp_hex("#4a4030", crest, 0.6)
+                else:
+                    style = GOLD_DIM_HEX
+                text.append(
+                    _PULSE_BLOCKS[round(level * (len(_PULSE_BLOCKS) - 1))], style=style
+                )
+            if r == 0:
+                text.append(f"  {self._label}…", style="dim")
         return text
 
     def __rich__(self):
@@ -474,10 +491,59 @@ def welcome_screen(version: str = "0.2.7", avatar_seq: str = "") -> str:
     )
 
 
+def _animate_wordmark_ignite(wordmark_plain: str, w: int) -> None:
+    """Ignite the typographic wordmark in place: a warm-bright band sweeps across
+    the letters (twice), lighting each as it passes, then they settle to gold.
+
+    Crowe Logic's distinct motion - a horizontal heat-shimmer over its typographic
+    mark, versus the sibling CLIs' block sweep / drop-in. Single line, redrawn with
+    carriage returns (terminal-safe), so it never stacks or ghosts.
+    """
+    import time
+
+    pad = " " * max(0, (w - cell_width(wordmark_plain)) // 2)
+    chars = list(wordmark_plain)
+    n = len(chars)
+    bright = "\033[38;2;255;240;200m\033[1m"  # warm bright ignition
+    for _pass in range(2):
+        for head in range(-3, n + 4):
+            cells = []
+            for i, ch in enumerate(chars):
+                if head - 2 <= i <= head:
+                    cells.append(f"{bright}{ch}{RESET}")
+                else:
+                    cells.append(f"{GOLD}{BOLD}{ch}{RESET}")
+            sys.stdout.write("\r" + pad + "".join(cells))
+            sys.stdout.flush()
+            time.sleep(0.012)
+    sys.stdout.write("\r" + pad + f"{GOLD}{BOLD}{wordmark_plain}{RESET}")
+    sys.stdout.flush()
+
+
 def show_welcome(version: str = "0.2.7"):
-    """Print the full welcome: avatar inside the banner."""
+    """Print the full welcome: avatar inside the banner.
+
+    On a real terminal the typographic wordmark ignites into place; otherwise the
+    banner prints static. The animation only restyles the wordmark line, located
+    by an exact match against the same string `welcome_screen` embeds, so any
+    layout change falls back to the static print rather than mis-animating.
+    """
     avatar_seq = _get_avatar_seq(width=8)
-    print(welcome_screen(version, avatar_seq=avatar_seq))
+    full = welcome_screen(version, avatar_seq=avatar_seq)
+    if not sys.stdout.isatty():
+        print(full)
+        return
+    wordmark_plain = "C R O W E   L O G I C"
+    wordmark_line = center(f"{GOLD}{BOLD}{wordmark_plain}{RESET}", term_width())
+    before, sep, after = full.partition(wordmark_line)
+    if not sep:  # layout drifted from what we expect: don't risk a broken reveal
+        print(full)
+        return
+    sys.stdout.write(before)
+    sys.stdout.flush()
+    _animate_wordmark_ignite(wordmark_plain, term_width())
+    sys.stdout.write(after)
+    sys.stdout.flush()
 
 
 # ── Legacy compat ─────────────────────────────────────────────
