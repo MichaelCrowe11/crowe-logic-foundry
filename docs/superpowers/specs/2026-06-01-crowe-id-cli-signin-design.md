@@ -27,8 +27,9 @@ New unit `control_plane/oidc.py` (small, testable in isolation):
 - `tier_to_plan(crowe_tier: str) -> str`: map Crowe ID tier to the gateway plan id. Concrete table: `free->personal`, `pro->pro`, `studio->team`, `enterprise->enterprise`, unknown/missing->`personal` (least privilege). The exact plan-id strings are validated against `control_plane`'s `canonical_plan_id` in the plan; if the gateway has no distinct `enterprise` plan, `enterprise` maps to the highest available plan (`team`).
 
 Integration in `control_plane/gateway.py`:
-- Generalize `_resolve_api_key` into `_resolve_principal`: if `Authorization: Bearer <jwt>` is present and parses as a Crowe ID token (issuer == configured `CROWE_ID_ISSUER`), verify via `oidc.verify_token`, build `{plan_id: tier_to_plan(claims['crowe_tier']), workspace_id: claims['sub'], principal: 'crowe-id', subject: claims.get('preferred_username')}`. Otherwise fall back to the existing API-key path unchanged. API keys keep working (backward-compatible).
-- Both the native `/chat` endpoint and the OpenAI-compatible `/v1/chat/completions` adapter depend on `_resolve_principal` (same dependency), so both gain token auth at once.
+- Generalize `_resolve_api_key` into `_resolve_principal`: if `Authorization: Bearer <jwt>` is a JWT (three dot-separated segments) that is NOT a supported API key, verify it via `oidc.verify_token` against the configured `CROWE_ID_ISSUER`, and build `{"plan_id": tier_to_plan(claims.get("crowe_tier")), "workspace_id": claims["sub"], "user_id": claims["sub"], "principal": "crowe-id", "subject": claims.get("preferred_username")}`. Otherwise fall back to the existing API-key path unchanged. API keys keep working (backward-compatible).
+- The gateway routes that enforce access (`POST /api/gateway/chat`, `POST /api/gateway/chat/stream`) depend on `_resolve_principal` (renamed from `_resolve_api_key`), so both gain token auth at once.
+- `gateway_chat` and the stream variant currently do workspace-scoped DB work (lookup `plans` by `plan_id`, read/insert `usage_events`). A Crowe ID principal has a Keycloak `sub`, not a `workspaces` row, so that block must be guarded: when `key_info.get("principal") == "crowe-id"`, perform the tier->plan access check (via `plan_rank`) but SKIP the budget lookup and usage insert. Metering for token principals is a deliberate follow-up (a Crowe ID `sub` -> workspace bridge), not in this spec.
 - Config: `CROWE_ID_ISSUER` (default `https://id.crowelogic.com/realms/crowe`) and `CROWE_ID_AUDIENCE` (optional; if unset, audience is not enforced) read from env.
 
 ## Component C: CLI sign-in and gateway routing
@@ -40,7 +41,7 @@ New unit `cli/auth.py` (token lifecycle, no Click coupling):
 - `logout()`: delete the store file. `whoami() -> dict`: return username/tier/expiry without secrets.
 
 New unit `cli/gateway_client.py` (thin HTTP):
-- `chat(model, messages, stream) -> response`: POST to `{GATEWAY_BASE}/v1/chat/completions` with `Authorization: Bearer <current_access_token()>`. On `401`, refresh once and retry; on second `401`, raise `NotLoggedIn`. On `403`, raise `PlanDenied(model, required_tier)`. `GATEWAY_BASE` from env (`CROWE_LOGIC_GATEWAY_URL`, default the live control_plane URL).
+- `chat(model, messages) -> GatewayResponse-shaped dict`: POST to `{GATEWAY_BASE}/api/gateway/chat` with `Authorization: Bearer <current_access_token()>` and body `{"model": model, "messages": messages}`. On `401`, refresh once and retry; on second `401`, raise `NotLoggedIn`. On `403`, raise `PlanDenied(model, detail)`. `GATEWAY_BASE` from env (`CROWE_LOGIC_GATEWAY_URL`, default the live control_plane URL). Streaming via `/chat/stream` is a follow-on once non-streaming is proven end to end.
 
 New Click commands in `cli/crowe_logic.py`:
 - `crowe-logic login` (calls `auth.login_pkce`, prints `Signed in as <user> (<tier>)`), `crowe-logic logout`, `crowe-logic whoami`.
@@ -50,7 +51,7 @@ Turn-loop change (`cli/crowe_logic.py`):
 
 ## Data flow (signed-in turn)
 
-`prompt -> Synapse selects model -> gateway_client.chat(model, messages, Bearer) -> gateway _resolve_principal verifies token + tier->plan -> plan access check -> _call_provider (server-side key, server-side fallback) -> response -> CLI renders`.
+`prompt -> Synapse selects model -> gateway_client.chat(model, messages) POST /api/gateway/chat (Bearer) -> gateway _resolve_principal verifies token + tier->plan -> plan access check -> _call_provider (server-side key, server-side fallback) -> GatewayResponse -> CLI renders`.
 
 ## Error handling
 
