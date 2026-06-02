@@ -400,6 +400,16 @@ async def _resolve_principal(
     return dict(row)
 
 
+def _is_metered(key_info: dict) -> bool:
+    """Workspace-scoped budget/usage only applies to real workspace principals.
+
+    Crowe ID token principals carry a Keycloak ``sub`` rather than a ``workspaces``
+    row, so the plan-budget lookup and the usage INSERT (FK to workspaces/users)
+    must be skipped for them. Metering token principals is a deliberate follow-up.
+    """
+    return key_info.get("principal") != "crowe-id"
+
+
 @router.post("/chat", response_model=GatewayResponse)
 async def gateway_chat(
     req: GatewayRequest,
@@ -420,27 +430,28 @@ async def gateway_chat(
             detail=f"Model '{model}' requires {required_plan} plan or higher",
         )
 
-    # ── Token budget check ──
-    from datetime import datetime, timezone
+    # ── Token budget check (workspace principals only) ──
+    if _is_metered(key_info):
+        from datetime import datetime, timezone
 
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
-    budget = plan["token_budget_month"]
+        plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+        budget = plan["token_budget_month"]
 
-    if budget != -1:  # not unlimited
-        used_row = await db.fetchrow(
-            """SELECT COALESCE(SUM(quantity), 0) AS used
-               FROM usage_events
-               WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id,
-            month_start,
-        )
-        if used_row and used_row["used"] >= budget:
-            raise HTTPException(
-                status_code=429, detail="Monthly token budget exhausted"
+        if budget != -1:  # not unlimited
+            used_row = await db.fetchrow(
+                """SELECT COALESCE(SUM(quantity), 0) AS used
+                   FROM usage_events
+                   WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
+                workspace_id,
+                month_start,
             )
+            if used_row and used_row["used"] >= budget:
+                raise HTTPException(
+                    status_code=429, detail="Monthly token budget exhausted"
+                )
 
     # ── Forward to provider ──
     start = time.monotonic()
@@ -455,8 +466,8 @@ async def gateway_chat(
     elapsed_ms = int((time.monotonic() - start) * 1000)
     token_count = prompt_tokens + completion_tokens
 
-    # ── Record usage ──
-    if token_count > 0:
+    # ── Record usage (workspace principals only) ──
+    if _is_metered(key_info) and token_count > 0:
         await db.execute(
             """INSERT INTO usage_events (workspace_id, user_id, event_type, quantity, model)
                VALUES ($1, $2, 'tokens', $3, $4)""",
@@ -521,23 +532,25 @@ async def gateway_chat_stream(
     # Pre-stream budget check, identical to /chat. We can't know final
     # cost up front for a streamed turn, so this only guards against
     # users who are already over budget when the request arrives.
-    from datetime import datetime, timezone
+    # Workspace principals only — Crowe ID token principals have no workspaces row.
+    if _is_metered(key_info):
+        from datetime import datetime, timezone
 
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
-    if plan and plan["token_budget_month"] != -1:
-        used_row = await db.fetchrow(
-            """SELECT COALESCE(SUM(quantity), 0) AS used
-               FROM usage_events
-               WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id,
-            month_start,
-        )
-        if used_row and used_row["used"] >= plan["token_budget_month"]:
-            raise HTTPException(
-                status_code=429, detail="Monthly token budget exhausted"
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+        if plan and plan["token_budget_month"] != -1:
+            used_row = await db.fetchrow(
+                """SELECT COALESCE(SUM(quantity), 0) AS used
+                   FROM usage_events
+                   WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
+                workspace_id,
+                month_start,
             )
+            if used_row and used_row["used"] >= plan["token_budget_month"]:
+                raise HTTPException(
+                    status_code=429, detail="Monthly token budget exhausted"
+                )
 
     session_id = f"http-{workspace_id[:12]}"
     messages = req.messages or []
@@ -562,7 +575,8 @@ async def gateway_chat_stream(
         finally:
             # Record usage even if the client disconnected mid-stream;
             # the model has already produced (and billed) the tokens.
-            if recorded_tokens > 0:
+            # Workspace principals only — token principals are not metered yet.
+            if _is_metered(key_info) and recorded_tokens > 0:
                 try:
                     await db.execute(
                         """INSERT INTO usage_events

@@ -86,3 +86,11 @@ async def test_invalid_token_rejected(monkeypatch, key):
             authorization=f"Bearer {expired}", x_api_key=None, db=None
         )
     assert exc.value.status_code == 401
+
+
+def test_is_metered_classifies_principals():
+    # Workspace-scoped budget/usage only applies to real workspace principals.
+    # A Crowe ID token principal has no workspaces row, so it must be skipped.
+    assert gateway._is_metered({"principal": "api-key"}) is True
+    assert gateway._is_metered({"principal": "crowe-id"}) is False
+    assert gateway._is_metered({}) is True  # default (API key path) stays metered
