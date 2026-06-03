@@ -141,9 +141,26 @@ class ThinkingSpinner:
         return self.frame(_time.monotonic())
 
 
-def thinking_spinner(label: str = "thinking") -> "ThinkingSpinner":
-    """A fresh Crowe Logic thinking animation. Drive it inside a `rich.live.Live`."""
-    return ThinkingSpinner(label)
+def thinking_spinner(label: str = "thinking"):
+    """A fresh Crowe Logic thinking animation. Drive it inside a `rich.live.Live`.
+
+    The reel style is selectable via the ``CROWE_SPINNER_STYLE`` env var:
+    ``wordmark`` (default) · ``classic`` · ``cascade`` · ``hybrid`` · ``wave``.
+    ``wave`` restores the original pulse-field ``ThinkingSpinner``. Unknown values
+    and any import failure fall back to a working spinner, so the animation can
+    never break a turn. Both the single-pane renderer and the dual-pane renderer
+    route through here, so this one switch styles every thinking surface.
+    """
+    style = os.environ.get("CROWE_SPINNER_STYLE", "wordmark").strip().lower()
+    if style in ("wave", "pulse", "legacy", "field"):
+        return ThinkingSpinner(label)
+    try:
+        from cli.spinners import REGISTRY, get_spinner
+
+        return get_spinner(style if style in REGISTRY else "wordmark", label)
+    except Exception:
+        # The slot module is optional; never let a spinner import brick a turn.
+        return ThinkingSpinner(label)
 
 
 # ── Layout primitives ────────────────────────────────────────
