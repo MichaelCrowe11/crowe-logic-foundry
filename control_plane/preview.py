@@ -298,6 +298,11 @@ def create_app():
 
     app.include_router(billing)
 
+    # Include agent gateway (x402 metered endpoint)
+    from control_plane.agent_gateway import router as agent_gateway_router
+
+    app.include_router(agent_gateway_router)
+
     # Include domain modules
     from domain.mycology import router as mycology
     from domain.vision import router as vision

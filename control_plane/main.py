@@ -20,15 +20,22 @@ from control_plane import app  # noqa: re-export the FastAPI app
 from control_plane.gateway import router as gateway_router
 from control_plane.billing import router as billing_router
 from control_plane.web import router as web_router
+from control_plane.agent_gateway import router as agent_gateway_router
 from control_plane.db import lifespan
 
 logger = logging.getLogger("control_plane.main")
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stderr,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 # Core routers (launch-critical).
 app.include_router(gateway_router)
 app.include_router(billing_router)
 app.include_router(web_router)
+app.include_router(agent_gateway_router)
+
 
 # Optional routers: if any one of these blows up at import-time we still
 # want the core control plane to boot so customers can sign up and pay.
@@ -41,12 +48,23 @@ def _try_include(label: str, loader):
         logger.warning("skipping router %s: %s", label, exc)
 
 
-_try_include("domain.mycology",  lambda: __import__("domain.mycology",  fromlist=["router"]).router)
-_try_include("domain.vision",    lambda: __import__("domain.vision",    fromlist=["router"]).router)
-_try_include("domain.research",  lambda: __import__("domain.research",  fromlist=["router"]).router)
-_try_include("domain.compound",  lambda: __import__("domain.compound",  fromlist=["router"]).router)
-_try_include("knowledge.search", lambda: __import__("knowledge.search", fromlist=["router"]).router)
-_try_include("dashboard",        lambda: __import__("dashboard",        fromlist=["router"]).router)
+_try_include(
+    "domain.mycology", lambda: __import__("domain.mycology", fromlist=["router"]).router
+)
+_try_include(
+    "domain.vision", lambda: __import__("domain.vision", fromlist=["router"]).router
+)
+_try_include(
+    "domain.research", lambda: __import__("domain.research", fromlist=["router"]).router
+)
+_try_include(
+    "domain.compound", lambda: __import__("domain.compound", fromlist=["router"]).router
+)
+_try_include(
+    "knowledge.search",
+    lambda: __import__("knowledge.search", fromlist=["router"]).router,
+)
+_try_include("dashboard", lambda: __import__("dashboard", fromlist=["router"]).router)
 
 # Wire up DB pool lifecycle. If the DB is unreachable at boot, the pool
 # init will fail and the app will exit. that is desirable, because the
