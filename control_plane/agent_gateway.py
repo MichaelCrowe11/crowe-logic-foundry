@@ -138,3 +138,39 @@ async def agent_chat(
         {"charged": price, "client_id": client_id, "settlement": settled_tx}
     )
     return resp
+
+
+@router.get("/.well-known/x402")
+async def well_known_x402():
+    """Machine-readable price catalog — agents crawl this to learn cost before paying.
+
+    The on-chain ("exact") scheme is listed only when a real treasury address is
+    configured (X402_BASE_PAYTO), matching the 402 envelope. No fake schemes.
+    """
+    chain_available = bool(os.environ.get("X402_BASE_PAYTO"))
+    schemes = ["exact", "crowe-credit"] if chain_available else ["crowe-credit"]
+    return {
+        "x402Version": 1,
+        "resources": [
+            {"resource": res, "price": price, "unit": "micro-usd", "schemes": schemes}
+            for res, price in x402.PRICE_CATALOG.items()
+        ],
+    }
+
+
+@router.get("/.well-known/agent")
+async def well_known_agent():
+    """A2A-style agent card describing Crowe's agent-payable services."""
+    return {
+        "name": "Crowe Logic Foundry",
+        "description": "Agent-native AI gateway: pay-per-call model + knowledge services.",
+        "url": os.environ.get("CROWE_AGENT_URL", "https://chat.crowelogic.com"),
+        "payments": {
+            "protocol": "x402",
+            "discovery": "/.well-known/x402",
+            "priced": [
+                {"resource": res, "price": price, "unit": "micro-usd"}
+                for res, price in x402.PRICE_CATALOG.items()
+            ],
+        },
+    }
