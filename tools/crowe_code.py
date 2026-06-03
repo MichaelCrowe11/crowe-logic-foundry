@@ -65,6 +65,7 @@ _TOOL_NAMES = (
     "crowe_code_write_block",
     "crowe_code_run_block",
     "crowe_code_list_blocks",
+    "crowe_code_current_block",
 )
 
 
@@ -475,6 +476,92 @@ def crowe_code_list_blocks() -> str:
     return json.dumps({"count": len(out_blocks), "blocks": out_blocks})
 
 
+def crowe_code_current_block() -> str:
+    """Resolve the Crowe Code block the user is currently looking at, no UUID needed.
+
+    Use this when the user says "this block" / "the block" / "run the block I'm
+    looking at" without pasting a UUID. Returns the resolved block so you can
+    pass its `block` to read/write/run. Resolution order:
+      1. the CROWE_CODE_ACTIVE_BLOCK env var (the active-editor handshake, when
+         Crowe Terminal provides it);
+      2. the single Crowe Code block in the current tab (WAVETERM_TABID);
+      3. the single Crowe Code block open anywhere;
+      otherwise it returns the candidate list so you can ask the user which one.
+
+    :return: JSON with the resolved {block, source, file, language} or, when
+             ambiguous/none, an error plus candidates.
+    :rtype: str
+    """
+    guard = _require_terminal()
+    if guard:
+        return guard
+
+    env_block = os.environ.get("CROWE_CODE_ACTIVE_BLOCK", "").strip()
+    if env_block:
+        return json.dumps({"block": env_block, "source": "active-editor"})
+
+    try:
+        rc, out, err = _run_wsh(["blocks", "list", "--json"])
+    except _WshError as exc:
+        return json.dumps({"error": str(exc), "hint": "Pass an explicit block UUID."})
+    if rc != 0:
+        return json.dumps(
+            {
+                "error": (err or out or "wsh blocks list failed").strip(),
+                "hint": "Pass an explicit block UUID, or open exactly one Crowe Code block.",
+            }
+        )
+    try:
+        blocks = json.loads(out or "[]")
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"Could not parse wsh output: {exc}"})
+
+    cc_blocks = [
+        b
+        for b in blocks
+        if b.get("view") == "crowecode"
+        or (b.get("meta") or {}).get("view") == "crowecode"
+    ]
+    if not cc_blocks:
+        return json.dumps({"error": "No Crowe Code blocks are open.", "count": 0})
+
+    cur_tab = os.environ.get("WAVETERM_TABID", "").strip()
+    in_tab = [b for b in cc_blocks if b.get("tabid") == cur_tab] if cur_tab else []
+
+    chosen, source = None, ""
+    if len(in_tab) == 1:
+        chosen, source = in_tab[0], "current-tab"
+    elif len(cc_blocks) == 1:
+        chosen, source = cc_blocks[0], "only-open"
+
+    if chosen is not None:
+        meta = chosen.get("meta") or {}
+        return json.dumps(
+            {
+                "block": chosen.get("blockid"),
+                "source": source,
+                "file": meta.get("crowecode:file", ""),
+                "language": meta.get("crowecode:language", ""),
+            }
+        )
+
+    candidates = [
+        {
+            "block": b.get("blockid"),
+            "file": (b.get("meta") or {}).get("crowecode:file", ""),
+            "tab": b.get("tabid", ""),
+        }
+        for b in cc_blocks
+    ]
+    return json.dumps(
+        {
+            "error": "Multiple Crowe Code blocks are open — ask the user which one.",
+            "count": len(candidates),
+            "candidates": candidates,
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -516,6 +603,7 @@ def register(target: Set) -> List[str]:
         crowe_code_write_block,
         crowe_code_run_block,
         crowe_code_list_blocks,
+        crowe_code_current_block,
     ):
         target.add(fn)
     return list(_TOOL_NAMES)
@@ -538,6 +626,7 @@ is a Crowe Code block reference — never treat it as opaque text and never ask
 | See / read what's in a block               | `crowe_code_read_block(block_uuid)` |
 | Put code or text into a block              | `crowe_code_write_block(block_uuid, content=...)` |
 | **Run the workflow / script in a block**   | `crowe_code_run_block(block_uuid)` |
+| Run / read "the block I'm looking at"      | `crowe_code_current_block()` first, then act on its `block` |
 | Find which blocks are open                 | `crowe_code_list_blocks()` |
 
 Operating rules:
@@ -545,8 +634,10 @@ Operating rules:
 1. **"Run the block as I watch"** means `crowe_code_run_block(block_uuid)` — it
    executes the block's backing file and returns stdout/stderr/exit code. Report
    the result; don't re-implement the script elsewhere.
-2. **"This block" / "the block" with no UUID** -> call `crowe_code_list_blocks()`.
-   If exactly one Crowe Code block exists, use it. If several, show them and ask.
+2. **"This block" / "the block" / "the block I'm looking at" with no UUID** ->
+   call `crowe_code_current_block()`. It resolves the active editor (or the only
+   open Crowe Code block) and returns its `block`; pass that to read/run/write.
+   If it returns candidates (several open), show them and ask which.
 3. **Scratch buffers** (a block with no `crowecode:file`) have no externally
    readable text. To make one readable/runnable, `crowe_code_write_block` it with
    a `file_path` (e.g. ending in `.py`) — that binds a backing file.

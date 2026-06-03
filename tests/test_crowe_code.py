@@ -443,3 +443,87 @@ class TestHardening:
         )
         result = json.loads(cc.crowe_code_run_block(UUID, args='"unbalanced'))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: current-block resolution ("the block I'm looking at")
+# ---------------------------------------------------------------------------
+
+
+class TestCurrentBlock:
+    def test_uses_active_editor_env_handshake(self, monkeypatch, in_terminal):
+        monkeypatch.setenv("CROWE_CODE_ACTIVE_BLOCK", UUID)
+        result = json.loads(cc.crowe_code_current_block())
+        assert result["block"] == UUID
+        assert result["source"] == "active-editor"
+
+    def test_picks_single_block_in_current_tab(self, monkeypatch, in_terminal):
+        monkeypatch.delenv("CROWE_CODE_ACTIVE_BLOCK", raising=False)
+        monkeypatch.setenv("WAVETERM_TABID", "tab-1")
+        blocks = [
+            {"blockid": "other", "view": "term", "tabid": "tab-1", "meta": {}},
+            {
+                "blockid": UUID,
+                "view": "crowecode",
+                "tabid": "tab-1",
+                "meta": {"crowecode:file": "/x/wf.py"},
+            },
+            {"blockid": "cc2", "view": "crowecode", "tabid": "tab-9", "meta": {}},
+        ]
+        monkeypatch.setattr(
+            cc, "_run_wsh", make_wsh({"blocks": (0, json.dumps(blocks), "")})
+        )
+        result = json.loads(cc.crowe_code_current_block())
+        assert result["block"] == UUID
+        assert result["source"] == "current-tab"
+        assert result["file"] == "/x/wf.py"
+
+    def test_falls_back_to_only_open_block(self, monkeypatch, in_terminal):
+        monkeypatch.delenv("CROWE_CODE_ACTIVE_BLOCK", raising=False)
+        monkeypatch.setenv("WAVETERM_TABID", "tab-7")  # no crowecode in this tab
+        blocks = [{"blockid": UUID, "view": "crowecode", "tabid": "tab-3", "meta": {}}]
+        monkeypatch.setattr(
+            cc, "_run_wsh", make_wsh({"blocks": (0, json.dumps(blocks), "")})
+        )
+        result = json.loads(cc.crowe_code_current_block())
+        assert result["block"] == UUID
+        assert result["source"] == "only-open"
+
+    def test_ambiguous_multiple_in_tab_asks(self, monkeypatch, in_terminal):
+        monkeypatch.delenv("CROWE_CODE_ACTIVE_BLOCK", raising=False)
+        monkeypatch.setenv("WAVETERM_TABID", "tab-1")
+        blocks = [
+            {"blockid": "a", "view": "crowecode", "tabid": "tab-1", "meta": {}},
+            {"blockid": "b", "view": "crowecode", "tabid": "tab-1", "meta": {}},
+        ]
+        monkeypatch.setattr(
+            cc, "_run_wsh", make_wsh({"blocks": (0, json.dumps(blocks), "")})
+        )
+        result = json.loads(cc.crowe_code_current_block())
+        assert "error" in result
+        assert result["count"] == 2
+        assert len(result["candidates"]) == 2
+
+    def test_none_open(self, monkeypatch, in_terminal):
+        monkeypatch.delenv("CROWE_CODE_ACTIVE_BLOCK", raising=False)
+        monkeypatch.setattr(cc, "_run_wsh", make_wsh({"blocks": (0, "[]", "")}))
+        result = json.loads(cc.crowe_code_current_block())
+        assert "error" in result
+        assert result["count"] == 0
+
+    def test_degrades_on_no_workspaces(self, monkeypatch, in_terminal):
+        monkeypatch.delenv("CROWE_CODE_ACTIVE_BLOCK", raising=False)
+        monkeypatch.setattr(
+            cc,
+            "_run_wsh",
+            make_wsh({"blocks": (1, "", "Error: no workspaces found")}),
+        )
+        result = json.loads(cc.crowe_code_current_block())
+        assert "error" in result
+
+    def test_registered_and_in_tool_names(self, monkeypatch):
+        monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+        target: set = set()
+        cc.register(target)
+        assert cc.crowe_code_current_block in target
+        assert "crowe_code_current_block" in cc._TOOL_NAMES
