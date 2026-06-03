@@ -1663,6 +1663,48 @@ def chat():
                 console.print(
                     f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
                 )
+            # ── Signed-in users route execution through the gateway (no local
+            # keys, no cascade). Mirrors run(); Auto has already resolved a
+            # concrete tier above, so the gateway gets a real model id.
+            # CROWE_LOGIC_LOCAL=1 is the escape hatch back to local keys. ──
+            use_local = os.environ.get("CROWE_LOGIC_LOCAL", "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            if not use_local:
+                from cli import auth, gateway_client
+
+                try:
+                    auth.load_creds()  # raises NotLoggedIn when no session is stored
+                    signed_in = True
+                except auth.NotLoggedIn:
+                    signed_in = False
+
+                if signed_in:
+                    from rich.markdown import Markdown
+
+                    render_session_hud(
+                        console, state=session_state, cwd=os.getcwd(), meta="turn"
+                    )
+                    console.print()
+                    try:
+                        resp = gateway_client.chat(
+                            model=model_cfg.get("name", model_cfg.get("label")),
+                            messages=[{"role": "user", "content": user_input}],
+                        )
+                    except gateway_client.PlanDenied as exc:
+                        _render_error(str(exc), "Plan does not allow this model")
+                        continue
+                    except auth.NotLoggedIn as exc:
+                        console.print(f"  [#bf6f6f]{exc}[/]")
+                        continue
+                    console.print(Markdown(resp.get("content", "")))
+                    console.print()
+                    session_state["api_status"] = "ok"
+                    iterm_set_var("crowe_logic_api", "ok")
+                    continue
+
             # Pre-flight credit reservation runs after Auto has resolved
             # to a concrete tier so the reservation matches the model
             # that actually answers.
