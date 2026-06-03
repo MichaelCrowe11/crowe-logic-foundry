@@ -38,20 +38,18 @@ async def debit(db, client_id: str, amount: int) -> int:
     """Atomically subtract `amount`; return the new balance or raise InsufficientFunds."""
     if amount <= 0:
         raise ValueError("amount must be positive")
-    # Two-step: check balance, then update.  The SqliteDatabase mock used in
-    # tests replaces every $N with ?, so repeated placeholders are impossible.
-    # In production (asyncpg) the SELECT+UPDATE pair is still safe because the
-    # gateway serialises per-agent requests; a proper CAS can be added later.
-    row = await db.fetchrow(
-        "SELECT balance FROM agent_wallets WHERE client_id = $1", client_id
-    )
-    if row is None or row["balance"] < amount:
-        raise InsufficientFunds(f"client={client_id} amount={amount}")
+    # Single atomic conditional UPDATE: the `balance >= ...` guard makes this
+    # race-safe in Postgres (two concurrent debits cannot both match). Placeholders
+    # are DISTINCT ($1,$2,$3) and ordered ascending by their position in the string
+    # so this is correct under both asyncpg (numbered) and the SqliteDatabase mock
+    # (which strips $N->? and binds positionally in string order). $1 and $3 are
+    # both `amount`; $2 is the client_id.
     updated = await db.fetchrow(
         "UPDATE agent_wallets SET balance = balance - $1 "
-        "WHERE client_id = $2 RETURNING balance",
+        "WHERE client_id = $2 AND balance >= $3 RETURNING balance",
         amount,
         client_id,
+        amount,
     )
     if updated is None:
         raise InsufficientFunds(f"client={client_id} amount={amount}")
