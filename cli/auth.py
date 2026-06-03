@@ -85,7 +85,10 @@ def _refresh_grant(refresh_token: str) -> dict:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as e:
+        # 400 here is almost always an expired/invalid refresh token.
         raise NotLoggedIn(f"Refresh failed ({e.code}). Run `crowe-logic login`.")
+    except urllib.error.URLError as e:
+        raise NotLoggedIn(f"Refresh unreachable ({e.reason}). Run `crowe-logic login`.")
 
 
 def current_access_token() -> str:
@@ -226,7 +229,9 @@ def login_pkce(open_browser: bool = True) -> dict:
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
-        "scope": "openid",
+        # offline_access yields a durable refresh token (offline session),
+        # so `current_access_token` keeps working past the short SSO-idle window.
+        "scope": "openid offline_access",
         "redirect_uri": redirect,
         "state": state,
         "code_challenge": challenge,
