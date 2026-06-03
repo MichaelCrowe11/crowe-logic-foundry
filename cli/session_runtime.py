@@ -203,6 +203,18 @@ def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_
     except Exception:
         pass
 
+    # Crowe Code blocks (crowecode editor blocks). The addendum is non-empty
+    # only when crowe-logic runs inside a Crowe Terminal block (WAVETERM_JWT +
+    # wsh reachable), so we never describe tools that aren't registered.
+    try:
+        from tools.crowe_code import system_prompt as crowe_code_prompt
+
+        cc_addendum = crowe_code_prompt()
+        if cc_addendum:
+            parts.append(cc_addendum)
+    except Exception:
+        pass
+
     return "\n\n".join(part for part in parts if part and part.strip())
 
 
