@@ -1663,6 +1663,56 @@ def chat():
                 console.print(
                     f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
                 )
+            # ── Signed-in users route execution through the gateway (no local
+            # keys, no cascade). Mirrors run(); Auto has already resolved a
+            # concrete tier above, so the gateway gets a real model id.
+            # CROWE_LOGIC_LOCAL=1 is the escape hatch back to local keys. ──
+            use_local = os.environ.get("CROWE_LOGIC_LOCAL", "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            if not use_local:
+                from cli import auth, gateway_client
+
+                # Validate (and refresh) the token up front. A stale/unrefreshable
+                # session must fall back to the local path, never brick the turn.
+                try:
+                    auth.current_access_token()
+                    routed = True
+                except auth.NotLoggedIn:
+                    routed = False
+                    if not session_state.get("_relogin_hinted"):
+                        console.print(
+                            "  [dim]Crowe ID session inactive — using local models. "
+                            "Run `crowe-logic login` to reconnect.[/dim]"
+                        )
+                        session_state["_relogin_hinted"] = True
+
+                if routed:
+                    from rich.markdown import Markdown
+
+                    render_session_hud(
+                        console, state=session_state, cwd=os.getcwd(), meta="turn"
+                    )
+                    console.print()
+                    try:
+                        resp = gateway_client.chat(
+                            model=model_cfg.get("name", model_cfg.get("label")),
+                            messages=[{"role": "user", "content": user_input}],
+                        )
+                    except gateway_client.PlanDenied as exc:
+                        _render_error(str(exc), "Plan does not allow this model")
+                        continue
+                    except auth.NotLoggedIn:
+                        routed = False  # token died mid-call; fall through to local
+                    if routed:
+                        console.print(Markdown(resp.get("content", "")))
+                        console.print()
+                        session_state["api_status"] = "ok"
+                        iterm_set_var("crowe_logic_api", "ok")
+                        continue
+
             # Pre-flight credit reservation runs after Auto has resolved
             # to a concrete tier so the reservation matches the model
             # that actually answers.
@@ -2625,6 +2675,43 @@ def route(prompt: str, as_json: bool):
     console.print()
 
 
+@main.command(name="login")
+def login_cmd():
+    """Sign in to Crowe ID in the browser (PKCE)."""
+    from cli import auth
+
+    try:
+        who = auth.login_pkce()
+    except Exception as exc:  # surface any sign-in failure as a clean exit
+        console.print(f"  [#bf6f6f]Sign-in failed:[/] {exc}")
+        raise SystemExit(1)
+    console.print(
+        f"  [#bfa669]Signed in as {who['username']} ({who['crowe_tier']}).[/]"
+    )
+
+
+@main.command(name="logout")
+def logout_cmd():
+    """Forget the stored Crowe ID session."""
+    from cli import auth
+
+    auth.logout()
+    console.print("  Signed out.")
+
+
+@main.command(name="whoami")
+def whoami_cmd():
+    """Show the signed-in Crowe ID identity."""
+    from cli import auth
+
+    try:
+        who = auth.whoami()
+    except auth.NotLoggedIn:
+        console.print("  Not signed in. Run `crowe-logic login`.")
+        raise SystemExit(1)
+    console.print(f"  {who['username']} (tier: {who['crowe_tier']})")
+
+
 @main.command(name="synapse-doctor")
 @click.option(
     "--telemetry-tail",
@@ -2846,6 +2933,48 @@ def run(prompt: str):
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
+
+    # ── Signed-in users route execution through the gateway (no local keys, no
+    # cascade). The gateway holds every provider key server-side and owns
+    # fallback, so a missing local key can never trigger the tier cascade.
+    # CROWE_LOGIC_LOCAL=1 is the explicit escape hatch back to local keys. ──
+    use_local = os.environ.get("CROWE_LOGIC_LOCAL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not use_local:
+        from cli import auth, gateway_client
+
+        # Validate (and refresh) the token up front. A stale/unrefreshable session
+        # must fall back to the local provider path, never abort the run.
+        try:
+            auth.current_access_token()
+            routed = True
+        except auth.NotLoggedIn:
+            routed = False  # fall through to the local provider path below
+            console.print(
+                "  [dim]Crowe ID session inactive — using local models. "
+                "Run `crowe-logic login` to reconnect.[/dim]"
+            )
+
+        if routed:
+            from rich.markdown import Markdown
+
+            try:
+                resp = gateway_client.chat(
+                    model=model_cfg.get("name", model_cfg.get("label")),
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            except gateway_client.PlanDenied as exc:
+                console.print(f"  [#bf6f6f]Plan does not allow this model:[/] {exc}")
+                return
+            except auth.NotLoggedIn:
+                routed = False  # token died mid-call; fall through to local
+            if routed:
+                console.print(Markdown(resp.get("content", "")))
+                console.print()
+                return
 
     provider_kind = model_cfg.get("provider")
     try:

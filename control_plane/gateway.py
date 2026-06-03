@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Header, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from . import oidc
 from .db import Database, get_db
 from .plans import canonical_plan_id, plan_rank
 from .tokens import hash_api_key, is_supported_api_key
@@ -28,7 +29,11 @@ router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 # Reversible flag for the SSE streaming endpoint. Off by default so a
 # misconfigured deploy can't accidentally expose it; flip to "1" once
 # the surface is dogfood-ready. See docs/protocols/crowe-stream-v0.md.
-CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in ("1", "true", "yes")
+CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # Model tier → plan minimum. Models not listed are enterprise-only.
 MODEL_PLAN_ACCESS = {
@@ -169,7 +174,9 @@ async def _call_provider(
         # Fall back to first model in chain
         cfg = list(MODEL_CHAIN)[0] if MODEL_CHAIN else None
     if cfg is None:
-        raise HTTPException(status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN")
+        raise HTTPException(
+            status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN"
+        )
 
     provider_kind = cfg.get("provider", "azure_openai")
     name = provider_model_name(cfg)
@@ -177,12 +184,16 @@ async def _call_provider(
     def _sync_call():
         """Execute the provider call synchronously (OpenAI SDK is not async)."""
         if provider_kind == "azure_openai":
-            from providers.azure_openai import AzureOpenAIProvider, AzureResponsesProvider
+            from providers.azure_openai import (
+                AzureOpenAIProvider,
+                AzureResponsesProvider,
+            )
+
             runtime = azure_openai_runtime_config(cfg)
             if runtime["missing"]:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Missing credentials for {name} ({'/'.join(runtime['missing'])})"
+                    detail=f"Missing credentials for {name} ({'/'.join(runtime['missing'])})",
                 )
             runtime_model = runtime["model"]
 
@@ -205,6 +216,7 @@ async def _call_provider(
                 )
         elif provider_kind == "openai_compat":
             from providers.hosted_openai import HostedOpenAIProvider
+
             endpoint_var = cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
             api_key_var = cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
             endpoint = os.environ.get(endpoint_var, "")
@@ -212,7 +224,7 @@ async def _call_provider(
             if not endpoint:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Missing endpoint for {name} ({endpoint_var})"
+                    detail=f"Missing endpoint for {name} ({endpoint_var})",
                 )
             provider = HostedOpenAIProvider(
                 model=name,
@@ -223,12 +235,19 @@ async def _call_provider(
             )
         elif provider_kind == "openrouter":
             from providers.openrouter import OpenRouterProvider
+
             api_key = os.environ.get("OPENROUTER_API_KEY", "")
-            base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+            base_url = os.environ.get(
+                "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+            )
             if not api_key:
-                raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not set")
+                raise HTTPException(
+                    status_code=503, detail="OPENROUTER_API_KEY not set"
+                )
             provider = OpenRouterProvider(
-                api_key=api_key, base_url=base_url, model=name,
+                api_key=api_key,
+                base_url=base_url,
+                model=name,
                 system_instructions="You are a helpful assistant.",
                 label=cfg.get("label", "CroweLM"),
             )
@@ -236,33 +255,47 @@ async def _call_provider(
             endpoint = os.environ.get("NVIDIA_NIM_ENDPOINT", "")
             api_key = os.environ.get("NVIDIA_API_KEY", "")
             if not endpoint or not api_key:
-                raise HTTPException(status_code=503, detail="NVIDIA credentials not set")
+                raise HTTPException(
+                    status_code=503, detail="NVIDIA credentials not set"
+                )
             from providers.nvidia import NvidiaProvider
+
             provider = NvidiaProvider(
-                model=name, system_instructions="You are a helpful assistant.",
-                endpoint=endpoint, api_key=api_key,
+                model=name,
+                system_instructions="You are a helpful assistant.",
+                endpoint=endpoint,
+                api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
             )
         elif provider_kind == "anthropic":
             from providers.anthropic import AnthropicProvider
+
             endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
             api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
             endpoint = os.environ.get(endpoint_var, "")
             api_key = os.environ.get(api_key_var, "")
             if not endpoint or not api_key:
-                raise HTTPException(status_code=503, detail=f"Missing credentials for {name}")
+                raise HTTPException(
+                    status_code=503, detail=f"Missing credentials for {name}"
+                )
             provider = AnthropicProvider(
-                model=name, system_instructions="You are a helpful assistant.",
-                endpoint=endpoint, api_key=api_key,
+                model=name,
+                system_instructions="You are a helpful assistant.",
+                endpoint=endpoint,
+                api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
             )
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_kind}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported provider: {provider_kind}"
+            )
 
         # Build messages for the OpenAI-compatible SDK call
         sdk_messages = [{"role": "system", "content": "You are a helpful assistant."}]
         for m in messages:
-            sdk_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+            sdk_messages.append(
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+            )
 
         kwargs = {"model": provider.model, "messages": sdk_messages, "stream": False}
         if max_tokens is not None:
@@ -273,7 +306,11 @@ async def _call_provider(
         response = provider.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content or ""
         usage = response.usage
-        return content, (usage.prompt_tokens if usage else 0), (usage.completion_tokens if usage else 0)
+        return (
+            content,
+            (usage.prompt_tokens if usage else 0),
+            (usage.completion_tokens if usage else 0),
+        )
 
     # Run the blocking SDK call in a thread
     return await asyncio.get_event_loop().run_in_executor(None, _sync_call)
@@ -301,12 +338,36 @@ async def list_model_catalog():
     return {"models": _build_model_catalog()}
 
 
-async def _resolve_api_key(
+async def _resolve_principal(
     authorization: Optional[str] = Header(None),
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     db: Database = Depends(get_db),
 ) -> dict:
-    """Resolve an API key to workspace + user + plan."""
+    """Resolve the caller to a principal: a Crowe ID token OR a workspace API key.
+
+    Crowe ID bearer tokens (verified against the configured issuer's JWKS) yield a
+    token principal whose plan is derived from ``crowe_tier``; these are not backed
+    by a ``workspaces`` row, so downstream metering is skipped (see ``_is_metered``).
+    API keys keep their existing workspace-scoped behaviour unchanged.
+    """
+    # ── Crowe ID bearer token path (alternative to API keys) ──
+    if authorization and authorization.startswith("Bearer "):
+        candidate = authorization[7:]
+        if oidc.looks_like_jwt(candidate) and not is_supported_api_key(candidate):
+            try:
+                claims = oidc.verify_token(candidate)
+            except Exception as exc:  # noqa: BLE001 - surface any verify failure as 401
+                raise HTTPException(
+                    status_code=401, detail=f"Invalid Crowe ID token: {exc}"
+                )
+            return {
+                "plan_id": oidc.tier_to_plan(claims.get("crowe_tier")),
+                "workspace_id": claims["sub"],
+                "user_id": claims["sub"],
+                "principal": "crowe-id",
+                "subject": claims.get("preferred_username"),
+            }
+
     raw_key = None
     if x_api_key:
         raw_key = x_api_key
@@ -339,10 +400,20 @@ async def _resolve_api_key(
     return dict(row)
 
 
+def _is_metered(key_info: dict) -> bool:
+    """Workspace-scoped budget/usage only applies to real workspace principals.
+
+    Crowe ID token principals carry a Keycloak ``sub`` rather than a ``workspaces``
+    row, so the plan-budget lookup and the usage INSERT (FK to workspaces/users)
+    must be skipped for them. Metering token principals is a deliberate follow-up.
+    """
+    return key_info.get("principal") != "crowe-id"
+
+
 @router.post("/chat", response_model=GatewayResponse)
 async def gateway_chat(
     req: GatewayRequest,
-    key_info: dict = Depends(_resolve_api_key),
+    key_info: dict = Depends(_resolve_principal),
     db: Database = Depends(get_db),
 ):
     """Metered model gateway. Enforces plan-based model access and records usage."""
@@ -359,23 +430,28 @@ async def gateway_chat(
             detail=f"Model '{model}' requires {required_plan} plan or higher",
         )
 
-    # ── Token budget check ──
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # ── Token budget check (workspace principals only) ──
+    if _is_metered(key_info):
+        from datetime import datetime, timezone
 
-    plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
-    budget = plan["token_budget_month"]
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    if budget != -1:  # not unlimited
-        used_row = await db.fetchrow(
-            """SELECT COALESCE(SUM(quantity), 0) AS used
-               FROM usage_events
-               WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id, month_start,
-        )
-        if used_row and used_row["used"] >= budget:
-            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+        plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+        budget = plan["token_budget_month"]
+
+        if budget != -1:  # not unlimited
+            used_row = await db.fetchrow(
+                """SELECT COALESCE(SUM(quantity), 0) AS used
+                   FROM usage_events
+                   WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
+                workspace_id,
+                month_start,
+            )
+            if used_row and used_row["used"] >= budget:
+                raise HTTPException(
+                    status_code=429, detail="Monthly token budget exhausted"
+                )
 
     # ── Forward to provider ──
     start = time.monotonic()
@@ -390,19 +466,26 @@ async def gateway_chat(
     elapsed_ms = int((time.monotonic() - start) * 1000)
     token_count = prompt_tokens + completion_tokens
 
-    # ── Record usage ──
-    if token_count > 0:
+    # ── Record usage (workspace principals only) ──
+    if _is_metered(key_info) and token_count > 0:
         await db.execute(
             """INSERT INTO usage_events (workspace_id, user_id, event_type, quantity, model)
                VALUES ($1, $2, 'tokens', $3, $4)""",
-            workspace_id, user_id, token_count, model,
+            workspace_id,
+            user_id,
+            token_count,
+            model,
         )
 
     return GatewayResponse(
         id=f"gw_{int(time.time())}",
         model=model,
         content=content,
-        usage={"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": token_count},
+        usage={
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": token_count,
+        },
         latency_ms=elapsed_ms,
     )
 
@@ -410,7 +493,7 @@ async def gateway_chat(
 @router.post("/chat/stream")
 async def gateway_chat_stream(
     req: GatewayRequest,
-    key_info: dict = Depends(_resolve_api_key),
+    key_info: dict = Depends(_resolve_principal),
     db: Database = Depends(get_db),
 ):
     """Streaming model gateway. Emits crowe-stream v0 events as SSE.
@@ -449,47 +532,60 @@ async def gateway_chat_stream(
     # Pre-stream budget check, identical to /chat. We can't know final
     # cost up front for a streamed turn, so this only guards against
     # users who are already over budget when the request arrives.
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
-    if plan and plan["token_budget_month"] != -1:
-        used_row = await db.fetchrow(
-            """SELECT COALESCE(SUM(quantity), 0) AS used
-               FROM usage_events
-               WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
-            workspace_id, month_start,
-        )
-        if used_row and used_row["used"] >= plan["token_budget_month"]:
-            raise HTTPException(status_code=429, detail="Monthly token budget exhausted")
+    # Workspace principals only — Crowe ID token principals have no workspaces row.
+    if _is_metered(key_info):
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        plan = await db.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+        if plan and plan["token_budget_month"] != -1:
+            used_row = await db.fetchrow(
+                """SELECT COALESCE(SUM(quantity), 0) AS used
+                   FROM usage_events
+                   WHERE workspace_id = $1 AND event_type = 'tokens' AND recorded_at >= $2""",
+                workspace_id,
+                month_start,
+            )
+            if used_row and used_row["used"] >= plan["token_budget_month"]:
+                raise HTTPException(
+                    status_code=429, detail="Monthly token budget exhausted"
+                )
 
     session_id = f"http-{workspace_id[:12]}"
     messages = req.messages or []
     if not messages or messages[-1].get("role") != "user":
-        raise HTTPException(status_code=400, detail="messages must end with a user turn")
+        raise HTTPException(
+            status_code=400, detail="messages must end with a user turn"
+        )
 
     async def _sse() -> "AsyncIterator[str]":
         recorded_tokens = 0
         try:
             async for event in stream_agent_events(
-                messages=messages, model_id=model, session_id=session_id,
+                messages=messages,
+                model_id=model,
+                session_id=session_id,
             ):
                 if event.get("type") == "done":
-                    recorded_tokens = (
-                        int(event.get("tokens") or 0)
-                        + int(event.get("reasoning_tokens") or 0)
+                    recorded_tokens = int(event.get("tokens") or 0) + int(
+                        event.get("reasoning_tokens") or 0
                     )
                 yield sse_frame(event)
         finally:
             # Record usage even if the client disconnected mid-stream;
             # the model has already produced (and billed) the tokens.
-            if recorded_tokens > 0:
+            # Workspace principals only — token principals are not metered yet.
+            if _is_metered(key_info) and recorded_tokens > 0:
                 try:
                     await db.execute(
                         """INSERT INTO usage_events
                                (workspace_id, user_id, event_type, quantity, model)
                            VALUES ($1, $2, 'tokens', $3, $4)""",
-                        workspace_id, user_id, recorded_tokens, model,
+                        workspace_id,
+                        user_id,
+                        recorded_tokens,
+                        model,
                     )
                 except Exception:
                     # Don't crash the response on a usage-write failure;
@@ -510,7 +606,7 @@ async def gateway_chat_stream(
 
 @router.get("/models")
 async def list_available_models(
-    key_info: dict = Depends(_resolve_api_key),
+    key_info: dict = Depends(_resolve_principal),
 ):
     """Return models available for this API key's plan, with CroweLM display fields."""
     plan_id = canonical_plan_id(key_info["plan_id"])
