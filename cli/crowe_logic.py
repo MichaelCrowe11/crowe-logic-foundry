@@ -1675,13 +1675,21 @@ def chat():
             if not use_local:
                 from cli import auth, gateway_client
 
+                # Validate (and refresh) the token up front. A stale/unrefreshable
+                # session must fall back to the local path, never brick the turn.
                 try:
-                    auth.load_creds()  # raises NotLoggedIn when no session is stored
-                    signed_in = True
+                    auth.current_access_token()
+                    routed = True
                 except auth.NotLoggedIn:
-                    signed_in = False
+                    routed = False
+                    if not session_state.get("_relogin_hinted"):
+                        console.print(
+                            "  [dim]Crowe ID session inactive — using local models. "
+                            "Run `crowe-logic login` to reconnect.[/dim]"
+                        )
+                        session_state["_relogin_hinted"] = True
 
-                if signed_in:
+                if routed:
                     from rich.markdown import Markdown
 
                     render_session_hud(
@@ -1696,14 +1704,14 @@ def chat():
                     except gateway_client.PlanDenied as exc:
                         _render_error(str(exc), "Plan does not allow this model")
                         continue
-                    except auth.NotLoggedIn as exc:
-                        console.print(f"  [#bf6f6f]{exc}[/]")
+                    except auth.NotLoggedIn:
+                        routed = False  # token died mid-call; fall through to local
+                    if routed:
+                        console.print(Markdown(resp.get("content", "")))
+                        console.print()
+                        session_state["api_status"] = "ok"
+                        iterm_set_var("crowe_logic_api", "ok")
                         continue
-                    console.print(Markdown(resp.get("content", "")))
-                    console.print()
-                    session_state["api_status"] = "ok"
-                    iterm_set_var("crowe_logic_api", "ok")
-                    continue
 
             # Pre-flight credit reservation runs after Auto has resolved
             # to a concrete tier so the reservation matches the model
@@ -2938,13 +2946,19 @@ def run(prompt: str):
     if not use_local:
         from cli import auth, gateway_client
 
+        # Validate (and refresh) the token up front. A stale/unrefreshable session
+        # must fall back to the local provider path, never abort the run.
         try:
-            auth.load_creds()  # raises NotLoggedIn when no session is stored
-            signed_in = True
+            auth.current_access_token()
+            routed = True
         except auth.NotLoggedIn:
-            signed_in = False  # fall through to the local provider path below
+            routed = False  # fall through to the local provider path below
+            console.print(
+                "  [dim]Crowe ID session inactive — using local models. "
+                "Run `crowe-logic login` to reconnect.[/dim]"
+            )
 
-        if signed_in:
+        if routed:
             from rich.markdown import Markdown
 
             try:
@@ -2955,12 +2969,12 @@ def run(prompt: str):
             except gateway_client.PlanDenied as exc:
                 console.print(f"  [#bf6f6f]Plan does not allow this model:[/] {exc}")
                 return
-            except auth.NotLoggedIn as exc:
-                console.print(f"  [#bf6f6f]{exc}[/]")
+            except auth.NotLoggedIn:
+                routed = False  # token died mid-call; fall through to local
+            if routed:
+                console.print(Markdown(resp.get("content", "")))
+                console.print()
                 return
-            console.print(Markdown(resp.get("content", "")))
-            console.print()
-            return
 
     provider_kind = model_cfg.get("provider")
     try:
