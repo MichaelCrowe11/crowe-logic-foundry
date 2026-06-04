@@ -59,12 +59,13 @@ async def test_provider_failure_refunds_the_charge(db, monkeypatch):
     async def _boom(**kwargs):
         raise RuntimeError("provider exploded")
 
+    price = x402.price_for_model(BODY["model"])
     app = _agent_app(db, monkeypatch, _boom)
     await agent_wallets.ensure_wallet(db, "agent-1")
     await agent_wallets.credit(
         db,
         "agent-1",
-        1000,
+        price,
         receipt_id="seed",
         scheme="crowe-credit",
         resource="/seed",
@@ -77,7 +78,7 @@ async def test_provider_failure_refunds_the_charge(db, monkeypatch):
         )
     assert r.status_code >= 500  # provider failure surfaced, not a silent success
     row = await agent_wallets.ensure_wallet(db, "agent-1")
-    assert row["balance"] == 1000  # charge fully refunded — agent paid nothing
+    assert row["balance"] == price  # charge fully refunded — agent paid nothing
 
 
 @pytest.mark.asyncio
@@ -85,12 +86,13 @@ async def test_successful_call_still_charges(db, monkeypatch):
     async def _ok(**kwargs):
         return ("hello", 3, 5)
 
+    price = x402.price_for_model(BODY["model"])
     app = _agent_app(db, monkeypatch, _ok)
     await agent_wallets.ensure_wallet(db, "agent-1")
     await agent_wallets.credit(
         db,
         "agent-1",
-        1000,
+        price + 500,
         receipt_id="seed",
         scheme="crowe-credit",
         resource="/seed",
@@ -103,6 +105,4 @@ async def test_successful_call_still_charges(db, monkeypatch):
         )
     assert r.status_code == 200
     row = await agent_wallets.ensure_wallet(db, "agent-1")
-    assert row["balance"] == 1000 - x402.price_for(
-        "/api/agent/v1/chat"
-    )  # charged once, no refund
+    assert row["balance"] == 500  # charged once at the per-model price, no refund

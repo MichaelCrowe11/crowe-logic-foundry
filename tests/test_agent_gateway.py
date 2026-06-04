@@ -74,11 +74,12 @@ async def test_unfunded_call_returns_402(app):
 
 @pytest.mark.asyncio
 async def test_prepaid_balance_serves_and_debits(app, db):
+    price = x402.price_for_model(BODY["model"])  # per-model price for crowelm-apex
     await agent_wallets.ensure_wallet(db, "agent-1")
     await agent_wallets.credit(
         db,
         "agent-1",
-        1000,
+        price + 500,
         receipt_id="seed",
         scheme="crowe-credit",
         resource="/seed",
@@ -91,7 +92,7 @@ async def test_prepaid_balance_serves_and_debits(app, db):
     assert r.status_code == 200
     assert r.json()["content"] == "hello from agent"
     row = await agent_wallets.ensure_wallet(db, "agent-1")
-    assert row["balance"] == 1000 - x402.price_for("/api/agent/v1/chat")
+    assert row["balance"] == 500  # charged exactly the per-model price
 
 
 @pytest.mark.asyncio

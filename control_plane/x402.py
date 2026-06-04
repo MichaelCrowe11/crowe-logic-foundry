@@ -13,21 +13,46 @@ balance) is always available.
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import os
+from pathlib import Path
 
 # Single source of truth. Add an entry here to monetize a new endpoint.
 PRICE_CATALOG: dict[str, int] = {
-    "/api/agent/v1/chat": 50,  # micro-USD per call (slice-1 default; tune later)
+    "/api/agent/v1/chat": 50,  # micro-USD — legacy per-endpoint floor; per-MODEL pricing below
 }
 
 X402_NETWORK = os.environ.get("X402_NETWORK", "base")
 X402_ASSET = os.environ.get("X402_ASSET", "USDC")
 
+# Per-model price table (micro-USD/call), grounded in upstream_costs.json. Keeps the
+# pay-per-call premise while ensuring frontier models are not sold at nano price.
+_PRICING_PATH = Path(__file__).resolve().parent.parent / "config" / "x402_pricing.json"
+
+
+@functools.lru_cache(maxsize=1)
+def _pricing() -> dict:
+    """Load + cache the per-model price table. Empty on read/parse failure."""
+    try:
+        return json.loads(_PRICING_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
 
 def price_for(resource: str) -> int:
     """Price in micro-USD for a metered resource. Raises KeyError if unpriced."""
     return PRICE_CATALOG[resource]
+
+
+def price_for_model(model: str) -> int:
+    """Per-model x402 price in micro-USD. Frontier models cost more than nano;
+    unknown models fall back to the configured default (never the old flat 50)."""
+    cfg = _pricing()
+    models = cfg.get("models", {})
+    if model in models:
+        return int(models[model])
+    return int(cfg.get("default_micro_usd", PRICE_CATALOG["/api/agent/v1/chat"]))
 
 
 def build_payment_required(resource: str, price: int | None = None) -> dict:

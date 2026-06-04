@@ -56,9 +56,9 @@ async def call_model(*, model, messages, max_tokens, temperature):
     )
 
 
-def _payment_required() -> Response:
+def _payment_required(price: int) -> Response:
     return Response(
-        content=json.dumps(x402.build_payment_required(RESOURCE)),
+        content=json.dumps(x402.build_payment_required(RESOURCE, price)),
         status_code=402,
         media_type="application/json",
     )
@@ -73,7 +73,7 @@ async def agent_chat(
 ):
     principal = resolve_agent_principal(authorization)
     client_id = principal["client_id"]
-    price = x402.price_for(RESOURCE)
+    price = x402.price_for_model(req.model)
     await agent_wallets.ensure_wallet(db, client_id)
 
     settled_tx = None
@@ -81,10 +81,10 @@ async def agent_chat(
         try:
             payload = x402.parse_x_payment(x_payment)
         except ValueError:
-            return _payment_required()
+            return _payment_required(price)
         fac = settlement.get_facilitator()
         if fac is None:
-            return _payment_required()
+            return _payment_required(price)
         requirements = {
             "scheme": "exact",
             "network": os.environ.get("X402_NETWORK", "base"),
@@ -106,12 +106,12 @@ async def agent_chat(
             )
             settled_tx = receipt.tx_ref
         except (settlement.PaymentError, agent_wallets.DuplicatePayment):
-            return _payment_required()
+            return _payment_required(price)
 
     try:
         await agent_wallets.debit(db, client_id, price)
     except agent_wallets.InsufficientFunds:
-        return _payment_required()
+        return _payment_required(price)
 
     # The call is already charged; if the upstream provider fails, refund so the
     # agent never pays for a completion it didn't receive, then surface the error.
@@ -155,12 +155,21 @@ async def well_known_x402():
     """
     chain_available = bool(os.environ.get("X402_BASE_PAYTO"))
     schemes = ["exact", "crowe-credit"] if chain_available else ["crowe-credit"]
+    pricing = x402._pricing()
     return {
         "x402Version": 1,
+        "unit": "micro-usd",
+        "pricing": "per-model",
         "resources": [
-            {"resource": res, "price": price, "unit": "micro-usd", "schemes": schemes}
-            for res, price in x402.PRICE_CATALOG.items()
+            {
+                "resource": res,
+                "schemes": schemes,
+                "pricing": "per-model",
+                "default_price": pricing.get("default_micro_usd"),
+            }
+            for res in x402.PRICE_CATALOG
         ],
+        "models": pricing.get("models", {}),
     }
 
 

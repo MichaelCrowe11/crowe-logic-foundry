@@ -18,9 +18,13 @@ def test_x402_manifest_lists_priced_endpoints():
     assert r.status_code == 200
     body = r.json()
     assert body["x402Version"] == 1
+    assert body["unit"] == "micro-usd"
     entry = next(e for e in body["resources"] if e["resource"] == "/api/agent/v1/chat")
-    assert entry["price"] == x402.price_for("/api/agent/v1/chat")
+    assert entry["pricing"] == "per-model"
     assert "crowe-credit" in entry["schemes"]
+    # per-model prices are advertised so an agent learns frontier != nano cost
+    assert body["models"]["claude-opus-4-6"] == x402.price_for_model("claude-opus-4-6")
+    assert body["models"]["claude-opus-4-6"] > body["models"]["FW-GLM-5"]
 
 
 def test_x402_manifest_omits_chain_scheme_without_treasury(monkeypatch):
