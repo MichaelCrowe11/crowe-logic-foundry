@@ -8,6 +8,7 @@ the on-chain ("exact") scheme is real facilitator settlement. No mock data.
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 
@@ -144,6 +145,48 @@ async def agent_chat(
         {"charged": price, "client_id": client_id, "settlement": settled_tx}
     )
     return resp
+
+
+class TopupRequest(BaseModel):
+    client_id: str
+    amount: int  # micro-USD to add to the agent's prepaid (crowe-credit) balance
+    idempotency_key: str
+    reason: str | None = "admin-topup"
+
+
+@router.post("/api/agent/v1/wallet/topup")
+async def wallet_topup(
+    req: TopupRequest,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    db: Database = Depends(get_db),
+):
+    """Out-of-band crowe-credit top-up of an agent wallet (ops / Stripe-webhook seam).
+
+    Fail-closed: disabled unless X402_ADMIN_TOKEN is set, and requires a matching
+    X-Admin-Token (constant-time compare). Idempotent on ``idempotency_key`` so a
+    retried top-up never double-credits. Lets an agent be funded before on-chain
+    settlement is wired, so a real agent-paid completion can happen today."""
+    admin = os.environ.get("X402_ADMIN_TOKEN")
+    if not admin or not x_admin_token or not hmac.compare_digest(x_admin_token, admin):
+        raise HTTPException(status_code=403, detail="admin token required")
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be positive")
+    await agent_wallets.ensure_wallet(db, req.client_id)
+    try:
+        balance = await agent_wallets.credit(
+            db,
+            req.client_id,
+            req.amount,
+            receipt_id=f"topup:{req.idempotency_key}",
+            scheme="admin-topup",
+            resource="/api/agent/v1/wallet/topup",
+            tx_ref=req.reason,
+        )
+        applied = True
+    except agent_wallets.DuplicatePayment:
+        row = await agent_wallets.ensure_wallet(db, req.client_id)
+        balance, applied = row["balance"], False
+    return {"client_id": req.client_id, "balance": balance, "applied": applied}
 
 
 @router.get("/.well-known/x402")
