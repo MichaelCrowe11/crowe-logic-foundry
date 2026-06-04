@@ -56,6 +56,23 @@ async def debit(db, client_id: str, amount: int) -> int:
     return updated["balance"]
 
 
+async def refund(db, client_id: str, amount: int) -> int:
+    """Return `amount` to the wallet — reverses a debit for a call that never
+    delivered (e.g. the upstream provider failed after we charged).
+
+    A refund is NOT a payment, so it records no receipt; it only restores balance.
+    Amount first so positional ? binds left-to-right: $1=amount, $2=client_id."""
+    if amount <= 0:
+        raise ValueError("amount must be positive")
+    updated = await db.fetchrow(
+        "UPDATE agent_wallets SET balance = balance + $1 "
+        "WHERE client_id = $2 RETURNING balance",
+        amount,
+        client_id,
+    )
+    return updated["balance"] if updated else 0
+
+
 async def credit(
     db,
     client_id: str,

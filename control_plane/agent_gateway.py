@@ -113,12 +113,18 @@ async def agent_chat(
     except agent_wallets.InsufficientFunds:
         return _payment_required()
 
-    content, prompt_tokens, completion_tokens = await call_model(
-        model=req.model,
-        messages=req.messages,
-        max_tokens=req.max_tokens,
-        temperature=req.temperature,
-    )
+    # The call is already charged; if the upstream provider fails, refund so the
+    # agent never pays for a completion it didn't receive, then surface the error.
+    try:
+        content, prompt_tokens, completion_tokens = await call_model(
+            model=req.model,
+            messages=req.messages,
+            max_tokens=req.max_tokens,
+            temperature=req.temperature,
+        )
+    except Exception:
+        await agent_wallets.refund(db, client_id, price)
+        raise
 
     resp = Response(
         content=json.dumps(
