@@ -25,8 +25,10 @@ if PREVIEW_DB_PATH not in (":memory:", ""):
 
 # ─── SQLite mock that quacks like asyncpg ─────────────────────────────
 
+
 class _Record(dict):
     """dict with attribute access, mimicking asyncpg.Record."""
+
     def __getattr__(self, key):
         try:
             return self[key]
@@ -141,6 +143,23 @@ class SqliteDatabase:
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS agent_wallets (
+                client_id     TEXT PRIMARY KEY,
+                balance       INTEGER NOT NULL DEFAULT 0,
+                funding       TEXT NOT NULL DEFAULT 'crowe-credit',
+                chain_address TEXT,
+                created_at    TEXT DEFAULT (datetime('now')),
+                updated_at    TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS payment_receipts (
+                id         TEXT PRIMARY KEY,
+                client_id  TEXT NOT NULL,
+                scheme     TEXT NOT NULL,
+                amount     INTEGER NOT NULL,
+                resource   TEXT NOT NULL,
+                tx_ref     TEXT,
+                settled_at TEXT DEFAULT (datetime('now'))
+            );
         """)
 
         # Seed plans
@@ -152,14 +171,62 @@ class SqliteDatabase:
                    notebook_quota_month, agent_jobs_month, token_budget_month,
                    audit_retention_days, features) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [
-                    ("developer", "Developer", 1, 1, 0, 10, 1, 0, 100, 500000, 30,
-                     '{"ide_enabled": false, "byok": true}'),
-                    ("studio", "Studio", 3, 2, 100, 500, 10, 50, 500, 5000000, 90,
-                     '{"ide_enabled": true, "byok": true}'),
-                    ("lab", "Lab", 10, 5, 500, 5000, 100, 500, 5000, 50000000, 365,
-                     '{"ide_enabled": true, "byok": true, "private_datasets": true}'),
-                    ("enterprise", "Enterprise", -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                     '{"ide_enabled": true, "sso": true, "dedicated_compute": true}'),
+                    (
+                        "developer",
+                        "Developer",
+                        1,
+                        1,
+                        0,
+                        10,
+                        1,
+                        0,
+                        100,
+                        500000,
+                        30,
+                        '{"ide_enabled": false, "byok": true}',
+                    ),
+                    (
+                        "studio",
+                        "Studio",
+                        3,
+                        2,
+                        100,
+                        500,
+                        10,
+                        50,
+                        500,
+                        5000000,
+                        90,
+                        '{"ide_enabled": true, "byok": true}',
+                    ),
+                    (
+                        "lab",
+                        "Lab",
+                        10,
+                        5,
+                        500,
+                        5000,
+                        100,
+                        500,
+                        5000,
+                        50000000,
+                        365,
+                        '{"ide_enabled": true, "byok": true, "private_datasets": true}',
+                    ),
+                    (
+                        "enterprise",
+                        "Enterprise",
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        -1,
+                        '{"ide_enabled": true, "sso": true, "dedicated_compute": true}',
+                    ),
                 ],
             )
             c.commit()
@@ -194,8 +261,9 @@ class SqliteDatabase:
     def _pg_to_sqlite(query: str) -> str:
         """Convert Postgres-isms to SQLite equivalents."""
         import re
-        q = re.sub(r'\$\d+', '?', query)
-        q = re.sub(r'\bnow\(\)', "datetime('now')", q, flags=re.IGNORECASE)
+
+        q = re.sub(r"\$\d+", "?", query)
+        q = re.sub(r"\bnow\(\)", "datetime('now')", q, flags=re.IGNORECASE)
         return q
 
 
@@ -222,17 +290,25 @@ def create_app():
 
     # Include gateway routes
     from control_plane.gateway import router as gw
+
     app.include_router(gw)
 
     # Include billing routes
     from control_plane.billing import router as billing
+
     app.include_router(billing)
+
+    # Include agent gateway (x402 metered endpoint)
+    from control_plane.agent_gateway import router as agent_gateway_router
+
+    app.include_router(agent_gateway_router)
 
     # Include domain modules
     from domain.mycology import router as mycology
     from domain.vision import router as vision
     from domain.research import router as research
     from domain.compound import router as compound
+
     app.include_router(mycology)
     app.include_router(vision)
     app.include_router(research)
@@ -240,10 +316,12 @@ def create_app():
 
     # Include knowledge plane
     from knowledge.search import router as knowledge
+
     app.include_router(knowledge)
 
     # Include dashboard
     from dashboard import router as dashboard
+
     app.include_router(dashboard)
 
     return app

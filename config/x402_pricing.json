@@ -1,0 +1,30 @@
+{
+  "_comment": "Per-model x402 price for the agent payment rail, in micro-USD per call (1 USDC = 1_000_000). Replaces the old flat per-endpoint price so frontier models are not sold at nano price. Derived as: round(2x markup * (assumed_input_tokens*input_rate + assumed_output_tokens*output_rate) / 1e6 * 1e6), where rates are per-1M-token USD from upstream_costs.json and a typical call is ~1000 input + ~1000 output tokens. Models whose upstream cost is $0 (NVIDIA NIM / Ollama-subscription / unlisted) use the floor. CALIBRATE before launch: the markup and assumed-token shape are policy levers the owner should confirm.",
+  "_derivation": {
+    "markup": 2.0,
+    "assumed_input_tokens": 1000,
+    "assumed_output_tokens": 1000,
+    "rates_source": "config/upstream_costs.json (per-1M-token USD)"
+  },
+  "floor_micro_usd": 200,
+  "default_micro_usd": 5000,
+  "models": {
+    "FW-GLM-5": 200,
+    "Llama-3-3-70B": 200,
+    "crowelm-grower": 200,
+    "crowelm-kernel": 200,
+    "gpt-5.4-nano": 600,
+    "DeepSeek-R1": 200,
+    "DeepSeek-V3-1": 200,
+    "Kimi-K2.5": 6200,
+    "FW-MiniMax-M2.5": 8000,
+    "Mistral-Large-3": 12000,
+    "gpt-5.4": 35000,
+    "claude-opus-4-6": 60000,
+    "claude-opus-4-6-2": 60000,
+    "claude-opus-4-5": 60000,
+    "crowelm-apex": 60000,
+    "grok-4-20-reasoning": 80000,
+    "gpt-5.4-pro": 420000
+  }
+}

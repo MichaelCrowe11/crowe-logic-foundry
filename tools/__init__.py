@@ -367,3 +367,10 @@ user_functions = {
 # discover_and_register call at import time can mutate the set in place.
 # Silent no-op when the terminal isn't reachable.
 from tools import crowe_terminal as _crowe_terminal  # noqa: F401, E402
+
+# Crowe Code editor-block tools (crowecode blocks). Registered only when
+# crowe-logic runs inside a Crowe Terminal block (WAVETERM_JWT + wsh reachable);
+# a silent no-op elsewhere, so the tools never surface where they can't work.
+from tools import crowe_code as _crowe_code  # noqa: E402
+
+_crowe_code.register(user_functions)
