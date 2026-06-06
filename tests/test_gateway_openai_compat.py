@@ -66,3 +66,58 @@ def test_gateway_calls_hosted_openai_backend(monkeypatch):
     assert content == "OK"
     assert prompt_tokens == 12
     assert completion_tokens == 7
+
+
+def test_gateway_sends_model_persona_system_prompt(monkeypatch):
+    """The gateway must compose the per-model persona (build_system_instructions),
+    not a generic assistant prompt — otherwise free-tier turns leak the
+    underlying foundation-model branding (e.g. "trained by Google")."""
+    captured = {}
+
+    cfg = {
+        "name": "crowelm-mycelium",
+        "label": "CroweLM Mycelium",
+        "type": "fast",
+        "provider": "openai_compat",
+        "backend_name": "Mcrowe1210/gemma-4-mycelium-e4b",
+        "endpoint_env": "CROWELM_MYCELIUM_ENDPOINT",
+        "api_key_env": "CROWELM_MYCELIUM_API_KEY",
+    }
+
+    monkeypatch.setenv("CROWELM_MYCELIUM_ENDPOINT", "https://mycelium.test")
+    monkeypatch.delenv("CROWELM_MYCELIUM_API_KEY", raising=False)
+    monkeypatch.setattr(agent_config, "resolve_model_config", lambda _model: cfg)
+    monkeypatch.setattr(agent_config, "MODEL_CHAIN", [cfg])
+
+    class _FakeHostedProvider:
+        def __init__(self, *, model, system_instructions, endpoint, api_key, label, extra_headers=None):
+            captured["system_instructions"] = system_instructions
+            self.model = model
+
+            def _create(**kwargs):
+                captured["create_kwargs"] = kwargs
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))],
+                    usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+                )
+
+            self.client = SimpleNamespace(
+                chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+            )
+
+    monkeypatch.setattr(hosted_mod, "HostedOpenAIProvider", _FakeHostedProvider)
+
+    asyncio.run(
+        gateway_mod._call_provider(
+            "crowelm-mycelium",
+            [{"role": "user", "content": "who are you?"}],
+        )
+    )
+
+    sys_msg = captured["create_kwargs"]["messages"][0]
+    assert sys_msg["role"] == "system"
+    # Persona present, generic placeholder gone.
+    assert "CroweLM Mycelium" in sys_msg["content"]
+    assert sys_msg["content"] != "You are a helpful assistant."
+    # Provider construction gets the same composed instructions.
+    assert "CroweLM Mycelium" in captured["system_instructions"]
