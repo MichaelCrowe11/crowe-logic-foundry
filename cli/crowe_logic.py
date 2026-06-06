@@ -1458,6 +1458,10 @@ def chat():
         t = azure_state["thread"]
         return t.id if t is not None else synthetic_thread_id
 
+    from cli.first_run import ensure_first_run
+    if not ensure_first_run(console):
+        return
+
     orch = _get_orchestrator()
     session_id = orch.start_session(thread_id=synthetic_thread_id)
     reset_session_state()
@@ -2921,6 +2925,9 @@ def _summarize_synapse_telemetry(tail_n: int) -> dict | None:
 @click.argument("prompt")
 def run(prompt: str):
     """Run a single prompt and print the response."""
+    from cli.first_run import ensure_first_run
+    if not ensure_first_run(console):
+        return
     # Route through the primary model in the chain.
     # No Azure Agents thread/client needed unless the chain falls through to
     # the legacy "azure" provider.
