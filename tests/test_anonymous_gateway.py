@@ -38,6 +38,7 @@ def test_register_mints_token(monkeypatch):
 
     class FakeRequest:
         client = FakeClient()
+        headers = {}
 
     anonymous._register_log.clear()
     out = asyncio.run(anonymous.register_device(FakeRequest()))
@@ -57,6 +58,7 @@ def test_register_rate_limits_per_ip(monkeypatch):
 
     class FakeRequest:
         client = FakeClient()
+        headers = {}
 
     anonymous._register_log.clear()
     for _ in range(anonymous._REGISTER_MAX_PER_IP):
@@ -64,3 +66,41 @@ def test_register_rate_limits_per_ip(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(anonymous.register_device(FakeRequest()))
     assert exc.value.status_code == 429
+
+
+def test_register_uses_forwarded_for(monkeypatch):
+    monkeypatch.setenv("CROWE_ANON_SIGNING_SECRET", "test-secret")
+    from control_plane import anonymous
+    import asyncio
+
+    class FakeClient:
+        host = "10.0.0.1"  # ingress IP
+
+    class FakeRequest:
+        client = FakeClient()
+        headers = {"x-forwarded-for": "198.51.100.9, 10.0.0.1"}
+
+    anonymous._register_log.clear()
+    asyncio.run(anonymous.register_device(FakeRequest()))
+    assert "198.51.100.9" in anonymous._register_log
+    assert "10.0.0.1" not in anonymous._register_log
+
+
+def test_register_log_sweeps_expired_entries(monkeypatch):
+    monkeypatch.setenv("CROWE_ANON_SIGNING_SECRET", "test-secret")
+    from control_plane import anonymous
+    import asyncio, time
+
+    class FakeClient:
+        host = "203.0.113.99"
+
+    class FakeRequest:
+        client = FakeClient()
+        headers = {}
+
+    anonymous._register_log.clear()
+    stale = time.time() - anonymous._REGISTER_WINDOW - 1
+    for i in range(anonymous._REGISTER_LOG_MAX + 1):
+        anonymous._register_log[f"10.9.{i // 256}.{i % 256}"] = [stale]
+    asyncio.run(anonymous.register_device(FakeRequest()))
+    assert len(anonymous._register_log) <= 2  # the new caller (+ at most slack)
