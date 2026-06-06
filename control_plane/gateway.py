@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from . import oidc
 from .db import Database, get_db
-from .plans import canonical_plan_id, plan_rank
+from .plans import ANON_PLAN_ID, canonical_plan_id, plan_rank
 from .tokens import hash_api_key, is_supported_api_key
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
@@ -56,6 +56,8 @@ MODEL_PLAN_ACCESS = {
     "gpt-5.4-pro": "team",
     "grok-4-20-reasoning": "team",
     "claude-opus-4-5": "team",
+    # Free / anonymous tier
+    "crowelm-mycelium": ANON_PLAN_ID,
 }
 
 # Customer-facing display layer. Keys are routing IDs from MODEL_PLAN_ACCESS.

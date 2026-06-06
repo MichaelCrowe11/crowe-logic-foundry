@@ -16,3 +16,13 @@ def test_anon_plan_not_in_launch_plans():
 
 def test_anon_cap_constant():
     assert plans.ANON_DAILY_TURN_CAP == 20
+
+
+def test_mycelium_resolves_and_is_anon_accessible():
+    from config.agent_config import resolve_model_config
+    from control_plane.gateway import MODEL_PLAN_ACCESS
+
+    cfg = resolve_model_config("crowelm-mycelium")
+    assert cfg is not None
+    assert cfg["api_key_env"] == "CROWELM_MYCELIUM_API_KEY"
+    assert MODEL_PLAN_ACCESS["crowelm-mycelium"] == plans.ANON_PLAN_ID
