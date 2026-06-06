@@ -24,12 +24,18 @@ CANONICAL_LEGACY_ALIASES = {
 }
 PLAN_RANK = {plan_id: idx for idx, plan_id in enumerate(LAUNCH_PLAN_IDS)}
 
+# Anonymous free tier: deliberately NOT in LAUNCH_PLAN_IDS (Stripe surfaces
+# iterate that tuple). Rank -1 sits below every paid plan.
+ANON_PLAN_ID = "free-anonymous"
+ANON_DAILY_TURN_CAP = 20  # server-side policy; tune without a client release
+
 PLAN_DISPLAY_NAMES = {
     "personal": "Personal",
     "pro": "Pro",
     "team": "Team",
     "enterprise": "Enterprise",
     "byok": "BYOK",
+    "free-anonymous": "Free",
 }
 
 TIER_ALLOCATIONS = {
@@ -85,7 +91,10 @@ def canonical_plan_id(plan_id: str | None, *, default: str = "personal") -> str:
 
 
 def plan_rank(plan_id: str | None) -> int:
-    return PLAN_RANK.get(canonical_plan_id(plan_id), PLAN_RANK["personal"])
+    canonical = canonical_plan_id(plan_id)
+    if canonical == ANON_PLAN_ID:
+        return -1
+    return PLAN_RANK.get(canonical, PLAN_RANK["personal"])
 
 
 def display_plan_name(plan_id: str | None) -> str:
