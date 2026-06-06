@@ -1648,33 +1648,16 @@ def chat():
                     iterm_set_var("crowe_logic_api", "error")
                 continue
 
-            model_cfg = _current_model()
-            router_cfg = None
-            auto_candidates = None
-            auto_route_index = None
-            task_class = None
-            # CroweLM Auto: pick the best concrete tier for this user turn.
-            if model_cfg.get("provider") == "auto":
-                from config.agent_config import route_candidates_for_auto
-
-                router_cfg = model_cfg
-                auto_candidates, task_class = route_candidates_for_auto(
-                    user_input,
-                    availability_check=lambda c: _model_switch_error(c) is None,
-                )
-                auto_route_index = 0
-                model_cfg = auto_candidates[auto_route_index]
-                console.print(
-                    f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
-                )
             # ── Anonymous free-tier: device token bootstrap from ensure_first_run.
-            # Checked BEFORE the signed-in branch — an anon session has no Crowe ID
-            # creds, so this is also defensive ordering. ──
+            # Checked BEFORE Auto resolution and the signed-in branch — anon turns
+            # always go to the gateway's free model, so routing work (and its
+            # "auto → tier" badge) would be wasted and misleading. ──
             anon_token = session_state.get("anon_device_token")
             if anon_token:
                 from cli import gateway_client
                 from rich.markdown import Markdown
 
+                session_state["active_model"] = "CroweLM Mycelium"
                 render_session_hud(
                     console, state=session_state, cwd=os.getcwd(), meta="turn"
                 )
@@ -1698,6 +1681,25 @@ def chat():
                 iterm_set_var("crowe_logic_api", "ok")
                 continue
 
+            model_cfg = _current_model()
+            router_cfg = None
+            auto_candidates = None
+            auto_route_index = None
+            task_class = None
+            # CroweLM Auto: pick the best concrete tier for this user turn.
+            if model_cfg.get("provider") == "auto":
+                from config.agent_config import route_candidates_for_auto
+
+                router_cfg = model_cfg
+                auto_candidates, task_class = route_candidates_for_auto(
+                    user_input,
+                    availability_check=lambda c: _model_switch_error(c) is None,
+                )
+                auto_route_index = 0
+                model_cfg = auto_candidates[auto_route_index]
+                console.print(
+                    f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
+                )
             # ── Signed-in users route execution through the gateway (no local
             # keys, no cascade). Mirrors run(); Auto has already resolved a
             # concrete tier above, so the gateway gets a real model id.
@@ -2979,7 +2981,7 @@ def run(prompt: str):
     # Synapse auto-routing for the single-prompt path. Same opt-in flag
     # as chat(); when enabled the router picks the best tier before any
     # model gets instantiated.
-    if _auto_route_enabled():
+    if _auto_route_enabled() and not session_state.get("anon_device_token"):
         from config.router import route_prompt
 
         decision = route_prompt(prompt, availability=_auto_route_available)
@@ -2987,7 +2989,11 @@ def run(prompt: str):
         _render_route_badge(console, decision)
 
     model_cfg = _current_model()
-    session_state["active_model"] = model_cfg["label"]
+    session_state["active_model"] = (
+        "CroweLM Mycelium"
+        if session_state.get("anon_device_token")
+        else model_cfg["label"]
+    )
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
