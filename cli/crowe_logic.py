@@ -2063,6 +2063,26 @@ def chat():
                 _render_error(error_msg)
 
 
+@main.command()
+@click.option("--node", is_flag=True, help="Scaffold ~/.crowe-logic.env for a self-managed node.")
+def init(node):
+    """Set up credentials for this machine."""
+    from cli.first_run import render_first_run_card, scaffold_node_env
+
+    if not node:
+        render_first_run_card(console)
+        return
+    try:
+        path = scaffold_node_env()
+    except FileExistsError as exc:
+        _render_error(f"{exc} already exists - edit it directly or remove it first.")
+        raise SystemExit(1)
+    console.print(
+        f"  Wrote [bold #bfa669]{path}[/bold #bfa669] (0600).\n"
+        "  Fill in values, then:  set -a; . ~/.crowe-logic.env; set +a"
+    )
+
+
 def _list_tools_inline():
     from tools import user_functions
 

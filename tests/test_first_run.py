@@ -60,3 +60,28 @@ def test_ensure_first_run_blocks_on_none(monkeypatch):
     out = buf.getvalue()
     assert "crowe-logic login" in out
     assert "crowe-logic init --node" in out
+    assert "Welcome to Crowe Logic" in out
+    assert "crowelogic.com/docs/cli/getting-started" in out
+
+
+def test_init_node_writes_template(tmp_path, monkeypatch):
+    target = tmp_path / ".crowe-logic.env"
+    path = first_run.scaffold_node_env(str(target))
+    assert path == str(target)
+    text = target.read_text()
+    assert "CROWE_LOGIC_AUTO_ROUTE=1" in text
+    assert "CROWE_OPEN_API_KEY=" in text
+    assert "set -a" in text  # sourcing instructions present
+    # Key NAMES only - never values.
+    for line in text.splitlines():
+        if "=" in line and not line.startswith("#"):
+            assert line.endswith("=") or line.endswith("=1")
+    assert oct(target.stat().st_mode & 0o777) == "0o600"
+
+
+def test_init_node_refuses_overwrite(tmp_path):
+    target = tmp_path / ".crowe-logic.env"
+    target.write_text("existing")
+    with pytest.raises(FileExistsError):
+        first_run.scaffold_node_env(str(target))
+    assert target.read_text() == "existing"

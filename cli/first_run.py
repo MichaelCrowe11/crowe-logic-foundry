@@ -74,3 +74,36 @@ def ensure_first_run(console) -> bool:
         return True
     render_first_run_card(console)
     return False
+
+
+_NODE_ENV_TEMPLATE = """\
+# Crowe Logic node credentials - fill in values, then load into your shell:
+#   set -a; . ~/.crowe-logic.env; set +a
+# (add that line to ~/.bashrc or ~/.zshrc for persistence)
+
+# Required: resolve CroweLM Auto to a live tier per turn.
+CROWE_LOGIC_AUTO_ROUTE=1
+
+# Option A - direct Azure tiers (one key serves every alias on crowelm-prod-eastus2):
+CROWE_OPEN_API_KEY=
+CROWE_OPEN_ENDPOINT=
+AZURE_CORE_API_KEY=
+AZURE_CORE_ENDPOINT=
+
+# Option B - route through the gateway instead of local keys:
+# CROWE_LOGIC_GATEWAY_URL=https://api.crowelogic.com
+"""
+
+
+def scaffold_node_env(path: str | None = None) -> str:
+    """Write the self-managed-node env template (key names only). 0600.
+
+    Raises FileExistsError rather than clobbering an existing file.
+    """
+    target = path or os.path.expanduser("~/.crowe-logic.env")
+    if os.path.exists(target):
+        raise FileExistsError(target)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(_NODE_ENV_TEMPLATE)
+    return target
