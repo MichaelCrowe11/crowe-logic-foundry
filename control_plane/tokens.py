@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 
 
@@ -43,6 +44,7 @@ def workspace_id_from_api_key(raw_key: str) -> str | None:
 
 
 ANON_PREFIX = "crowe_anon_"
+_DEVICE_ID_RE = re.compile(r"[0-9a-f]{24}")
 
 
 def _anon_sig(device_id: str) -> str:
@@ -61,12 +63,20 @@ def make_device_token() -> tuple[str, str]:
 
 
 def verify_device_token(raw: str) -> str | None:
-    """Return the device_id for a valid anonymous token, else None."""
+    """Return the device_id for a valid anonymous token, else None.
+
+    Fails closed: missing signing secret or malformed device_id -> None,
+    never an exception (mint stays loud - see make_device_token).
+    """
     if not raw or not raw.startswith(ANON_PREFIX):
         return None
     device_id, _, sig = raw[len(ANON_PREFIX):].partition(".")
-    if not device_id or not sig:
+    if not sig or not _DEVICE_ID_RE.fullmatch(device_id):
         return None
-    if not hmac.compare_digest(sig, _anon_sig(device_id)):
+    try:
+        expected = _anon_sig(device_id)
+    except KeyError:
+        return None  # signing secret not configured -> reject everything
+    if not hmac.compare_digest(sig, expected):
         return None
     return device_id
