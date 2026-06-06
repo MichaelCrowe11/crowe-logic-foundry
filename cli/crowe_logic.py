@@ -1459,7 +1459,7 @@ def chat():
         return t.id if t is not None else synthetic_thread_id
 
     from cli.first_run import ensure_first_run
-    if not ensure_first_run(console):
+    if not ensure_first_run(console, session_state=session_state):
         return
 
     orch = _get_orchestrator()
@@ -1667,6 +1667,37 @@ def chat():
                 console.print(
                     f"  [dim #bfa669]auto → {model_cfg['label']} · {task_class}[/dim #bfa669]"
                 )
+            # ── Anonymous free-tier: device token bootstrap from ensure_first_run.
+            # Checked BEFORE the signed-in branch — an anon session has no Crowe ID
+            # creds, so this is also defensive ordering. ──
+            anon_token = session_state.get("anon_device_token")
+            if anon_token:
+                from cli import gateway_client
+                from rich.markdown import Markdown
+
+                render_session_hud(
+                    console, state=session_state, cwd=os.getcwd(), meta="turn"
+                )
+                console.print()
+                try:
+                    resp = gateway_client.chat(
+                        model=session_state.get("anon_free_model", "crowelm-mycelium"),
+                        messages=[{"role": "user", "content": user_input}],
+                        bearer=anon_token,
+                    )
+                except gateway_client.FreeTierCapped as capped:
+                    _render_error(
+                        f"{capped.detail.get('message', 'Free daily limit reached.')}\n"
+                        f"{capped.detail.get('upsell', 'Run `crowe-logic login` for full tiers.')}",
+                        title="Free tier",
+                    )
+                    continue
+                console.print(Markdown(resp.get("content", "")))
+                console.print()
+                session_state["api_status"] = "ok"
+                iterm_set_var("crowe_logic_api", "ok")
+                continue
+
             # ── Signed-in users route execution through the gateway (no local
             # keys, no cascade). Mirrors run(); Auto has already resolved a
             # concrete tier above, so the gateway gets a real model id.
@@ -2926,7 +2957,7 @@ def _summarize_synapse_telemetry(tail_n: int) -> dict | None:
 def run(prompt: str):
     """Run a single prompt and print the response."""
     from cli.first_run import ensure_first_run
-    if not ensure_first_run(console):
+    if not ensure_first_run(console, session_state=session_state):
         return
     # Route through the primary model in the chain.
     # No Azure Agents thread/client needed unless the chain falls through to
@@ -2960,6 +2991,31 @@ def run(prompt: str):
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
+
+    # ── Anonymous free-tier: device token bootstrap from ensure_first_run.
+    # Checked BEFORE the signed-in branch — an anon session has no Crowe ID
+    # creds, so this is also defensive ordering. ──
+    anon_token = session_state.get("anon_device_token")
+    if anon_token:
+        from cli import gateway_client
+        from rich.markdown import Markdown
+
+        try:
+            resp = gateway_client.chat(
+                model=session_state.get("anon_free_model", "crowelm-mycelium"),
+                messages=[{"role": "user", "content": prompt}],
+                bearer=anon_token,
+            )
+        except gateway_client.FreeTierCapped as capped:
+            _render_error(
+                f"{capped.detail.get('message', 'Free daily limit reached.')}\n"
+                f"{capped.detail.get('upsell', 'Run `crowe-logic login` for full tiers.')}",
+                title="Free tier",
+            )
+            return
+        console.print(Markdown(resp.get("content", "")))
+        console.print()
+        return
 
     # ── Signed-in users route execution through the gateway (no local keys, no
     # cascade). The gateway holds every provider key server-side and owns

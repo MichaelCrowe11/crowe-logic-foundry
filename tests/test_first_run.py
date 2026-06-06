@@ -48,20 +48,56 @@ def test_gateway_only(monkeypatch):
 def test_ensure_first_run_passes_with_creds(monkeypatch):
     monkeypatch.setattr(first_run, "_load_creds", lambda: {"access_token": "x"})
     from rich.console import Console
-    assert first_run.ensure_first_run(Console(file=None, quiet=True)) is True
+    assert first_run.ensure_first_run(Console(file=None, quiet=True), session_state={}) is True
 
 
 def test_ensure_first_run_blocks_on_none(monkeypatch):
     from rich.console import Console
     from io import StringIO
+
+    def boom():
+        raise OSError("network down")
+
+    monkeypatch.setattr(first_run, "_bootstrap_anonymous", boom)
     buf = StringIO()
     console = Console(file=buf, width=100)
-    assert first_run.ensure_first_run(console) is False
+    assert first_run.ensure_first_run(console, session_state={}) is False
     out = buf.getvalue()
     assert "crowe-logic login" in out
     assert "crowe-logic init --node" in out
     assert "Welcome to Crowe Logic" in out
     assert "crowelogic.com/docs/cli/getting-started" in out
+
+
+def test_none_state_bootstraps_anonymous(monkeypatch):
+    from io import StringIO
+    from rich.console import Console
+
+    calls = {}
+
+    monkeypatch.setattr(
+        first_run, "_bootstrap_anonymous",
+        lambda: calls.setdefault("registered", {"token": "crowe_anon_x.y", "free_model": "crowelm-mycelium", "daily_turn_cap": 20}),
+    )
+    state = {}
+    console = Console(file=StringIO(), width=100)
+    assert first_run.ensure_first_run(console, session_state=state) is True
+    assert state["anon_device_token"] == "crowe_anon_x.y"
+    assert state["anon_free_model"] == "crowelm-mycelium"
+
+
+def test_none_state_degrades_to_card_when_gateway_down(monkeypatch):
+    from io import StringIO
+    from rich.console import Console
+
+    def boom():
+        raise OSError("network down")
+
+    monkeypatch.setattr(first_run, "_bootstrap_anonymous", boom)
+    buf = StringIO()
+    console = Console(file=buf, width=100)
+    assert first_run.ensure_first_run(console, session_state={}) is False
+    assert "crowe-logic login" in buf.getvalue()
 
 
 def test_init_node_writes_template(tmp_path, monkeypatch):

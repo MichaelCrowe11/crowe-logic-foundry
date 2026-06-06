@@ -63,17 +63,42 @@ def render_first_run_card(console) -> None:
     console.print(Panel(body, title="Welcome to Crowe Logic", border_style="#bfa669"))
 
 
-def ensure_first_run(console) -> bool:
+def _bootstrap_anonymous() -> dict:
+    """Register (or reuse) an anonymous device token. Raises on network failure."""
+    from cli import gateway_client
+
+    device = gateway_client.load_device()
+    if device and device.get("token"):
+        return device
+    return gateway_client.register_device()
+
+
+def ensure_first_run(console, session_state: dict | None = None) -> bool:
     """Gate a session start. Returns True to proceed, False to exit cleanly.
 
-    Phase 2 turns the NONE branch into anonymous free-tier bootstrap; until
-    then NONE shows the card and exits.
+    NONE -> anonymous free-tier bootstrap (device token via the gateway); on
+    any failure, degrade to the setup card - never a stack trace, and never
+    free inference without a server-verified token (deny-by-default).
     """
     state = detect_credential_state()
     if state is not CredState.NONE:
         return True
-    render_first_run_card(console)
-    return False
+
+    try:
+        device = _bootstrap_anonymous()
+    except Exception:
+        render_first_run_card(console)
+        return False
+
+    if session_state is not None:
+        session_state["anon_device_token"] = device["token"]
+        session_state["anon_free_model"] = device.get("free_model", "crowelm-mycelium")
+    console.print(
+        "  [dim]Free tier active - CroweLM Mycelium, "
+        f"{device.get('daily_turn_cap', 20)} turns/day. "
+        "Run [/dim][bold #bfa669]crowe-logic login[/bold #bfa669][dim] for full tiers.[/dim]"
+    )
+    return True
 
 
 _NODE_ENV_TEMPLATE = """\
