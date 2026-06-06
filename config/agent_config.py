@@ -928,6 +928,23 @@ _BASE_MODEL_CHAIN = [
         "type": "reasoning",
         "provider": "ollama",
     },
+    # ─── Free tier: CroweLM Mycelium — anonymous gateway-only tier (Modal proxy) ──
+    {
+        "name": "crowelm-mycelium",
+        "label": "CroweLM Mycelium",
+        "type": "fast",
+        "provider": "openai_compat",
+        # The Modal app (crowe-mycelium-serve) fronts Ollama, which serves the
+        # model under its registry tag — NOT our brand name.
+        "backend_name": "Mcrowe1210/gemma-4-mycelium-e4b",
+        "aliases": ["mycelium-free", "free"],
+        "endpoint_env": "CROWELM_MYCELIUM_ENDPOINT",
+        "api_key_env": "CROWELM_MYCELIUM_API_KEY",
+        "prompt": (
+            "You are CroweLM Mycelium, Crowe Logic's free community model. "
+            "Be helpful and concise."
+        ),
+    },
 ]
 
 

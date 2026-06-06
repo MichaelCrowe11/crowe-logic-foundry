@@ -20,6 +20,7 @@ class HostedOpenAIProvider(BaseOpenAIProvider):
         endpoint: str,
         api_key: str = "",
         label: str = "CroweLM",
+        extra_headers: dict | None = None,
     ):
         super().__init__(model, system_instructions, label)
 
@@ -30,5 +31,8 @@ class HostedOpenAIProvider(BaseOpenAIProvider):
         self.client = OpenAI(
             api_key=api_key or "crowe-logic",
             base_url=base_url,
+            # e.g. Modal proxy-auth (Modal-Key/Modal-Secret) — auth that lives
+            # in headers rather than the bearer token.
+            default_headers=extra_headers or None,
         )
         self.endpoint = endpoint

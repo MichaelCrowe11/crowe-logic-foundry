@@ -1458,6 +1458,10 @@ def chat():
         t = azure_state["thread"]
         return t.id if t is not None else synthetic_thread_id
 
+    from cli.first_run import ensure_first_run
+    if not ensure_first_run(console, session_state=session_state):
+        return
+
     orch = _get_orchestrator()
     session_id = orch.start_session(thread_id=synthetic_thread_id)
     reset_session_state()
@@ -1642,6 +1646,39 @@ def chat():
                     _render_error(str(exc), "Dual Mode Error")
                     session_state["api_status"] = "error"
                     iterm_set_var("crowe_logic_api", "error")
+                continue
+
+            # ── Anonymous free-tier: device token bootstrap from ensure_first_run.
+            # Checked BEFORE Auto resolution and the signed-in branch — anon turns
+            # always go to the gateway's free model, so routing work (and its
+            # "auto → tier" badge) would be wasted and misleading. ──
+            anon_token = session_state.get("anon_device_token")
+            if anon_token:
+                from cli import gateway_client
+                from rich.markdown import Markdown
+
+                session_state["active_model"] = "CroweLM Mycelium"
+                render_session_hud(
+                    console, state=session_state, cwd=os.getcwd(), meta="turn"
+                )
+                console.print()
+                try:
+                    resp = gateway_client.chat(
+                        model=session_state.get("anon_free_model", "crowelm-mycelium"),
+                        messages=[{"role": "user", "content": user_input}],
+                        bearer=anon_token,
+                    )
+                except gateway_client.FreeTierCapped as capped:
+                    _render_error(
+                        f"{capped.detail.get('message', 'Free daily limit reached.')}\n"
+                        f"{capped.detail.get('upsell', 'Run `crowe-logic login` for full tiers.')}",
+                        title="Free tier",
+                    )
+                    continue
+                console.print(Markdown(resp.get("content", "")))
+                console.print()
+                session_state["api_status"] = "ok"
+                iterm_set_var("crowe_logic_api", "ok")
                 continue
 
             model_cfg = _current_model()
@@ -2061,6 +2098,26 @@ def chat():
                     _render_error(str(retry_err))
             else:
                 _render_error(error_msg)
+
+
+@main.command()
+@click.option("--node", is_flag=True, help="Scaffold ~/.crowe-logic.env for a self-managed node.")
+def init(node):
+    """Set up credentials for this machine."""
+    from cli.first_run import render_first_run_card, scaffold_node_env
+
+    if not node:
+        render_first_run_card(console)
+        return
+    try:
+        path = scaffold_node_env()
+    except FileExistsError as exc:
+        _render_error(f"{exc} already exists - edit it directly or remove it first.")
+        raise SystemExit(1)
+    console.print(
+        f"  Wrote [bold #bfa669]{path}[/bold #bfa669] (0600).\n"
+        "  Fill in values, then:  set -a; . ~/.crowe-logic.env; set +a"
+    )
 
 
 def _list_tools_inline():
@@ -2901,6 +2958,9 @@ def _summarize_synapse_telemetry(tail_n: int) -> dict | None:
 @click.argument("prompt")
 def run(prompt: str):
     """Run a single prompt and print the response."""
+    from cli.first_run import ensure_first_run
+    if not ensure_first_run(console, session_state=session_state):
+        return
     # Route through the primary model in the chain.
     # No Azure Agents thread/client needed unless the chain falls through to
     # the legacy "azure" provider.
@@ -2921,7 +2981,7 @@ def run(prompt: str):
     # Synapse auto-routing for the single-prompt path. Same opt-in flag
     # as chat(); when enabled the router picks the best tier before any
     # model gets instantiated.
-    if _auto_route_enabled():
+    if _auto_route_enabled() and not session_state.get("anon_device_token"):
         from config.router import route_prompt
 
         decision = route_prompt(prompt, availability=_auto_route_available)
@@ -2929,10 +2989,39 @@ def run(prompt: str):
         _render_route_badge(console, decision)
 
     model_cfg = _current_model()
-    session_state["active_model"] = model_cfg["label"]
+    session_state["active_model"] = (
+        "CroweLM Mycelium"
+        if session_state.get("anon_device_token")
+        else model_cfg["label"]
+    )
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
     console.print()
+
+    # ── Anonymous free-tier: device token bootstrap from ensure_first_run.
+    # Checked BEFORE the signed-in branch — an anon session has no Crowe ID
+    # creds, so this is also defensive ordering. ──
+    anon_token = session_state.get("anon_device_token")
+    if anon_token:
+        from cli import gateway_client
+        from rich.markdown import Markdown
+
+        try:
+            resp = gateway_client.chat(
+                model=session_state.get("anon_free_model", "crowelm-mycelium"),
+                messages=[{"role": "user", "content": prompt}],
+                bearer=anon_token,
+            )
+        except gateway_client.FreeTierCapped as capped:
+            _render_error(
+                f"{capped.detail.get('message', 'Free daily limit reached.')}\n"
+                f"{capped.detail.get('upsell', 'Run `crowe-logic login` for full tiers.')}",
+                title="Free tier",
+            )
+            return
+        console.print(Markdown(resp.get("content", "")))
+        console.print()
+        return
 
     # ── Signed-in users route execution through the gateway (no local keys, no
     # cascade). The gateway holds every provider key server-side and owns

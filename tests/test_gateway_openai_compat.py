@@ -32,7 +32,7 @@ def test_gateway_calls_hosted_openai_backend(monkeypatch):
     monkeypatch.setattr(agent_config, "MODEL_CHAIN", [cfg])
 
     class _FakeHostedProvider:
-        def __init__(self, *, model, system_instructions, endpoint, api_key, label):
+        def __init__(self, *, model, system_instructions, endpoint, api_key, label, extra_headers=None):
             captured["init"] = {
                 "model": model,
                 "endpoint": endpoint,
