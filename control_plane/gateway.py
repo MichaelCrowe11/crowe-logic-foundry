@@ -167,6 +167,7 @@ async def _call_provider(
     from config.agent_config import (
         MODEL_CHAIN,
         azure_openai_runtime_config,
+        build_system_instructions,
         provider_model_name,
         resolve_model_config,
     )
@@ -179,6 +180,10 @@ async def _call_provider(
         raise HTTPException(
             status_code=400, detail=f"Model '{model}' not found in MODEL_CHAIN"
         )
+
+    # Per-model persona (config/system_prompts/<slug>.md + brand policy). A
+    # generic placeholder here leaks foundation-model identity to end users.
+    system_instructions = build_system_instructions(cfg)
 
     provider_kind = cfg.get("provider", "azure_openai")
     name = provider_model_name(cfg)
@@ -203,7 +208,7 @@ async def _call_provider(
                 # Responses API — no direct non-streaming token count; use chat fallback
                 provider = AzureOpenAIProvider(
                     model=runtime_model,
-                    system_instructions="You are a helpful assistant.",
+                    system_instructions=system_instructions,
                     endpoint=runtime["endpoint"],
                     api_key=runtime["api_key"],
                     label=cfg.get("label", "CroweLM"),
@@ -211,7 +216,7 @@ async def _call_provider(
             else:
                 provider = AzureOpenAIProvider(
                     model=runtime_model,
-                    system_instructions="You are a helpful assistant.",
+                    system_instructions=system_instructions,
                     endpoint=runtime["endpoint"],
                     api_key=runtime["api_key"],
                     label=cfg.get("label", "CroweLM"),
@@ -241,7 +246,7 @@ async def _call_provider(
             )
             provider = HostedOpenAIProvider(
                 model=name,
-                system_instructions="You are a helpful assistant.",
+                system_instructions=system_instructions,
                 endpoint=endpoint,
                 api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
@@ -262,7 +267,7 @@ async def _call_provider(
                 api_key=api_key,
                 base_url=base_url,
                 model=name,
-                system_instructions="You are a helpful assistant.",
+                system_instructions=system_instructions,
                 label=cfg.get("label", "CroweLM"),
             )
         elif provider_kind == "nvidia":
@@ -276,7 +281,7 @@ async def _call_provider(
 
             provider = NvidiaProvider(
                 model=name,
-                system_instructions="You are a helpful assistant.",
+                system_instructions=system_instructions,
                 endpoint=endpoint,
                 api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
@@ -294,7 +299,7 @@ async def _call_provider(
                 )
             provider = AnthropicProvider(
                 model=name,
-                system_instructions="You are a helpful assistant.",
+                system_instructions=system_instructions,
                 endpoint=endpoint,
                 api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
@@ -305,7 +310,7 @@ async def _call_provider(
             )
 
         # Build messages for the OpenAI-compatible SDK call
-        sdk_messages = [{"role": "system", "content": "You are a helpful assistant."}]
+        sdk_messages = [{"role": "system", "content": system_instructions}]
         for m in messages:
             sdk_messages.append(
                 {"role": m.get("role", "user"), "content": m.get("content", "")}
