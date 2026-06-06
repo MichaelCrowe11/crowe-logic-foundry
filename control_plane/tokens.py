@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import os
 import secrets
 
 
@@ -38,3 +40,33 @@ def workspace_id_from_api_key(raw_key: str) -> str | None:
         parts = body.split("_", 1)
         return parts[0] if len(parts) == 2 and parts[0] else None
     return None
+
+
+ANON_PREFIX = "crowe_anon_"
+
+
+def _anon_sig(device_id: str) -> str:
+    secret = os.environ["CROWE_ANON_SIGNING_SECRET"]
+    return hmac.new(secret.encode(), device_id.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def make_device_token() -> tuple[str, str]:
+    """Mint an anonymous device token. Returns (device_id, raw_token).
+
+    Stateless HMAC: the gateway verifies without a DB row, so registration is
+    cheap and revocation is by daily cap rather than by token.
+    """
+    device_id = secrets.token_hex(12)
+    return device_id, f"{ANON_PREFIX}{device_id}.{_anon_sig(device_id)}"
+
+
+def verify_device_token(raw: str) -> str | None:
+    """Return the device_id for a valid anonymous token, else None."""
+    if not raw or not raw.startswith(ANON_PREFIX):
+        return None
+    device_id, _, sig = raw[len(ANON_PREFIX):].partition(".")
+    if not device_id or not sig:
+        return None
+    if not hmac.compare_digest(sig, _anon_sig(device_id)):
+        return None
+    return device_id
