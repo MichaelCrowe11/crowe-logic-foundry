@@ -25,6 +25,7 @@ def _load_creds() -> dict:
 
 
 def detect_credential_state() -> CredState:
+    """Classify this machine's credentials. Priority: Crowe ID session > provider env keys > explicit gateway URL > nothing."""
     from cli import auth
 
     try:
@@ -44,3 +45,32 @@ def detect_credential_state() -> CredState:
         return CredState.GATEWAY_ONLY
 
     return CredState.NONE
+
+
+def render_first_run_card(console) -> None:
+    """One clean card instead of the provider-error wall. No emojis (Crowe design)."""
+    from rich.panel import Panel
+
+    body = (
+        "[bold]No credentials found.[/bold]\n\n"
+        "Pick a path:\n\n"
+        "  [bold #bfa669]crowe-logic login[/bold #bfa669]"
+        "        Sign in with Crowe ID (recommended)\n"
+        "  [bold #bfa669]crowe-logic init --node[/bold #bfa669]"
+        "  Scaffold env-file credentials for a self-managed node\n\n"
+        "Docs: https://crowelogic.com/docs/cli/getting-started"
+    )
+    console.print(Panel(body, title="Welcome to Crowe Logic", border_style="#bfa669"))
+
+
+def ensure_first_run(console) -> bool:
+    """Gate a session start. Returns True to proceed, False to exit cleanly.
+
+    Phase 2 turns the NONE branch into anonymous free-tier bootstrap; until
+    then NONE shows the card and exits.
+    """
+    state = detect_credential_state()
+    if state is not CredState.NONE:
+        return True
+    render_first_run_card(console)
+    return False
