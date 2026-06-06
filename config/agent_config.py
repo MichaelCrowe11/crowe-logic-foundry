@@ -934,7 +934,9 @@ _BASE_MODEL_CHAIN = [
         "label": "CroweLM Mycelium",
         "type": "fast",
         "provider": "openai_compat",
-        "backend_name": "crowelm-mycelium",
+        # The Modal app (crowe-mycelium-serve) fronts Ollama, which serves the
+        # model under its registry tag — NOT our brand name.
+        "backend_name": "Mcrowe1210/gemma-4-mycelium-e4b",
         "aliases": ["mycelium-free", "free"],
         "endpoint_env": "CROWELM_MYCELIUM_ENDPOINT",
         "api_key_env": "CROWELM_MYCELIUM_API_KEY",

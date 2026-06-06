@@ -196,3 +196,25 @@ def test_anon_cannot_reach_paid_models():
     with pytest.raises(HTTPException) as exc:
         asyncio.run(gateway.gateway_chat(req, key_info=_anon_key_info(), db=FakeDb()))
     assert exc.value.status_code == 403
+
+
+def test_hosted_openai_provider_passes_extra_headers():
+    from providers.hosted_openai import HostedOpenAIProvider
+
+    p = HostedOpenAIProvider(
+        model="m",
+        system_instructions="s",
+        endpoint="https://example.modal.run",
+        extra_headers={"Modal-Key": "k", "Modal-Secret": "sec"},
+    )
+    assert p.client.default_headers.get("Modal-Key") == "k"
+    assert p.client.default_headers.get("Modal-Secret") == "sec"
+
+
+def test_mycelium_backend_name_is_ollama_tag():
+    # The Modal app fronts Ollama; the OpenAI-compat route needs the registry
+    # tag, not the brand name (which would 404 model-not-found upstream).
+    from config.agent_config import provider_model_name, resolve_model_config
+
+    cfg = resolve_model_config("crowelm-mycelium")
+    assert provider_model_name(cfg) == "Mcrowe1210/gemma-4-mycelium-e4b"

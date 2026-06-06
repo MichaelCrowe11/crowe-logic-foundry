@@ -228,12 +228,24 @@ async def _call_provider(
                     status_code=503,
                     detail=f"Missing endpoint for {name} ({endpoint_var})",
                 )
+            # Modal proxy-auth (e.g. crowelm-mycelium): Modal authenticates at
+            # its edge via Modal-Key/Modal-Secret headers, not the bearer key.
+            # Convention: <PREFIX>_MODAL_KEY/_MODAL_SECRET beside <PREFIX>_ENDPOINT.
+            env_prefix = endpoint_var.removesuffix("_ENDPOINT")
+            modal_key = os.environ.get(f"{env_prefix}_MODAL_KEY", "")
+            modal_secret = os.environ.get(f"{env_prefix}_MODAL_SECRET", "")
+            extra_headers = (
+                {"Modal-Key": modal_key, "Modal-Secret": modal_secret}
+                if modal_key and modal_secret
+                else None
+            )
             provider = HostedOpenAIProvider(
                 model=name,
                 system_instructions="You are a helpful assistant.",
                 endpoint=endpoint,
                 api_key=api_key,
                 label=cfg.get("label", "CroweLM"),
+                extra_headers=extra_headers,
             )
         elif provider_kind == "openrouter":
             from providers.openrouter import OpenRouterProvider
