@@ -21,8 +21,8 @@ from pydantic import BaseModel
 
 from . import oidc
 from .db import Database, get_db
-from .plans import ANON_PLAN_ID, canonical_plan_id, plan_rank
-from .tokens import hash_api_key, is_supported_api_key
+from .plans import ANON_PLAN_ID, ANON_DAILY_TURN_CAP, canonical_plan_id, plan_rank
+from .tokens import hash_api_key, is_supported_api_key, verify_device_token
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
@@ -352,6 +352,21 @@ async def _resolve_principal(
     by a ``workspaces`` row, so downstream metering is skipped (see ``_is_metered``).
     API keys keep their existing workspace-scoped behaviour unchanged.
     """
+    # ── Anonymous device token path (free tier) ──
+    # Must be FIRST so anon tokens never fall through to JWT verification or
+    # API-key lookup. verify_device_token is fail-closed (returns None on any
+    # error including missing signing secret).
+    if authorization and authorization.startswith("Bearer "):
+        device_id = verify_device_token(authorization[7:])
+        if device_id:
+            return {
+                "plan_id": ANON_PLAN_ID,
+                "workspace_id": device_id,
+                "user_id": device_id,
+                "principal": "anonymous",
+                "subject": f"anon:{device_id}",
+            }
+
     # ── Crowe ID bearer token path (alternative to API keys) ──
     if authorization and authorization.startswith("Bearer "):
         candidate = authorization[7:]
@@ -408,8 +423,14 @@ def _is_metered(key_info: dict) -> bool:
     Crowe ID token principals carry a Keycloak ``sub`` rather than a ``workspaces``
     row, so the plan-budget lookup and the usage INSERT (FK to workspaces/users)
     must be skipped for them. Metering token principals is a deliberate follow-up.
+
+    Anonymous principals are also excluded: the ``free-anonymous`` plan has no
+    row in the ``plans`` table (it is deliberately not a Stripe-managed plan), so
+    reaching the token-budget path would crash on ``plan["token_budget_month"]``.
+    Anonymous principals are metered instead via the ``anon_usage`` table and the
+    daily-turn-cap check that runs immediately after the plan-access gate.
     """
-    return key_info.get("principal") != "crowe-id"
+    return key_info.get("principal") not in ("crowe-id", "anonymous")
 
 
 @router.post("/chat", response_model=GatewayResponse)
@@ -430,6 +451,32 @@ async def gateway_chat(
         raise HTTPException(
             status_code=403,
             detail=f"Model '{model}' requires {required_plan} plan or higher",
+        )
+
+    # ── Anonymous daily turn cap (deny-by-default; increment before call) ──
+    if key_info.get("principal") == "anonymous":
+        from datetime import date
+
+        today = date.today()
+        row = await db.fetchrow(
+            "SELECT turns FROM anon_usage WHERE device_id = $1 AND day = $2",
+            user_id,
+            today,
+        )
+        if row and row["turns"] >= ANON_DAILY_TURN_CAP:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "anon_daily_cap",
+                    "message": f"Free daily limit reached ({ANON_DAILY_TURN_CAP} turns).",
+                    "upsell": "Sign in for full CroweLM tiers: run `crowe-logic login` or visit https://crowelogic.com/pricing",
+                },
+            )
+        await db.execute(
+            """INSERT INTO anon_usage (device_id, day, turns) VALUES ($1, $2, 1)
+               ON CONFLICT (device_id, day) DO UPDATE SET turns = anon_usage.turns + 1""",
+            user_id,
+            today,
         )
 
     # ── Token budget check (workspace principals only) ──
@@ -515,6 +562,12 @@ async def gateway_chat_stream(
         raise HTTPException(
             status_code=503,
             detail="Streaming endpoint is disabled (set CROWE_STREAM_ENABLED=1)",
+        )
+
+    if key_info.get("principal") == "anonymous":
+        raise HTTPException(
+            status_code=403,
+            detail="Streaming requires a signed-in account; the free tier uses /chat.",
         )
 
     from .streaming import stream_agent_events, sse_frame

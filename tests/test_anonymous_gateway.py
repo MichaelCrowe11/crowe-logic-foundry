@@ -104,3 +104,95 @@ def test_register_log_sweeps_expired_entries(monkeypatch):
         anonymous._register_log[f"10.9.{i // 256}.{i % 256}"] = [stale]
     asyncio.run(anonymous.register_device(FakeRequest()))
     assert len(anonymous._register_log) <= 2  # the new caller (+ at most slack)
+
+
+# ── Task 11: anonymous principal + daily cap in gateway ──────────────────────
+
+
+def _anon_key_info(device_id="dev123"):
+    return {
+        "plan_id": plans.ANON_PLAN_ID,
+        "workspace_id": device_id,
+        "user_id": device_id,
+        "principal": "anonymous",
+        "subject": f"anon:{device_id}",
+    }
+
+
+def test_resolve_principal_accepts_device_token(monkeypatch):
+    monkeypatch.setenv("CROWE_ANON_SIGNING_SECRET", "test-secret")
+    import asyncio
+    from control_plane import gateway, tokens
+
+    device_id, raw = tokens.make_device_token()
+    info = asyncio.run(
+        gateway._resolve_principal(authorization=f"Bearer {raw}", x_api_key=None, db=None)
+    )
+    assert info["principal"] == "anonymous"
+    assert info["plan_id"] == plans.ANON_PLAN_ID
+    assert info["user_id"] == device_id
+
+
+def test_anonymous_is_not_workspace_metered():
+    from control_plane.gateway import _is_metered
+    assert _is_metered(_anon_key_info()) is False
+    assert _is_metered({"principal": "crowe-id"}) is False
+    assert _is_metered({"principal": "workspace"}) is True
+
+
+class FakeDb:
+    """Stub for the asyncpg-style Database helper used by gateway_chat."""
+
+    def __init__(self, turns_today=0):
+        self.turns_today = turns_today
+        self.executed = []
+
+    async def fetchrow(self, query, *args):
+        if "anon_usage" in query:
+            return {"turns": self.turns_today}
+        return None
+
+    async def execute(self, query, *args):
+        self.executed.append((query, args))
+
+
+def test_anon_chat_under_cap_calls_provider(monkeypatch):
+    import asyncio
+    from control_plane import gateway
+
+    async def fake_provider(**kwargs):
+        return ("hello from mycelium", 5, 7)
+
+    monkeypatch.setattr(gateway, "_call_provider", lambda **kw: fake_provider(**kw))
+    req = gateway.GatewayRequest(model="crowelm-mycelium", messages=[{"role": "user", "content": "hi"}])
+    resp = asyncio.run(gateway.gateway_chat(req, key_info=_anon_key_info(), db=FakeDb(turns_today=3)))
+    assert resp.content == "hello from mycelium"
+
+
+def test_anon_chat_cap_hit_returns_structured_402():
+    import asyncio
+    from fastapi import HTTPException
+    from control_plane import gateway
+
+    req = gateway.GatewayRequest(model="crowelm-mycelium", messages=[{"role": "user", "content": "hi"}])
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            gateway.gateway_chat(
+                req, key_info=_anon_key_info(), db=FakeDb(turns_today=plans.ANON_DAILY_TURN_CAP)
+            )
+        )
+    assert exc.value.status_code == 402
+    detail = exc.value.detail
+    assert detail["code"] == "anon_daily_cap"
+    assert "message" in detail and "upsell" in detail
+
+
+def test_anon_cannot_reach_paid_models():
+    import asyncio
+    from fastapi import HTTPException
+    from control_plane import gateway
+
+    req = gateway.GatewayRequest(model="gpt-5.5", messages=[{"role": "user", "content": "hi"}])
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(gateway.gateway_chat(req, key_info=_anon_key_info(), db=FakeDb()))
+    assert exc.value.status_code == 403
