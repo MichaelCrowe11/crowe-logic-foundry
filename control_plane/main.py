@@ -21,6 +21,7 @@ from control_plane.gateway import router as gateway_router
 from control_plane.billing import router as billing_router
 from control_plane.web import router as web_router
 from control_plane.agent_gateway import router as agent_gateway_router
+from control_plane.anonymous import router as anonymous_router
 from control_plane.db import lifespan
 
 logger = logging.getLogger("control_plane.main")
@@ -35,6 +36,7 @@ app.include_router(gateway_router)
 app.include_router(billing_router)
 app.include_router(web_router)
 app.include_router(agent_gateway_router)
+app.include_router(anonymous_router)
 
 
 # Optional routers: if any one of these blows up at import-time we still

@@ -26,3 +26,41 @@ def test_mycelium_resolves_and_is_anon_accessible():
     assert cfg is not None
     assert cfg["api_key_env"] == "CROWELM_MYCELIUM_API_KEY"
     assert MODEL_PLAN_ACCESS["crowelm-mycelium"] == plans.ANON_PLAN_ID
+
+
+def test_register_mints_token(monkeypatch):
+    monkeypatch.setenv("CROWE_ANON_SIGNING_SECRET", "test-secret")
+    from control_plane import anonymous, tokens
+    import asyncio
+
+    class FakeClient:
+        host = "203.0.113.7"
+
+    class FakeRequest:
+        client = FakeClient()
+
+    anonymous._register_log.clear()
+    out = asyncio.run(anonymous.register_device(FakeRequest()))
+    assert tokens.verify_device_token(out["token"]) == out["device_id"]
+    assert out["free_model"] == "crowelm-mycelium"
+    assert out["daily_turn_cap"] == plans.ANON_DAILY_TURN_CAP
+
+
+def test_register_rate_limits_per_ip(monkeypatch):
+    monkeypatch.setenv("CROWE_ANON_SIGNING_SECRET", "test-secret")
+    from fastapi import HTTPException
+    from control_plane import anonymous
+    import asyncio
+
+    class FakeClient:
+        host = "203.0.113.8"
+
+    class FakeRequest:
+        client = FakeClient()
+
+    anonymous._register_log.clear()
+    for _ in range(anonymous._REGISTER_MAX_PER_IP):
+        asyncio.run(anonymous.register_device(FakeRequest()))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(anonymous.register_device(FakeRequest()))
+    assert exc.value.status_code == 429
