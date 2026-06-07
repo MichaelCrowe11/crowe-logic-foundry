@@ -1102,6 +1102,29 @@ def _render_error(msg: str, title: str = "Error"):
     render_error_block(console, title, msg)
 
 
+def _gateway_chat(label: str = "thinking...", **kwargs) -> dict:
+    """One blocking gateway turn under the standard thinking animation.
+
+    gateway_client.chat() is a synchronous HTTP round trip — on the free tier
+    the backend reasons before it answers (and Modal may cold-start), so an
+    unwrapped call freezes the terminal for many seconds. Same transient
+    Live + thinking_spinner treatment the streaming renderer uses; gateway
+    exceptions (FreeTierCapped, PlanDenied, NotLoggedIn) propagate unchanged.
+    """
+    from rich.live import Live
+
+    from cli import gateway_client
+    from cli.branding import thinking_spinner
+
+    with Live(
+        thinking_spinner(label),
+        console=console,
+        refresh_per_second=12,
+        transient=True,
+    ):
+        return gateway_client.chat(**kwargs)
+
+
 def _handle_local_runtime_command(command_text: str, state: dict) -> bool:
     """Execute a local slash command without calling a model provider."""
     response = handle_local_control_command(
@@ -1663,7 +1686,7 @@ def chat():
                 )
                 console.print()
                 try:
-                    resp = gateway_client.chat(
+                    resp = _gateway_chat(
                         model=session_state.get("anon_free_model", "crowelm-mycelium"),
                         messages=[{"role": "user", "content": user_input}],
                         bearer=anon_token,
@@ -1734,7 +1757,7 @@ def chat():
                     )
                     console.print()
                     try:
-                        resp = gateway_client.chat(
+                        resp = _gateway_chat(
                             model=model_cfg.get("name", model_cfg.get("label")),
                             messages=[{"role": "user", "content": user_input}],
                         )
@@ -3007,7 +3030,7 @@ def run(prompt: str):
         from rich.markdown import Markdown
 
         try:
-            resp = gateway_client.chat(
+            resp = _gateway_chat(
                 model=session_state.get("anon_free_model", "crowelm-mycelium"),
                 messages=[{"role": "user", "content": prompt}],
                 bearer=anon_token,
@@ -3051,7 +3074,7 @@ def run(prompt: str):
             from rich.markdown import Markdown
 
             try:
-                resp = gateway_client.chat(
+                resp = _gateway_chat(
                     model=model_cfg.get("name", model_cfg.get("label")),
                     messages=[{"role": "user", "content": prompt}],
                 )
