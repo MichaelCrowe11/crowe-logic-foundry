@@ -1110,10 +1110,19 @@ def _gateway_chat(label: str = "thinking...", **kwargs) -> dict:
     unwrapped call freezes the terminal for many seconds. Same transient
     Live + thinking_spinner treatment the streaming renderer uses; gateway
     exceptions (FreeTierCapped, PlanDenied, NotLoggedIn) propagate unchanged.
+
+    The animation runs only on an interactive terminal. When stdout is piped
+    or redirected a spinner is pointless, and rich's Live (which proxies
+    stdout while active) can swallow the answer that prints after it in
+    non-TTY mode — so the piped path calls straight through.
     """
+    from cli import gateway_client
+
+    if not console.is_terminal:
+        return gateway_client.chat(**kwargs)
+
     from rich.live import Live
 
-    from cli import gateway_client
     from cli.branding import thinking_spinner
 
     with Live(
