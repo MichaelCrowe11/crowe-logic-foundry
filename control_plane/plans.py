@@ -30,6 +30,7 @@ ANON_PLAN_ID = "free-anonymous"
 ANON_DAILY_TURN_CAP = 20  # server-side policy; tune without a client release
 
 PLAN_DISPLAY_NAMES = {
+    "free": "Free",
     "personal": "Personal",
     "pro": "Pro",
     "team": "Team",
@@ -94,6 +95,8 @@ def plan_rank(plan_id: str | None) -> int:
     canonical = canonical_plan_id(plan_id)
     if canonical == ANON_PLAN_ID:
         return -1
+    if canonical == "free":
+        return 0
     return PLAN_RANK.get(canonical, PLAN_RANK["personal"])
 
 

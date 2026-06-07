@@ -18,10 +18,13 @@ CROWE_ID_ISSUER = os.environ.get(
 CROWE_ID_AUDIENCE = os.environ.get("CROWE_ID_AUDIENCE") or None
 
 _TIER_PLAN = {
-    "free": "personal",
+    "personal": "personal",   # preserve any genuine personal-tier subscriber
     "pro": "pro",
     "studio": "team",
     "enterprise": "enterprise",
+    # NOTE: "free"/unknown/missing fall through to the default below ("free"),
+    # the new signed-in free tier (20/day Mycelium). This intentionally stops
+    # giving no-subscription Crowe IDs the paid `personal` allowance.
 }
 
 # JWKS clients are cached per issuer so key material is fetched once and
@@ -30,8 +33,8 @@ _jwks_clients: dict[str, PyJWKClient] = {}
 
 
 def tier_to_plan(crowe_tier: str | None) -> str:
-    """Map a Crowe ID tier to a gateway plan id. Unknown/missing -> least privilege."""
-    return _TIER_PLAN.get((crowe_tier or "").lower(), "personal")
+    """Map a Crowe ID tier to a gateway plan id. Unknown/missing -> least privilege (free)."""
+    return _TIER_PLAN.get((crowe_tier or "").lower(), "free")
 
 
 def looks_like_jwt(token: str) -> bool:

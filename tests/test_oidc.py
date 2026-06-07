@@ -35,12 +35,13 @@ def _patch_signing_key(monkeypatch, key):
 
 
 def test_tier_to_plan_table():
-    assert oidc.tier_to_plan("free") == "personal"
+    # Phase 3: "free"/unknown/missing -> least privilege (signed-in free tier).
+    assert oidc.tier_to_plan("free") == "free"
     assert oidc.tier_to_plan("pro") == "pro"
     assert oidc.tier_to_plan("studio") == "team"
     assert oidc.tier_to_plan("enterprise") == "enterprise"
-    assert oidc.tier_to_plan(None) == "personal"
-    assert oidc.tier_to_plan("bogus") == "personal"
+    assert oidc.tier_to_plan(None) == "free"
+    assert oidc.tier_to_plan("bogus") == "free"
 
 
 def test_looks_like_jwt():
