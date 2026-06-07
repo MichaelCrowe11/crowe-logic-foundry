@@ -218,3 +218,50 @@ def test_mycelium_backend_name_is_ollama_tag():
 
     cfg = resolve_model_config("crowelm-mycelium")
     assert provider_model_name(cfg) == "Mcrowe1210/gemma-4-mycelium-e4b"
+
+
+def test_gateway_chat_helper_spins_and_passes_through(monkeypatch):
+    """Blocking gateway turns must run under the standard thinking animation
+    (free-tier backends reason before answering; an unwrapped call freezes
+    the terminal) and return the gateway response unchanged."""
+    import cli.crowe_logic as cl
+    from cli import gateway_client
+    import cli.branding as branding
+
+    spun = {}
+
+    real_spinner = branding.thinking_spinner
+
+    def _tracking_spinner(label="thinking"):
+        spun["label"] = label
+        return real_spinner(label)
+
+    monkeypatch.setattr(branding, "thinking_spinner", _tracking_spinner)
+    monkeypatch.setattr(
+        gateway_client, "chat", lambda **kwargs: {"content": "OK", "echo": kwargs}
+    )
+
+    resp = cl._gateway_chat(
+        model="crowelm-mycelium",
+        messages=[{"role": "user", "content": "hi"}],
+        bearer="crowe_anon_x",
+    )
+
+    assert resp["content"] == "OK"
+    assert resp["echo"]["bearer"] == "crowe_anon_x"
+    assert spun["label"] == "thinking..."
+
+
+def test_gateway_chat_helper_propagates_free_tier_capped(monkeypatch):
+    """Structured gateway errors must escape the spinner unchanged — the call
+    sites render the 402 upsell, not the helper."""
+    import cli.crowe_logic as cl
+    from cli import gateway_client
+
+    def _capped(**kwargs):
+        raise gateway_client.FreeTierCapped({"message": "cap", "upsell": "login"})
+
+    monkeypatch.setattr(gateway_client, "chat", _capped)
+
+    with pytest.raises(gateway_client.FreeTierCapped):
+        cl._gateway_chat(model="crowelm-mycelium", messages=[])
