@@ -221,9 +221,9 @@ def test_mycelium_backend_name_is_ollama_tag():
 
 
 def test_gateway_chat_helper_spins_and_passes_through(monkeypatch):
-    """Blocking gateway turns must run under the standard thinking animation
-    (free-tier backends reason before answering; an unwrapped call freezes
-    the terminal) and return the gateway response unchanged."""
+    """On a terminal, blocking gateway turns must run under the standard
+    thinking animation (free-tier backends reason before answering; an
+    unwrapped call freezes the terminal) and return the response unchanged."""
     import cli.crowe_logic as cl
     from cli import gateway_client
     import cli.branding as branding
@@ -237,6 +237,8 @@ def test_gateway_chat_helper_spins_and_passes_through(monkeypatch):
         return real_spinner(label)
 
     monkeypatch.setattr(branding, "thinking_spinner", _tracking_spinner)
+    # Force the interactive path; pytest's captured stdout is not a tty.
+    monkeypatch.setattr(type(cl.console), "is_terminal", property(lambda self: True))
     monkeypatch.setattr(
         gateway_client, "chat", lambda **kwargs: {"content": "OK", "echo": kwargs}
     )
@@ -250,6 +252,33 @@ def test_gateway_chat_helper_spins_and_passes_through(monkeypatch):
     assert resp["content"] == "OK"
     assert resp["echo"]["bearer"] == "crowe_anon_x"
     assert spun["label"] == "thinking..."
+
+
+def test_gateway_chat_helper_skips_spinner_when_not_a_tty(monkeypatch):
+    """Regression: when stdout is piped/redirected, the helper must call
+    straight through without rich.Live. Live proxies stdout while active and,
+    in non-tty mode, swallows the answer printed after it — so a spinner there
+    is both pointless and harmful. (Shipped broken in 0.4.1; fixed in 0.4.2.)"""
+    import cli.crowe_logic as cl
+    from cli import gateway_client
+    import cli.branding as branding
+
+    spun = {"called": False}
+
+    def _tracking_spinner(label="thinking"):
+        spun["called"] = True
+        return branding.thinking_spinner(label)
+
+    monkeypatch.setattr(branding, "thinking_spinner", _tracking_spinner)
+    monkeypatch.setattr(type(cl.console), "is_terminal", property(lambda self: False))
+    monkeypatch.setattr(
+        gateway_client, "chat", lambda **kwargs: {"content": "piped OK"}
+    )
+
+    resp = cl._gateway_chat(model="crowelm-mycelium", messages=[])
+
+    assert resp["content"] == "piped OK"
+    assert spun["called"] is False
 
 
 def test_gateway_chat_helper_propagates_free_tier_capped(monkeypatch):
