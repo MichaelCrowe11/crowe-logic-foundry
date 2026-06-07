@@ -183,7 +183,10 @@ async def _call_provider(
 
     # Per-model persona (config/system_prompts/<slug>.md + brand policy). A
     # generic placeholder here leaks foundation-model identity to end users.
-    system_instructions = build_system_instructions(cfg)
+    # include_agent_tools=False: this is a toolless chat turn — the gateway
+    # cannot execute tools, so the agent tool catalog must be omitted or the
+    # model emits <tool_code> calls instead of answering (empty/broken content).
+    system_instructions = build_system_instructions(cfg, include_agent_tools=False)
 
     provider_kind = cfg.get("provider", "azure_openai")
     name = provider_model_name(cfg)

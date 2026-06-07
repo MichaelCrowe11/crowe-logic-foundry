@@ -1550,14 +1550,24 @@ _TIER_OVERLAYS: dict[str, str] = {
 }
 
 
-def build_system_instructions(model_cfg: dict | None = None) -> str:
+def build_system_instructions(
+    model_cfg: dict | None = None, *, include_agent_tools: bool = True
+) -> str:
     """Compose the base system prompt with a model-specific CroweLM persona.
 
     Quality Stack integration: prefer per-variant prompt files at
     config/system_prompts/<slug>.md when present. Falls back to the inline
     `prompt` field on model_cfg for variants that don't yet have a file.
+
+    ``include_agent_tools`` controls whether the ~9k-char SYSTEM_INSTRUCTIONS
+    agent base (Core Tools, Vision, MCP ecosystem, etc.) is prepended. The CLI
+    agent needs it. A toolless surface — e.g. the metered gateway's chat turn,
+    which cannot execute tools — must pass False: otherwise the model is told it
+    has tools it doesn't, dutifully emits ``<tool_code> crowe_knowledge_base(...)``
+    instead of answering, and returns broken/empty content. Identity, brand
+    policy, and tier guidance are kept either way.
     """
-    prompt_parts = [SYSTEM_INSTRUCTIONS.strip()]
+    prompt_parts = [SYSTEM_INSTRUCTIONS.strip()] if include_agent_tools else []
     if not model_cfg:
         return "\n\n".join(prompt_parts)
 

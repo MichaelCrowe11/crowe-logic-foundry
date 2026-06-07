@@ -121,3 +121,32 @@ def test_gateway_sends_model_persona_system_prompt(monkeypatch):
     assert sys_msg["content"] != "You are a helpful assistant."
     # Provider construction gets the same composed instructions.
     assert "CroweLM Mycelium" in captured["system_instructions"]
+    # Toolless turn: the agent tool catalog must NOT be present, or the model
+    # emits <tool_code> calls for tools the gateway can't run and returns empty
+    # content. (Regression: free-tier answers were blank for tool-seeking
+    # prompts because the full ~15.5k agent prompt was sent.)
+    assert "crowe_knowledge_base" not in sys_msg["content"]
+    assert "## Core Tools" not in sys_msg["content"]
+    assert "MCP Ecosystem" not in sys_msg["content"]
+
+
+def test_build_system_instructions_omits_tools_when_disabled():
+    """The lean gateway prompt keeps identity + brand policy but drops the agent
+    tool catalog; the CLI default keeps it."""
+    cfg = {
+        "name": "crowelm-mycelium",
+        "label": "CroweLM Mycelium",
+        "type": "fast",
+        "endpoint_env": "CROWELM_MYCELIUM_ENDPOINT",
+    }
+    full = agent_config.build_system_instructions(cfg)
+    lean = agent_config.build_system_instructions(cfg, include_agent_tools=False)
+
+    # CLI default carries the tool catalog; lean omits it and is much smaller.
+    assert "## Core Tools" in full
+    assert "## Core Tools" not in lean
+    assert "crowe_knowledge_base" not in lean
+    assert len(lean) < len(full)
+    # Both keep brand identity.
+    assert "CroweLM Mycelium" in lean
+    assert "first-party Crowe Logic" in lean
