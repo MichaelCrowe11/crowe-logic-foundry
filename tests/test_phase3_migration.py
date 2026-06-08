@@ -19,3 +19,9 @@ def test_migration_011_creates_free_usage_and_rekeys():
 def test_migration_011_has_reversible_down():
     down = (MIG / "011_free_usage.down.sql").read_text()
     assert "DROP TABLE IF EXISTS free_usage" in down
+    # Symmetric to the up migration: the down must project device rows back onto
+    # anon_usage (strip the 7-char `device:` prefix), not merely drop the table.
+    assert "INSERT INTO anon_usage" in down
+    assert "FROM free_usage" in down
+    assert "WHERE principal_id LIKE 'device:%'" in down
+    assert "substring(principal_id FROM 8)" in down
