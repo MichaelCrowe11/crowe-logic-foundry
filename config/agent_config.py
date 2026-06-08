@@ -181,13 +181,10 @@ _BASE_MODEL_CHAIN = [
             "Route each turn to the best-fit CroweLM model under the hood."
         ),
     },
-    # ─── Tier 0: CroweLM Supreme — live Azure frontier (gpt-5.5) ──────────
-    # Crowe Logic's ultimate tier, backed by gpt-5.5 on the live AZURE_CORE
-    # resource (crowelm-prod-eastus2). Was hardwired to the UNSET
-    # AZURE_ANTHROPIC_* endpoint (claude-opus-4-7) — every Supreme turn timed
-    # out (~18s) and hedged to Talon. gpt-5.5 needs max_completion_tokens
-    # (handled via _REASONING_BACKENDS).
-    # FOLLOW-UP: restore Claude-Opus-on-Azure when AZURE_ANTHROPIC_* creds exist.
+    # ─── Tier 0: CroweLM Supreme — Vertex Claude frontier ─────────────────
+    # Crowe Logic's ultimate tier. Keep the public identity distinct from raw
+    # deployment names synced into models.extra.json; routing is carried by
+    # backend_name plus Vertex project metadata.
     {
         # `name` must be unique: a "gpt-5.5"-named CroweLM Quasar entry lives in
         # models.extra.json, and _merge_model_chain keys on selectors. Sharing
@@ -197,10 +194,10 @@ _BASE_MODEL_CHAIN = [
         "name": "crowelm-supreme",
         "label": "CroweLM Supreme",
         "type": "reasoning",
-        "provider": "azure_openai",
-        "backend_name": "gpt-5.5",
-        "endpoint_env": "AZURE_CORE_ENDPOINT",
-        "api_key_env": "AZURE_CORE_API_KEY",
+        "provider": "anthropic",
+        "backend_name": "claude-opus-4-8",
+        "vertex_project": "crowe-workspaces",
+        "vertex_region": "us-east5",
         "aliases": [
             "supreme",
             "crowelm-supreme",
@@ -278,13 +275,19 @@ _BASE_MODEL_CHAIN = [
         ),
     },
     {
-        "name": "gpt-5.4-pro",
+        # Stable CroweLM identity. The raw gpt-5.4-pro deployment is also
+        # synced into models.extra.json as CroweLM Helio Pro; using the raw
+        # deployment as this tier's name lets that sync absorb Apex's label,
+        # aliases, and prompt. Keep the public tier name distinct and route
+        # through backend_name.
+        "name": "crowelm-apex",
         "label": "CroweLM Apex",
         "type": "reasoning",
-        "provider": "watsonx",
-        "backend_name": "meta-llama/llama-4-maverick-17b-128e-instruct-fp8",
-        "endpoint_env": "WATSONX_URL",
-        "api_key_env": "WATSONX_APIKEY",
+        "provider": "azure_openai",
+        "backend_name": "gpt-5.4-pro",
+        "endpoint_env": "AZURE_CORE_ENDPOINT",
+        "api_key_env": "AZURE_CORE_API_KEY",
+        "surface": "responses",
         "aliases": ["apex", "crowelm-apex", "crowelm-pro", "pro", "CroweLM Pro"],
         "prompt": (
             "You are CroweLM Apex, Crowe Logic's peak-performance reasoning tier. "
@@ -311,13 +314,15 @@ _BASE_MODEL_CHAIN = [
     },
     # Tier 2: Deep analysis
     {
-        "name": "claude-opus-4-6-2",
+        # Stable CroweLM identity. Synced raw/WatsonX catalog entries may carry
+        # the same short aliases; they must not replace this customer-facing tier.
+        "name": "crowelm-sovereign",
         "label": "CroweLM Sovereign",
         "type": "reasoning",
-        "provider": "watsonx",
-        "backend_name": "mistralai/mistral-large-2512",
-        "endpoint_env": "WATSONX_URL",
-        "api_key_env": "WATSONX_APIKEY",
+        "provider": "anthropic",
+        "backend_name": "claude-opus-4-6-2",
+        "endpoint_env": "AZURE_1960_ANTHROPIC_ENDPOINT",
+        "api_key_env": "AZURE_1960_API_KEY",
         "aliases": [
             "sovereign",
             "crowelm-sovereign",
@@ -1032,6 +1037,53 @@ def azure_openai_runtime_config(model_cfg: dict) -> dict:
     }
 
 
+def anthropic_runtime_config(model_cfg: dict) -> dict:
+    """Resolve Anthropic routing and credentials for Azure or Vertex Claude."""
+    model_name = provider_model_name(model_cfg)
+    vertex_project = str(model_cfg.get("vertex_project") or "").strip()
+    vertex_region = str(model_cfg.get("vertex_region") or "us-east5").strip() or "us-east5"
+
+    if vertex_project:
+        missing = []
+        try:
+            from anthropic import AnthropicVertex  # noqa: F401
+        except ImportError:
+            missing.append("anthropic.AnthropicVertex")
+
+        adc_file = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
+        has_adc = bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()) or adc_file.exists()
+        if not has_adc:
+            missing.append("GOOGLE_APPLICATION_CREDENTIALS or gcloud application-default credentials")
+
+        return {
+            "model": model_name,
+            "endpoint": f"vertex:{vertex_project}/{vertex_region}",
+            "api_key": "",
+            "vertex_project": vertex_project,
+            "vertex_region": vertex_region,
+            "missing": tuple(missing),
+        }
+
+    endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
+    api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
+    endpoint = os.environ.get(endpoint_var, "").strip()
+    api_key = os.environ.get(api_key_var, "").strip()
+    missing = []
+    if not endpoint:
+        missing.append(endpoint_var)
+    if not api_key:
+        missing.append(api_key_var)
+
+    return {
+        "model": model_name,
+        "endpoint": endpoint,
+        "api_key": api_key,
+        "endpoint_var": endpoint_var,
+        "api_key_var": api_key_var,
+        "missing": tuple(missing),
+    }
+
+
 def _normalize_extra_model(entry: dict) -> dict:
     """Normalize an externally supplied model entry into MODEL_CHAIN shape."""
     if not isinstance(entry, dict):
@@ -1191,7 +1243,21 @@ def _merge_model_chain(base_chain: list[dict], extra_models: list[dict]) -> list
     return merged
 
 
-MODEL_CHAIN = _merge_model_chain(_BASE_MODEL_CHAIN, _load_extra_models())
+_DISABLED_EXTRA_PROVIDERS = {"watsonx"}
+
+MODEL_CHAIN = _merge_model_chain(
+    _BASE_MODEL_CHAIN,
+    [
+        model
+        for model in _load_extra_models()
+        if model.get("provider") not in _DISABLED_EXTRA_PROVIDERS
+    ],
+)
+
+# Drop watsonx tiers. No WATSONX credentials are configured and headless mode
+# cannot run the watsonx provider, so every watsonx entry is a dead tier. Filter
+# at load time so they disappear wherever they're defined.
+MODEL_CHAIN = [m for m in MODEL_CHAIN if m.get("provider") != "watsonx"]
 
 # Specialized model registry — used by tools and pipelines that need a specific
 # capability rather than the general fallback chain.

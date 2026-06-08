@@ -14,7 +14,9 @@ import os
 from functools import lru_cache
 from typing import Optional
 
-_PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PACKAGE_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 _PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 _DATASET_DIR = os.environ.get(
     "CROWELM_UNIFIED_DATASET_DIR",
@@ -101,16 +103,20 @@ def build_dataset_context(max_examples: int = 9, max_chars: int = 30000) -> str:
 
 
 def augment_system_prompt(base_prompt: str, model_cfg: Optional[dict] = None) -> str:
-    """Augment a system prompt with dataset knowledge if the model tier supports it.
+    """Mount the CroweLM dataset knowledge block on top of a tier's system prompt.
 
-    Only injects dataset context for tiers that have dataset_augmented=True
-    or whose label contains 'Supreme'.
+    Applied to EVERY tier by default ("dataset on top of each model"). Opt a
+    single tier out with ``dataset_augmented=False`` in its config, or disable
+    the mount globally with ``CROWELM_DATASET_MOUNT=0``.
     """
-    if model_cfg:
-        label = model_cfg.get("label", "")
-        augmented = model_cfg.get("dataset_augmented", False)
-        if not augmented and "Supreme" not in label:
-            return base_prompt
+    if os.environ.get("CROWELM_DATASET_MOUNT", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+    ):
+        return base_prompt
+    if model_cfg is not None and model_cfg.get("dataset_augmented") is False:
+        return base_prompt
 
     context = build_dataset_context()
     if not context:

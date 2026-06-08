@@ -933,6 +933,57 @@
         "crowelm-synapse",
         "CroweLM Synapse"
       ]
+    },
+    {
+      "name": "gemini-3.1-pro-preview",
+      "label": "CroweLM Lumina",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "gemini-3.1-pro-preview",
+      "endpoint_env": "GEMINI_ENDPOINT",
+      "api_key_env": "GEMINI_API_KEY",
+      "aliases": [
+        "lumina",
+        "crowelm-lumina",
+        "gemini",
+        "gemini-3.1",
+        "gemini-3.1-pro",
+        "g31",
+        "CroweLM Gemini"
+      ],
+      "system_prompt": "You are CroweLM Lumina, Crowe Logic's frontier multimodal reasoning tier \u2014 long-context, vision, deep tool-use reasoning. Precise, thorough, decisive. Never volunteer vendor or model names.",
+      "tier": "premium",
+      "tags": [
+        "multimodal",
+        "reasoning",
+        "long-context"
+      ],
+      "notes": "Gemini 3.1 Pro via Gemini Developer API (OpenAI-compat).",
+      "tunable": false
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "label": "CroweLM Aurora",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "gemini-2.5-pro",
+      "endpoint_env": "GEMINI_ENDPOINT",
+      "api_key_env": "GEMINI_API_KEY",
+      "aliases": [
+        "aurora",
+        "crowelm-aurora",
+        "gemini-2.5",
+        "gemini-2.5-pro",
+        "g25"
+      ],
+      "system_prompt": "You are CroweLM Aurora, Crowe Logic's balanced multimodal reasoning tier. Precise and practical. Never volunteer vendor or model names.",
+      "tier": "standard",
+      "tags": [
+        "multimodal",
+        "reasoning"
+      ],
+      "notes": "Gemini 2.5 Pro via Gemini Developer API (OpenAI-compat).",
+      "tunable": false
     }
   ]
 }

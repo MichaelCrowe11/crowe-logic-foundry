@@ -555,24 +555,37 @@ def _get_anthropic_provider(model_cfg: dict, *, system_instructions: str | None 
     """
     from providers.anthropic import AnthropicProvider
 
-    from config.agent_config import provider_model_name
+    from config.agent_config import anthropic_runtime_config
 
-    model_name = provider_model_name(model_cfg)
+    runtime = anthropic_runtime_config(model_cfg)
+    model_name = runtime["model"]
     label = model_cfg["label"]
     system_instructions = system_instructions or build_runtime_system_instructions(
         model_cfg
     )
-    endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
-    api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
-
-    endpoint = os.environ.get(endpoint_var, "")
-    api_key = os.environ.get(api_key_var, "")
-
-    if not endpoint or not api_key:
+    if runtime["missing"]:
         raise RuntimeError(
             f"Anthropic model '{label}' is missing credentials — "
-            f"set {endpoint_var} and {api_key_var} in .env"
+            + " / ".join(runtime["missing"])
         )
+    # Vertex-backed Claude (CroweLM Supreme on Opus 4.8): auth via ADC, no env creds.
+    if runtime.get("vertex_project"):
+        vendpoint = runtime["endpoint"]
+        current = _model_state.get("anthropic_provider")
+        if current and current.model == model_name and current.endpoint == vendpoint:
+            return _apply_provider_instructions(current, system_instructions, model_cfg)
+        provider = AnthropicProvider(
+            model=model_name,
+            system_instructions=system_instructions,
+            label=label,
+            vertex_project=runtime["vertex_project"],
+            vertex_region=runtime["vertex_region"],
+        )
+        _model_state["anthropic_provider"] = provider
+        return _apply_provider_instructions(provider, system_instructions, model_cfg)
+
+    endpoint = runtime["endpoint"]
+    api_key = runtime["api_key"]
 
     current = _model_state.get("anthropic_provider")
     if current and current.model == model_name and current.endpoint == endpoint:
@@ -2409,17 +2422,11 @@ def _model_switch_error(model_cfg: dict) -> str | None:
             )
 
     if provider == "anthropic":
-        endpoint_var = model_cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
-        api_key_var = model_cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
-        missing = [
-            var
-            for var in (endpoint_var, api_key_var)
-            if not os.environ.get(var, "").strip()
-        ]
-        if missing:
-            return (
-                f"Cannot switch to {label} — missing " + ", ".join(missing) + " in .env"
-            )
+        from config.agent_config import anthropic_runtime_config
+
+        runtime = anthropic_runtime_config(model_cfg)
+        if runtime["missing"]:
+            return f"Cannot switch to {label} — missing " + ", ".join(runtime["missing"])
 
     if provider == "nvidia":
         missing = [
@@ -2765,12 +2772,25 @@ def route(prompt: str, as_json: bool):
 
 
 @main.command(name="login")
-def login_cmd():
-    """Sign in to Crowe ID in the browser (PKCE)."""
+@click.option(
+    "--no-browser",
+    "no_browser",
+    is_flag=True,
+    default=False,
+    help="Don't open a browser; print the auth URL for manual completion.",
+)
+def login_cmd(no_browser: bool):
+    """Sign in to Crowe ID in the browser (PKCE).
+
+    With ``--no-browser``, prints the auth URL to stderr instead of
+    opening a browser. Use this in headless contexts (containers, ssh,
+    CI) where the loopback listener can still receive the callback
+    (via port forward or local network).
+    """
     from cli import auth
 
     try:
-        who = auth.login_pkce()
+        who = auth.login_pkce(open_browser=not no_browser)
     except Exception as exc:  # surface any sign-in failure as a clean exit
         console.print(f"  [#bf6f6f]Sign-in failed:[/] {exc}")
         raise SystemExit(1)

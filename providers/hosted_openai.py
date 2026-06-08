@@ -25,7 +25,9 @@ class HostedOpenAIProvider(BaseOpenAIProvider):
         super().__init__(model, system_instructions, label)
 
         base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/v1"):
+        # Bare hosts need /v1 appended; endpoints that already carry their own
+        # OpenAI path (e.g. Gemini's /v1beta/openai) are used as-is.
+        if not base_url.endswith("/v1") and "/openai" not in base_url:
             base_url += "/v1"
 
         self.client = OpenAI(

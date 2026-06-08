@@ -352,11 +352,9 @@ def _is_provider_credentialed(cfg: dict) -> bool:
 
         return not azure_openai_runtime_config(cfg)["missing"]
     if kind == "anthropic":
-        endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
-        api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
-        return bool(os.environ.get(endpoint_var, "")) and bool(
-            os.environ.get(api_key_var, "")
-        )
+        from config.agent_config import anthropic_runtime_config
+
+        return not anthropic_runtime_config(cfg)["missing"]
     return False
 
 
@@ -506,21 +504,27 @@ def _build_provider(model_id: str, *, session_id: str = ""):
 
     if provider_kind == "anthropic":
         from providers.anthropic import AnthropicProvider
+        from config.agent_config import anthropic_runtime_config
 
-        endpoint_var = cfg.get("endpoint_env", "AZURE_ANTHROPIC_ENDPOINT")
-        api_key_var = cfg.get("api_key_env", "AZURE_ANTHROPIC_API_KEY")
-        endpoint = os.environ.get(endpoint_var, "")
-        api_key = os.environ.get(api_key_var, "")
-        if not endpoint or not api_key:
+        runtime = anthropic_runtime_config(cfg)
+        if runtime["missing"]:
             raise RuntimeError(
                 f"Anthropic model '{label}' is missing credentials "
-                f"({endpoint_var} / {api_key_var})"
+                f"({' / '.join(runtime['missing'])})"
+            )
+        if runtime.get("vertex_project"):
+            return AnthropicProvider(
+                model=runtime["model"],
+                system_instructions=system_instructions,
+                label=label,
+                vertex_project=runtime["vertex_project"],
+                vertex_region=runtime["vertex_region"],
             )
         return AnthropicProvider(
-            model=name,
+            model=runtime["model"],
             system_instructions=system_instructions,
-            endpoint=endpoint,
-            api_key=api_key,
+            endpoint=runtime["endpoint"],
+            api_key=runtime["api_key"],
             label=label,
         )
 

@@ -38,16 +38,15 @@ class AnthropicProvider:
         self,
         model: str,
         system_instructions: str,
-        endpoint: str,
-        api_key: str,
+        endpoint: str = "",
+        api_key: str = "",
         label: str = "Claude",
+        vertex_project: str | None = None,
+        vertex_region: str | None = None,
     ):
-        from anthropic import Anthropic
-
         self.model = model
         self.label = label
         self.system_instructions = system_instructions
-        self.endpoint = endpoint
         self.messages: list[dict[str, Any]] = []
         # Ephemeral cache_control on the system block tells Anthropic to cache
         # the system prompt at a 5-minute TTL. On every follow-up turn within
@@ -61,12 +60,26 @@ class AnthropicProvider:
             "cache_control": {"type": "ephemeral"},
         }
 
-        # Normalize endpoint: Azure expects /anthropic base path
-        base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/anthropic"):
-            base_url += "/anthropic"
+        if vertex_project:
+            # Claude on Google Vertex AI — auth via Application Default Credentials
+            # (`gcloud auth application-default login`). AnthropicVertex exposes the
+            # same .messages API as the direct client, so the rest of this provider
+            # is unchanged.
+            from anthropic import AnthropicVertex
 
-        self.client = Anthropic(api_key=api_key, base_url=base_url)
+            self.endpoint = f"vertex:{vertex_project}/{vertex_region or 'us-east5'}"
+            self.client = AnthropicVertex(
+                project_id=vertex_project, region=vertex_region or "us-east5"
+            )
+        else:
+            from anthropic import Anthropic
+
+            self.endpoint = endpoint
+            # Normalize endpoint: Azure expects /anthropic base path
+            base_url = endpoint.rstrip("/")
+            if not base_url.endswith("/anthropic"):
+                base_url += "/anthropic"
+            self.client = Anthropic(api_key=api_key, base_url=base_url)
 
     def add_user_message(self, content: str):
         self.messages.append({"role": "user", "content": content})

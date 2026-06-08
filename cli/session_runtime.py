@@ -13,7 +13,9 @@ from pathlib import Path
 _PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_ROOT = os.environ.get("CROWE_LOGIC_PROJECT_ROOT", _PACKAGE_ROOT)
 _RUNTIME_DIR = Path.home() / ".crowe-logic" / "runtime"
-_DATASET_MANIFEST_PATH = Path(_PROJECT_ROOT) / "data" / "crowelm-unified" / "DATASET_MANIFEST.json"
+_DATASET_MANIFEST_PATH = (
+    Path(_PROJECT_ROOT) / "data" / "crowelm-unified" / "DATASET_MANIFEST.json"
+)
 _DEFAULT_DATASET_SELECTION = "all"
 _TRACE_LIMIT = 25  # bound `external_traces` to the most recent N entries
 
@@ -34,8 +36,8 @@ def _default_session_state() -> dict:
         "last_model": "",
         "updated_at": 0.0,
         # Cross-provider continuity (router-and-parallel branch).
-        "agent_threads": {},   # {agent_id: thread_id} for Azure Foundry agents
-        "external_traces": [], # bounded log of non-primary provider calls
+        "agent_threads": {},  # {agent_id: thread_id} for Azure Foundry agents
+        "external_traces": [],  # bounded log of non-primary provider calls
     }
 
 
@@ -136,8 +138,7 @@ def build_dataset_context(selection: str = _DEFAULT_DATASET_SELECTION) -> str:
 
     if top_domains:
         top = ", ".join(
-            f"{name} ({count:,})"
-            for name, count in list(top_domains.items())[:3]
+            f"{name} ({count:,})" for name, count in list(top_domains.items())[:3]
         )
         if top:
             lines.append(f"Top domains: {top}.")
@@ -155,7 +156,9 @@ def build_dataset_context(selection: str = _DEFAULT_DATASET_SELECTION) -> str:
     return "\n".join(lines)
 
 
-def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_id: str = "") -> str:
+def build_runtime_system_instructions(
+    model_cfg: dict | None = None, *, session_id: str = ""
+) -> str:
     """Compose system instructions with session steering and dataset context."""
     from config.agent_config import build_system_instructions
 
@@ -174,22 +177,17 @@ def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_
             f"{steering}"
         )
 
-    # CroweLM Supreme and dataset-augmented tiers get the full curated knowledge
-    # base injected (domain examples, expertise). Other tiers get the lighter summary.
-    label = (model_cfg or {}).get("label", "")
-    is_augmented = (model_cfg or {}).get("dataset_augmented", False)
-    if "Supreme" in label or is_augmented:
-        try:
-            from config.crowelm.dataset_loader import augment_system_prompt
-            augmented = augment_system_prompt("", model_cfg)
-            if augmented.strip():
-                parts.append("## CroweLM Unified Knowledge Base\n" + augmented)
-        except Exception:
-            pass  # Fall through to standard dataset context
-    else:
-        dataset_context = build_dataset_context(str(runtime.get("dataset_selection", _DEFAULT_DATASET_SELECTION)))
-        if dataset_context:
-            parts.append("## CroweLM Dataset Context\n" + dataset_context)
+    # CroweLM dataset is mounted on EVERY tier ("dataset on top of each model").
+    # Gating now lives in augment_system_prompt: disable globally with
+    # CROWELM_DATASET_MOUNT=0, or opt a single tier out with dataset_augmented=False.
+    try:
+        from config.crowelm.dataset_loader import augment_system_prompt
+
+        augmented = augment_system_prompt("", model_cfg)
+        if augmented.strip():
+            parts.append("## CroweLM Unified Knowledge Base\n" + augmented)
+    except Exception:
+        pass
 
     # Crowe Terminal agent tools (browser.in_window.*, terminal.*, system.*,
     # AppleScript, allowlist management). The addendum is empty unless the
@@ -197,6 +195,7 @@ def build_runtime_system_instructions(model_cfg: dict | None = None, *, session_
     # tools that aren't actually callable.
     try:
         from tools.crowe_terminal import system_prompt as crowe_terminal_prompt
+
         addendum = crowe_terminal_prompt()
         if addendum:
             parts.append(addendum)
@@ -336,13 +335,15 @@ def record_external_trace(
     """
     state = load_session_runtime(session_id)
     traces = list(state.get("external_traces") or [])
-    traces.append({
-        "provider": provider,
-        "model": model,
-        "ts": time.time(),
-        "prompt_hash": prompt_hash,
-        "summary": summary[:240],  # truncate so the state file stays small
-    })
+    traces.append(
+        {
+            "provider": provider,
+            "model": model,
+            "ts": time.time(),
+            "prompt_hash": prompt_hash,
+            "summary": summary[:240],  # truncate so the state file stays small
+        }
+    )
     if len(traces) > _TRACE_LIMIT:
         traces = traces[-_TRACE_LIMIT:]
     update_session_runtime(session_id, external_traces=traces)
