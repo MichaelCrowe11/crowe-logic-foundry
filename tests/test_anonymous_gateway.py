@@ -148,8 +148,28 @@ class FakeDb:
         self.executed = []
 
     async def fetchrow(self, query, *args):
-        if "anon_usage" in query:
+        if "free_usage" in query:
             return {"turns": self.turns_today}
+        return None
+
+    async def execute(self, query, *args):
+        self.executed.append((query, args))
+
+
+class FakeFreeDb:
+    """Stub Database for the free_usage path: records the principal_id read."""
+
+    def __init__(self, turns_today=0):
+        self.turns_today = turns_today
+        self.read_principal = None
+        self.executed = []
+
+    async def fetchrow(self, query, *args):
+        if "free_usage" in query:
+            self.read_principal = args[0]
+            return {"turns": self.turns_today}
+        if "plans" in query:
+            return {"token_budget_month": -1}
         return None
 
     async def execute(self, query, *args):
@@ -183,7 +203,7 @@ def test_anon_chat_cap_hit_returns_structured_402():
         )
     assert exc.value.status_code == 402
     detail = exc.value.detail
-    assert detail["code"] == "anon_daily_cap"
+    assert detail["code"] == "free_daily_cap"
     assert "message" in detail and "upsell" in detail
 
 
@@ -294,3 +314,45 @@ def test_gateway_chat_helper_propagates_free_tier_capped(monkeypatch):
 
     with pytest.raises(gateway_client.FreeTierCapped):
         cl._gateway_chat(model="crowelm-mycelium", messages=[])
+
+
+# ── Task 3: Generalized turn-cap (free signed-in + anonymous) ────────────────
+
+
+def test_free_principal_id_classifies_anon_free_and_paid():
+    from control_plane import gateway
+
+    anon = {"principal": "anonymous", "user_id": "devABC", "plan_id": "free-anonymous"}
+    free = {"principal": "crowe-id", "user_id": "sub-123", "plan_id": "free"}
+    paid = {"principal": "crowe-id", "user_id": "sub-999", "plan_id": "pro"}
+
+    assert gateway._free_principal_id(anon) == "device:devABC"
+    assert gateway._free_principal_id(free) == "user:sub-123"
+    assert gateway._free_principal_id(paid) is None
+
+
+def test_free_signed_in_user_is_turn_capped(monkeypatch):
+    import asyncio
+    import pytest as _pytest
+    from control_plane import gateway
+
+    async def fake_provider(**kwargs):
+        return ("ok", 1, 1)
+
+    monkeypatch.setattr(gateway, "_call_provider", lambda **kw: fake_provider(**kw))
+
+    key_info = {
+        "principal": "crowe-id",
+        "user_id": "sub-123",
+        "workspace_id": "sub-123",
+        "plan_id": "free",
+        "subject": "user@example.com",
+    }
+    req = gateway.GatewayRequest(
+        model="crowelm-mycelium", messages=[{"role": "user", "content": "hi"}]
+    )
+    db = FakeFreeDb(turns_today=gateway.ANON_DAILY_TURN_CAP)
+    with _pytest.raises(gateway.HTTPException) as exc:
+        asyncio.run(gateway.gateway_chat(req, key_info=key_info, db=db))
+    assert exc.value.status_code == 402
+    assert db.read_principal == "user:sub-123"

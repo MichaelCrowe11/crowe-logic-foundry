@@ -453,6 +453,23 @@ def _is_metered(key_info: dict) -> bool:
     return key_info.get("principal") not in ("crowe-id", "anonymous")
 
 
+def _free_principal_id(key_info: dict) -> str | None:
+    """Return the free-tier counter key for a turn-capped principal, else None.
+
+    Anonymous devices and signed-in `free`-plan accounts share one daily turn
+    cap, keyed by `device:<id>` / `user:<sub>`. Paid principals return None
+    (they are token-budget metered instead — see `_is_metered`).
+    """
+    from .plans import canonical_plan_id
+
+    principal = key_info.get("principal")
+    if principal == "anonymous":
+        return f"device:{key_info['user_id']}"
+    if principal == "crowe-id" and canonical_plan_id(key_info.get("plan_id")) == "free":
+        return f"user:{key_info['user_id']}"
+    return None
+
+
 @router.post("/chat", response_model=GatewayResponse)
 async def gateway_chat(
     req: GatewayRequest,
@@ -473,29 +490,38 @@ async def gateway_chat(
             detail=f"Model '{model}' requires {required_plan} plan or higher",
         )
 
-    # ── Anonymous daily turn cap (deny-by-default; increment before call) ──
-    if key_info.get("principal") == "anonymous":
+    # ── Free-tier daily turn cap (anonymous + signed-in free plan) ──
+    free_pid = _free_principal_id(key_info)
+    if free_pid is not None:
         from datetime import date
 
         today = date.today()
         row = await db.fetchrow(
-            "SELECT turns FROM anon_usage WHERE device_id = $1 AND day = $2",
-            user_id,
+            "SELECT turns FROM free_usage WHERE principal_id = $1 AND day = $2",
+            free_pid,
             today,
         )
         if row and row["turns"] >= ANON_DAILY_TURN_CAP:
+            is_anon = key_info.get("principal") == "anonymous"
             raise HTTPException(
                 status_code=402,
                 detail={
-                    "code": "anon_daily_cap",
+                    "code": "free_daily_cap",
                     "message": f"Free daily limit reached ({ANON_DAILY_TURN_CAP} turns).",
-                    "upsell": "Sign in for full CroweLM tiers: run `crowe-logic login` or visit https://crowelogic.com/pricing",
+                    "upsell": (
+                        "Sign in to sync your free usage across devices and save your "
+                        "history: run `crowe-logic login`. For higher limits, upgrade at "
+                        "https://crowelogic.com/pricing"
+                        if is_anon
+                        else "You've used today's free turns. Upgrade for higher limits: "
+                        "https://crowelogic.com/pricing"
+                    ),
                 },
             )
         await db.execute(
-            """INSERT INTO anon_usage (device_id, day, turns) VALUES ($1, $2, 1)
-               ON CONFLICT (device_id, day) DO UPDATE SET turns = anon_usage.turns + 1""",
-            user_id,
+            """INSERT INTO free_usage (principal_id, day, turns) VALUES ($1, $2, 1)
+               ON CONFLICT (principal_id, day) DO UPDATE SET turns = free_usage.turns + 1""",
+            free_pid,
             today,
         )
 
