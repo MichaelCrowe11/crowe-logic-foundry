@@ -5,9 +5,9 @@ from control_plane import oidc
 
 
 def test_free_plan_ranks_below_personal_above_anon():
-    assert plans.plan_rank("free") == 0
-    assert plans.plan_rank("free") < plans.plan_rank("personal")
     assert plans.plan_rank("free") > plans.plan_rank(plans.ANON_PLAN_ID)
+    assert plans.plan_rank("free") < plans.plan_rank("byok")
+    assert plans.plan_rank("free") < plans.plan_rank("personal")
 
 
 def test_free_plan_is_canonical_passthrough():

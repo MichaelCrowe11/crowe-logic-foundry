@@ -94,9 +94,9 @@ def canonical_plan_id(plan_id: str | None, *, default: str = "personal") -> str:
 def plan_rank(plan_id: str | None) -> int:
     canonical = canonical_plan_id(plan_id)
     if canonical == ANON_PLAN_ID:
-        return -1
+        return -2
     if canonical == "free":
-        return 0
+        return -1
     return PLAN_RANK.get(canonical, PLAN_RANK["personal"])
 
 

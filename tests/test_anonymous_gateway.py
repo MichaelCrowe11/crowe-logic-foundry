@@ -5,7 +5,7 @@ from control_plane import plans
 
 
 def test_anon_plan_ranks_below_everything():
-    assert plans.plan_rank(plans.ANON_PLAN_ID) == -1
+    assert plans.plan_rank(plans.ANON_PLAN_ID) == -2
     assert plans.plan_rank("byok") > plans.plan_rank(plans.ANON_PLAN_ID)
 
 
