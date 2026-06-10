@@ -64,6 +64,13 @@ _RESEARCH_LOOP_TOOLS = frozenset(
 )
 
 
+# OpenAI-compatible endpoints reject requests carrying more than 128 tool
+# definitions (400 array_above_max_length). The registry has grown past that,
+# so the chat loop trims from the tail — earlier, core registry tools always
+# survive. Anthropic/watsonx paths attach tools separately and are not capped.
+MAX_OPENAI_TOOL_SCHEMAS = 128
+
+
 def build_tool_schemas(user_functions) -> list[dict]:
     """Convert the Foundry's function tools into OpenAI tool schemas."""
     tools = []
@@ -480,6 +487,12 @@ class BaseOpenAIProvider:
         a bare answer — used by grounded-vs-bare benchmarks.
         """
         tool_schemas, tool_map = load_tools() if tools_enabled else ([], {})
+        if len(tool_schemas) > MAX_OPENAI_TOOL_SCHEMAS:
+            if console is not None:
+                console.print(
+                    f"[dim][tools] capping {len(tool_schemas)} -> {MAX_OPENAI_TOOL_SCHEMAS} (OpenAI-compat tool limit)[/dim]"
+                )
+            tool_schemas = tool_schemas[:MAX_OPENAI_TOOL_SCHEMAS]
 
         if renderer is None:
             from cli.renderer import StreamRenderer
