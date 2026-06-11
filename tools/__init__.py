@@ -374,3 +374,11 @@ from tools import crowe_terminal as _crowe_terminal  # noqa: F401, E402
 from tools import crowe_code as _crowe_code  # noqa: E402
 
 _crowe_code.register(user_functions)
+
+# Cortex notebook tools (Jupyter via the Cortex kernel host). Registered only
+# when CORTEX_NOTEBOOK_URL is set (Cortex sets it while its notebook host is
+# up); a silent no-op elsewhere, so the tools never surface where they can't
+# work.
+from tools import notebook as _notebook  # noqa: E402
+
+_notebook.register(user_functions)
