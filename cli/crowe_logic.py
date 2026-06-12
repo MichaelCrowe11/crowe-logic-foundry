@@ -55,6 +55,7 @@ from cli.branding import (
     SlashCompleter,
     create_chat_keybindings,
 )
+from cli.paste import paste_stash
 from cli.session_runtime import (
     build_runtime_system_instructions,
     handle_local_control_command,
@@ -1537,7 +1538,10 @@ def chat():
             dur_str = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
             iterm_set_var("crowe_logic_duration", dur_str)
 
-            user_input = session.prompt(prompt_html, multiline=False)
+            paste_stash.clear()
+            user_input = paste_stash.expand(
+                session.prompt(prompt_html, multiline=False)
+            )
         except (EOFError, KeyboardInterrupt):
             iterm_set_var("crowe_logic_active", "0")
             orch.end_session(summary="Session ended by user")
@@ -3940,7 +3944,10 @@ def resume():
             dur_str = f"{minutes}m {seconds:02d}s" if minutes > 0 else f"{seconds}s"
             iterm_set_var("crowe_logic_duration", dur_str)
 
-            user_input = session.prompt(prompt_html, multiline=False)
+            paste_stash.clear()
+            user_input = paste_stash.expand(
+                session.prompt(prompt_html, multiline=False)
+            )
         except (EOFError, KeyboardInterrupt):
             iterm_set_var("crowe_logic_active", "0")
             orch.end_session(summary="Resumed session ended by user")
