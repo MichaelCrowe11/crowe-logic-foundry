@@ -29,9 +29,11 @@ Three consequences:
    crowe-stream v0 (headless) and CSEP (Cortex) describe the same events
    with different vocabularies; guardrails still print to stderr instead
    of emitting events.
-3. **Two binaries answer to `crowe-logic`** — the npm-linked Node gateway
-   CLI (1.0.0) shadows the pipx Python CLI (0.4.2) depending on PATH
-   order. Coin-flip identity on every machine we set up.
+3. **Two binaries answer to `crowe-logic`** — `crowe-logic` is the
+   published PyPI product (0.4.2), but a Node channel-gateway CLI
+   (WhatsApp/Telegram messaging, a separate product) ships the same
+   binary name and shadows it when npm-linked. Coin-flip identity on
+   every machine we set up — and the PyPI product must win.
 
 ## 2. Design goals
 
@@ -160,15 +162,19 @@ crowe-foundry-gateway     # FastAPI control plane (depends: core)
 crowe-foundry-cli         # Rich terminal frontend (depends: core)
 ```
 
-- Python CLI binary becomes **`foundry`** (alias `crowe-foundry`);
-  `crowe-logic` stays with the Node gateway CLI, which is what currently
-  wins PATH anyway. One transition release ships both names with a
-  deprecation note on the old one.
+- **`crowe-logic` stays the Python CLI** — it is the published PyPI
+  product (released through 0.4.2) and keeps its name and PyPI listing;
+  the workspace split is invisible to `pipx install crowe-logic` users
+  (the CLI package depends on core and gateway extras).
+- The Node *channel-gateway* CLI (WhatsApp/Telegram messaging — a
+  different product that currently also installs as `crowe-logic`) takes
+  a distinct binary name in its own repo so it can never shadow the PyPI
+  product on a dev machine again.
 - `pyproject.toml` version (0.3.0) and release version (0.4.2) are
   already out of sync — single-source the version from one place as part
   of the split.
-- The npm wrapper keeps working: it shells to `foundry headless` and
-  speaks crowe-stream v1.
+- The npm wrapper in this repo keeps working: it shells to `crowe-logic
+  headless` and speaks crowe-stream v1.
 
 ### 3.5 Tools & agents — manifests over lists
 
