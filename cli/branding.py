@@ -1044,13 +1044,30 @@ def render_tool_card(
         console.print(label)
         return
 
-    meta = "ok" if status == "ok" else "failed"
-    title_accent = GOLD_HEX if status == "ok" else RED_HEX
-    border_color = GOLD_DIM_HEX if status == "ok" else RED_HEX
-    check_glyph = CHECK if status == "ok" else CROSS
-    check_color = GREEN_HEX if status == "ok" else RED_HEX
+    if status == "ok":
+        # Success stays on one line so a long agent turn reads as a tight
+        # ledger of actions; only failures get a bordered block below.
+        summary = summarize_tool_result(name, result)
+        line = Text()
+        line.append(" " * GUTTER)
+        line.append(f"{CHECK} ", style=GREEN_HEX)
+        line.append(name, style=f"bold {GOLD_HEX}")
+        if duration_str:
+            line.append(f" {DOT} {duration_str}", style="dim")
+        if args_preview:
+            line.append(f" {DOT} {args_preview}", style="dim")
+        if summary:
+            line.append(f" {DOT} {summary}", style="dim")
+        console.print(line)
+        return
 
-    summary = summarize_tool_result(name, result) if status == "ok" else ""
+    meta = "failed"
+    title_accent = RED_HEX
+    border_color = RED_HEX
+    check_glyph = CROSS
+    check_color = RED_HEX
+
+    summary = ""
     if status == "fail" and result:
         try:
             err = json.loads(result)
@@ -1282,8 +1299,17 @@ class SlashCompleter(Completer):
 def create_chat_keybindings(console=None, state: dict | None = None):
     """Create key bindings for the chat prompt."""
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
 
     kb = KeyBindings()
+
+    @kb.add(Keys.BracketedPaste)
+    def _compress_paste(event):
+        """Large pastes land as a [paste #N: X lines] placeholder; the REPL
+        expands them back to the full text on submit (cli.paste)."""
+        from cli.paste import paste_stash
+
+        event.current_buffer.insert_text(paste_stash.compress(event.data))
 
     @kb.add("c-e")
     def _toggle_multiline(event):
