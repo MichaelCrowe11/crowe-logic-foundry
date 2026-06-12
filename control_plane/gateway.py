@@ -303,7 +303,27 @@ async def _call_provider(
         if temperature is not None:
             kwargs["temperature"] = temperature
 
-        response = provider.client.chat.completions.create(**kwargs)
+        try:
+            response = provider.client.chat.completions.create(**kwargs)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001 - any provider/SDK failure -> clean 503
+            # A misconfigured or unreachable tier must surface as a clean,
+            # client-recoverable 503, never a bare 500 that reads as a gateway
+            # bug. The load-bearing case: a responses-only Azure deployment
+            # (surface == "responses", e.g. gpt-5.x-pro) receiving this
+            # chat-completions call is rejected by Azure every time — until
+            # the Responses-API routing lands, the honest answer is
+            # "this tier is not servable", which the client falls back from.
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "tier_unavailable",
+                    "tier": name,
+                    "message": f"{name} is not currently servable ({type(exc).__name__})",
+                    "hint": "retry with a different model tier",
+                },
+            ) from exc
         content = response.choices[0].message.content or ""
         usage = response.usage
         return (
