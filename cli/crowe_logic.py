@@ -3787,6 +3787,299 @@ def headless_cmd(input_path: str | None, model: str):
         sys.argv = old_argv
 
 
+@main.group(name="internal")
+def internal_cmd():
+    """Plan owner/staff-only internal development agents."""
+    pass
+
+
+@internal_cmd.command(name="agents")
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+def internal_agents_cmd(json_output: bool):
+    """Show the recommended internal development agent team."""
+    from crowe_synapse_engine.internal_development import (
+        build_internal_development_plan,
+    )
+
+    plan = build_internal_development_plan()
+    if json_output:
+        click.echo(json.dumps(plan.to_dict(), indent=2))
+        return
+
+    console.print()
+    console.print(
+        f"[#bfa669 bold]Crowe Logic Internal Agents[/] "
+        f"[dim]recommended count: {plan.recommended_count}[/dim]"
+    )
+    console.print(
+        f"[dim]Access: {plan.access_policy.scope} | Workspace: "
+        f"{_rich_escape(plan.workspace)}[/dim]\n"
+    )
+    table = Table(
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        header_style="bold white",
+        padding=(0, 1),
+    )
+    table.add_column("Agent", style="#bfa669", min_width=26)
+    table.add_column("Charter", style="white", max_width=58)
+    table.add_column("Model Pref", style="dim", max_width=26)
+    table.add_column("Tags", style="dim", max_width=24)
+    for agent in plan.agents:
+        table.add_row(
+            agent.agent_id,
+            agent.charter,
+            " > ".join(agent.model_preference),
+            ", ".join(agent.mission_tags),
+        )
+    console.print(table)
+    console.print()
+
+
+@internal_cmd.command(name="plan")
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+@click.option(
+    "--surface",
+    default="claude-console",
+    show_default=True,
+    help="Deployment surface to plan for",
+)
+def internal_plan_cmd(json_output: bool, surface: str):
+    """Show self-heal architecture and Claude Console deployment scaffold."""
+    from crowe_synapse_engine.internal_development import (
+        build_internal_development_plan,
+    )
+
+    plan = build_internal_development_plan(deployment_surface=surface)
+    if json_output:
+        click.echo(json.dumps(plan.to_dict(), indent=2))
+        return
+
+    console.print()
+    console.print("[#bfa669 bold]Internal Development Architecture[/]")
+    console.print(
+        f"[dim]Surface: {_rich_escape(plan.deployment_surface)} | "
+        f"Workspace: {_rich_escape(plan.workspace)} | "
+        f"Agents: {plan.recommended_count}[/dim]\n"
+    )
+
+    access_table = Table(
+        title="Access Policy",
+        box=box.ROUNDED,
+        border_style="#bfa669",
+        title_style="bold #bfa669",
+        show_header=False,
+        padding=(0, 1),
+    )
+    access_table.add_column("Key", style="#bfa669 bold", min_width=18)
+    access_table.add_column("Value", style="white")
+    access_table.add_row("Scope", plan.access_policy.scope)
+    access_table.add_row(
+        "Owners", ", ".join(plan.access_policy.owner_principals) or "unset"
+    )
+    access_table.add_row(
+        "Approved staff",
+        ", ".join(plan.access_policy.approved_staff_principals) or "none",
+    )
+    access_table.add_row("Tool policy", plan.access_policy.default_tool_policy)
+    console.print(access_table)
+    console.print()
+
+    heal_table = Table(
+        title="Self-Heal Loops",
+        box=box.ROUNDED,
+        border_style="#6fbf73",
+        title_style="bold #6fbf73",
+        padding=(0, 1),
+    )
+    heal_table.add_column("Loop", style="#6fbf73", min_width=26)
+    heal_table.add_column("Trigger", style="white", max_width=44)
+    heal_table.add_column("Approval Gate", style="dim", max_width=44)
+    for loop in plan.self_heal_loops:
+        heal_table.add_row(loop.name, loop.trigger, loop.approval_gate)
+    console.print(heal_table)
+    console.print()
+
+    console.print("[#bfa669 bold]Claude Console Deployment Plan[/]")
+    for idx, step in enumerate(plan.deployment_steps, start=1):
+        console.print(f"  {idx}. {_rich_escape(step)}")
+    console.print()
+    console.print(
+        "[dim]This command only scaffolds the plan and payloads. It does not "
+        "create external agents or change Console membership.[/dim]\n"
+    )
+
+
+@internal_cmd.command(name="deploy")
+@click.option(
+    "--backend",
+    type=click.Choice(["sovereign", "anthropic", "aws", "browser", "all"]),
+    default="sovereign",
+    show_default=True,
+    help="Deployment surface to plan for",
+)
+@click.option(
+    "--apply",
+    "do_apply",
+    is_flag=True,
+    help="Execute the plan (sovereign only; external backends stay gated)",
+)
+@click.option(
+    "--confirm",
+    "do_confirm",
+    is_flag=True,
+    help="Required to actually create LIVE external agents (anthropic/aws)",
+)
+@click.option(
+    "--emit-script",
+    "emit_script",
+    default="",
+    help="For --backend browser: write a runnable Playwright script to this path",
+)
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+def internal_deploy_cmd(
+    backend: str, do_apply: bool, do_confirm: bool, emit_script: str, json_output: bool
+):
+    """Plan (and apply) internal agent deployment across backends."""
+    from crowe_synapse_engine.internal_deployment import (
+        apply_sovereign,
+        build_actions,
+        emit_browser_script,
+        execute_managed_agents,
+        render_plan,
+    )
+    from crowe_synapse_engine.internal_development import (
+        build_internal_development_plan,
+    )
+
+    plan = build_internal_development_plan()
+    actions = build_actions(plan, backend)
+
+    applied = False
+    written: list[str] = []
+    manifest = None
+    script_path = ""
+
+    # Browser path: emit a runnable script instead of creating anything inline.
+    if emit_script and backend == "browser":
+        with open(emit_script, "w", encoding="utf-8") as handle:
+            handle.write(emit_browser_script(plan))
+        script_path = emit_script
+
+    if do_apply:
+        external = [a for a in actions if a.backend != "sovereign"]
+        if external and backend in ("anthropic", "aws"):
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not (do_confirm and api_key):
+                missing = []
+                if not do_confirm:
+                    missing.append("--confirm")
+                if not api_key:
+                    missing.append("ANTHROPIC_API_KEY")
+                msg = (
+                    f"Apply blocked: backend '{backend}' creates LIVE external agents. "
+                    f"Gated on: {', '.join(missing)}. Run without --apply to inspect, "
+                    "or use --backend sovereign to apply locally."
+                )
+                if json_output:
+                    click.echo(
+                        json.dumps({"backend": backend, "applied": False, "error": msg})
+                    )
+                else:
+                    console.print(f"[red]{_rich_escape(msg)}[/red]")
+                raise SystemExit(2)
+            manifest = execute_managed_agents(
+                plan, backend=backend, api_key=api_key, confirm=True
+            )
+            applied = True
+        elif backend == "browser":
+            # The emitted Playwright script IS the browser deliverable.
+            if script_path:
+                applied = True
+            else:
+                msg = (
+                    "Apply blocked: backend 'browser' cannot create agents inline. "
+                    "Use --backend browser --emit-script PATH to generate a "
+                    "Playwright runbook, then run it against a logged-in session."
+                )
+                if json_output:
+                    click.echo(
+                        json.dumps({"backend": backend, "applied": False, "error": msg})
+                    )
+                else:
+                    console.print(f"[red]{_rich_escape(msg)}[/red]")
+                raise SystemExit(2)
+        elif external:  # all: mixed; apply per-backend instead
+            msg = (
+                f"Apply blocked: backend '{backend}' mixes surfaces. Apply each "
+                "backend explicitly (sovereign locally, anthropic/aws with "
+                "--confirm + key, browser via --emit-script)."
+            )
+            if json_output:
+                click.echo(
+                    json.dumps({"backend": backend, "applied": False, "error": msg})
+                )
+            else:
+                console.print(f"[red]{_rich_escape(msg)}[/red]")
+            raise SystemExit(2)
+        else:
+            written = apply_sovereign(actions)
+            applied = True
+
+    if json_output:
+        click.echo(
+            json.dumps(
+                {
+                    "backend": backend,
+                    "applied": applied,
+                    "written": written,
+                    "script_path": script_path,
+                    "manifest": manifest,
+                    "actions": [a.to_dict() for a in actions],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    console.print()
+    console.print(
+        f"[#bfa669 bold]Internal Deployment[/] [dim]backend: {backend} | "
+        f"actions: {len(actions)} | applied: {applied}[/dim]\n"
+    )
+    console.print(_rich_escape(render_plan(actions)))
+    console.print()
+    if script_path:
+        console.print(
+            f"[#6fbf73]Wrote Playwright runbook:[/] {_rich_escape(script_path)}"
+        )
+        console.print(
+            "[dim]Review it, then run against a logged-in platform.claude.com "
+            "session to create the agents.[/dim]"
+        )
+    if manifest:
+        console.print(
+            f"[#6fbf73]Created {len(manifest['created'])} specialist(s) + "
+            f"coordinator '{_rich_escape(manifest['coordinator']['name'])}'.[/]"
+        )
+        console.print(f"  manifest: {_rich_escape(manifest.get('manifest_path', ''))}")
+    elif applied and written:
+        console.print(f"[#6fbf73]Wrote {len(written)} sovereign persona(s):[/]")
+        for path in written:
+            console.print(f"  {_rich_escape(path)}")
+        console.print(
+            "\n[dim]These live under agents/internal/ and are NOT auto-loaded by the "
+            "flat public registry. Point an owner-gated AgentRegistry at that subdir "
+            "to enable them.[/dim]"
+        )
+    elif not applied:
+        console.print(
+            "[dim]Dry run. External backends (anthropic/aws/browser) require an "
+            "authenticated path + owner approval before --apply.[/dim]"
+        )
+    console.print()
+
+
 @main.command()
 def agents():
     """List registered sub-agents."""
