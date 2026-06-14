@@ -3807,12 +3807,28 @@ def internal_plan_cmd(json_output: bool, surface: str):
     is_flag=True,
     help="Execute the plan (sovereign only; external backends stay gated)",
 )
+@click.option(
+    "--confirm",
+    "do_confirm",
+    is_flag=True,
+    help="Required to actually create LIVE external agents (anthropic/aws)",
+)
+@click.option(
+    "--emit-script",
+    "emit_script",
+    default="",
+    help="For --backend browser: write a runnable Playwright script to this path",
+)
 @click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
-def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
-    """Plan (and, for sovereign, apply) internal agent deployment."""
+def internal_deploy_cmd(
+    backend: str, do_apply: bool, do_confirm: bool, emit_script: str, json_output: bool
+):
+    """Plan (and apply) internal agent deployment across backends."""
     from crowe_synapse_engine.internal_deployment import (
         apply_sovereign,
         build_actions,
+        emit_browser_script,
+        execute_managed_agents,
         render_plan,
     )
     from crowe_synapse_engine.internal_development import (
@@ -3824,14 +3840,63 @@ def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
 
     applied = False
     written: list[str] = []
+    manifest = None
+    script_path = ""
+
+    # Browser path: emit a runnable script instead of creating anything inline.
+    if emit_script and backend == "browser":
+        with open(emit_script, "w", encoding="utf-8") as handle:
+            handle.write(emit_browser_script(plan))
+        script_path = emit_script
+
     if do_apply:
         external = [a for a in actions if a.backend != "sovereign"]
-        if external:
+        if external and backend in ("anthropic", "aws"):
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not (do_confirm and api_key):
+                missing = []
+                if not do_confirm:
+                    missing.append("--confirm")
+                if not api_key:
+                    missing.append("ANTHROPIC_API_KEY")
+                msg = (
+                    f"Apply blocked: backend '{backend}' creates LIVE external agents. "
+                    f"Gated on: {', '.join(missing)}. Run without --apply to inspect, "
+                    "or use --backend sovereign to apply locally."
+                )
+                if json_output:
+                    click.echo(
+                        json.dumps({"backend": backend, "applied": False, "error": msg})
+                    )
+                else:
+                    console.print(f"[red]{_rich_escape(msg)}[/red]")
+                raise SystemExit(2)
+            manifest = execute_managed_agents(
+                plan, backend=backend, api_key=api_key, confirm=True
+            )
+            applied = True
+        elif backend == "browser":
+            # The emitted Playwright script IS the browser deliverable.
+            if script_path:
+                applied = True
+            else:
+                msg = (
+                    "Apply blocked: backend 'browser' cannot create agents inline. "
+                    "Use --backend browser --emit-script PATH to generate a "
+                    "Playwright runbook, then run it against a logged-in session."
+                )
+                if json_output:
+                    click.echo(
+                        json.dumps({"backend": backend, "applied": False, "error": msg})
+                    )
+                else:
+                    console.print(f"[red]{_rich_escape(msg)}[/red]")
+                raise SystemExit(2)
+        elif external:  # all: mixed; apply per-backend instead
             msg = (
-                f"Apply blocked: backend '{backend}' creates live external agents. "
-                "This is gated on an authenticated credential/session and explicit "
-                "owner approval. Run without --apply to inspect the plan, or use "
-                "--backend sovereign to apply locally."
+                f"Apply blocked: backend '{backend}' mixes surfaces. Apply each "
+                "backend explicitly (sovereign locally, anthropic/aws with "
+                "--confirm + key, browser via --emit-script)."
             )
             if json_output:
                 click.echo(
@@ -3840,8 +3905,9 @@ def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
             else:
                 console.print(f"[red]{_rich_escape(msg)}[/red]")
             raise SystemExit(2)
-        written = apply_sovereign(actions)
-        applied = True
+        else:
+            written = apply_sovereign(actions)
+            applied = True
 
     if json_output:
         click.echo(
@@ -3850,6 +3916,8 @@ def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
                     "backend": backend,
                     "applied": applied,
                     "written": written,
+                    "script_path": script_path,
+                    "manifest": manifest,
                     "actions": [a.to_dict() for a in actions],
                 },
                 indent=2,
@@ -3864,7 +3932,21 @@ def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
     )
     console.print(_rich_escape(render_plan(actions)))
     console.print()
-    if applied:
+    if script_path:
+        console.print(
+            f"[#6fbf73]Wrote Playwright runbook:[/] {_rich_escape(script_path)}"
+        )
+        console.print(
+            "[dim]Review it, then run against a logged-in platform.claude.com "
+            "session to create the agents.[/dim]"
+        )
+    if manifest:
+        console.print(
+            f"[#6fbf73]Created {len(manifest['created'])} specialist(s) + "
+            f"coordinator '{_rich_escape(manifest['coordinator']['name'])}'.[/]"
+        )
+        console.print(f"  manifest: {_rich_escape(manifest.get('manifest_path', ''))}")
+    elif applied and written:
         console.print(f"[#6fbf73]Wrote {len(written)} sovereign persona(s):[/]")
         for path in written:
             console.print(f"  {_rich_escape(path)}")
@@ -3873,7 +3955,7 @@ def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
             "flat public registry. Point an owner-gated AgentRegistry at that subdir "
             "to enable them.[/dim]"
         )
-    else:
+    elif not applied:
         console.print(
             "[dim]Dry run. External backends (anthropic/aws/browser) require an "
             "authenticated path + owner approval before --apply.[/dim]"

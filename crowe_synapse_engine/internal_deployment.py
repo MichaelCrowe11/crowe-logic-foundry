@@ -330,3 +330,182 @@ def render_plan(actions: list[DeploymentAction]) -> str:
         if action.gate:
             lines.append(f"      gate: {action.gate}")
     return "\n".join(lines)
+
+
+# --- Execution layer (creates live Managed Agents) -----------------------------
+
+DEFAULT_MANIFEST_PATH = os.path.expanduser(
+    "~/.crowe-logic/runtime/internal_agents_manifest.json"
+)
+
+
+def _default_transport(
+    method: str, url: str, headers: dict[str, str], body: dict[str, Any]
+) -> dict[str, Any]:
+    """Real HTTP transport (stdlib, no extra deps). Returns parsed JSON."""
+
+    import json as _json
+    import urllib.request
+
+    data = _json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310 (trusted host)
+        return _json.loads(resp.read().decode("utf-8"))
+
+
+def _resolve_coordinator_roster(
+    coordinator_payload: dict[str, Any], created: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Replace ``${<agent_id>.claude_agent_id}`` roster placeholders with real ids."""
+
+    import copy
+
+    resolved = copy.deepcopy(coordinator_payload)
+    by_agent_id = {c["agent_id"]: c["id"] for c in created}
+    for member in resolved.get("multiagent", {}).get("agents", []):
+        ref = member.get("id", "")
+        if ref.startswith("${") and ref.endswith(".claude_agent_id}"):
+            agent_id = ref[2 : -len(".claude_agent_id}")]
+            if agent_id in by_agent_id:
+                member["id"] = by_agent_id[agent_id]
+    return resolved
+
+
+def execute_managed_agents(
+    plan: InternalDevelopmentPlan,
+    *,
+    backend: str = "anthropic",
+    base_url: str | None = None,
+    api_key: str | None = None,
+    confirm: bool = False,
+    transport: Any = None,
+    manifest_path: str | None = None,
+) -> dict[str, Any]:
+    """Create the specialist agents, then the coordinator with a resolved roster.
+
+    Outward-facing: refuses unless ``confirm=True`` AND an ``api_key`` is given.
+    ``transport`` is injectable so tests never touch the network. Returns a
+    manifest dict and also writes it to ``manifest_path``.
+    """
+
+    if not confirm:
+        raise PermissionError(
+            "refusing to create live external agents without confirm=True"
+        )
+    if not api_key:
+        raise PermissionError("no API key provided for external deployment")
+
+    base = base_url or (
+        ANTHROPIC_BASE_URL
+        if backend == "anthropic"
+        else os.environ.get(AWS_BASE_URL_ENV, "")
+    )
+    if not base:
+        raise ValueError(f"no base URL resolved for backend {backend!r}")
+
+    send = transport or _default_transport
+    url = f"{base.rstrip('/')}{AGENTS_ENDPOINT}"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION_HEADER,
+        "anthropic-beta": ANTHROPIC_BETA_HEADER,
+        "content-type": "application/json",
+    }
+    if backend == "aws":
+        headers["x-crowe-routing"] = "aws"
+
+    created: list[dict[str, Any]] = []
+    for payload in plan.claude_agent_payloads:
+        resp = send("POST", url, headers, payload)
+        created.append(
+            {
+                "agent_id": payload["metadata"]["agent_id"],
+                "name": payload["name"],
+                "id": resp.get("id"),
+                "version": resp.get("version"),
+            }
+        )
+
+    coordinator_payload = _resolve_coordinator_roster(plan.coordinator_payload, created)
+    coord_resp = send("POST", url, headers, coordinator_payload)
+    coordinator = {
+        "name": coordinator_payload["name"],
+        "id": coord_resp.get("id"),
+        "version": coord_resp.get("version"),
+    }
+
+    manifest = {
+        "backend": backend,
+        "base_url": base,
+        "workspace": plan.workspace,
+        "created": created,
+        "coordinator": coordinator,
+    }
+
+    target = manifest_path or DEFAULT_MANIFEST_PATH
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    import json as _json
+
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(_json.dumps(manifest, indent=2))  # api_key never included
+    manifest["manifest_path"] = target
+    return manifest
+
+
+# --- Browser backend: emit a runnable Playwright script ------------------------
+
+
+def emit_browser_script(plan: InternalDevelopmentPlan) -> str:
+    """Generate a standalone Playwright (Python) script to create the agents."""
+
+    import json as _json
+
+    specs = []
+    for payload in list(plan.claude_agent_payloads) + [plan.coordinator_payload]:
+        specs.append(
+            {
+                "name": payload["name"],
+                "model": payload.get("model", {}).get("id", "claude-opus-4-8"),
+                "system": payload["system"],
+            }
+        )
+    specs_literal = _json.dumps(specs, indent=4)
+    return f'''#!/usr/bin/env python3
+"""Auto-generated by `crowe-logic internal deploy --backend browser`.
+
+Drives a logged-in {CONSOLE_URL} session to create the owner/staff-only internal
+development agents in the Console UI. Run with an authenticated browser profile:
+
+    pip install playwright && playwright install chromium
+    python deploy_internal_agents_browser.py
+
+This creates LIVE external agents. Review before running.
+"""
+
+from playwright.sync_api import sync_playwright
+
+CONSOLE_URL = "{CONSOLE_URL}"
+AGENTS = {specs_literal}
+
+
+def main() -> None:
+    with sync_playwright() as p:
+        browser = p.chromium.launch_persistent_context(
+            user_data_dir="~/.crowe-logic/playwright-console",
+            headless=False,
+        )
+        page = browser.new_page()
+        for agent in AGENTS:
+            page.goto(f"{{CONSOLE_URL}}/agents")
+            page.get_by_role("button", name="Create agent").click()
+            page.get_by_label("Name").fill(agent["name"])
+            page.get_by_label("Model").fill(agent["model"])
+            page.get_by_label("System prompt").fill(agent["system"])
+            page.get_by_role("button", name="Save").click()
+            print(f"Created (verify id in UI): {{agent['name']}}")
+        browser.close()
+
+
+if __name__ == "__main__":
+    main()
+'''

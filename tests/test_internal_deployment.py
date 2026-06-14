@@ -13,6 +13,8 @@ from crowe_synapse_engine.internal_deployment import (
     SOVEREIGN_MODEL,
     apply_sovereign,
     build_actions,
+    emit_browser_script,
+    execute_managed_agents,
     render_plan,
 )
 from crowe_synapse_engine.internal_development import build_internal_development_plan
@@ -20,6 +22,20 @@ from crowe_synapse_engine.internal_development import build_internal_development
 
 def _plan():
     return build_internal_development_plan()
+
+
+class _FakeTransport:
+    """Records requests and returns deterministic agent ids (no network)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, method, url, headers, body):
+        self.calls.append(
+            {"method": method, "url": url, "headers": headers, "body": body}
+        )
+        slug = body["name"].replace(" ", "-").lower()
+        return {"id": f"agt_{slug}", "version": 1}
 
 
 def test_sovereign_actions_are_valid_registry_yaml():
@@ -132,3 +148,68 @@ def test_internal_deploy_cli_external_apply_is_blocked_without_creds(monkeypatch
     # Must refuse to create live external agents without an authenticated path.
     assert result.exit_code != 0
     assert "blocked" in result.output.lower() or "gated" in result.output.lower()
+
+
+# --- execution layer (live create, mocked transport) --------------------------
+
+
+def test_execute_requires_confirm_and_key():
+    import pytest
+
+    plan = _plan()
+    with pytest.raises(PermissionError):
+        execute_managed_agents(
+            plan, api_key="sk-ant-test", confirm=False, transport=_FakeTransport()
+        )
+    with pytest.raises(PermissionError):
+        execute_managed_agents(
+            plan, api_key=None, confirm=True, transport=_FakeTransport()
+        )
+
+
+def test_execute_creates_specialists_then_coordinator_with_resolved_roster(tmp_path):
+    plan = _plan()
+    fake = _FakeTransport()
+    manifest_path = tmp_path / "manifest.json"
+
+    result = execute_managed_agents(
+        plan,
+        backend="anthropic",
+        api_key="sk-ant-secret",
+        confirm=True,
+        transport=fake,
+        manifest_path=str(manifest_path),
+    )
+
+    # 9 specialists + 1 coordinator created, in that order
+    assert len(fake.calls) == 10
+    assert all(c["url"].endswith("/v1/agents") for c in fake.calls)
+    # real key is used on the wire, never the placeholder
+    assert all(c["headers"]["x-api-key"] == "sk-ant-secret" for c in fake.calls)
+    assert all(
+        c["headers"]["anthropic-beta"] == ANTHROPIC_BETA_HEADER for c in fake.calls
+    )
+
+    # the LAST call is the coordinator, and its roster references resolved ids
+    coordinator_body = fake.calls[-1]["body"]
+    roster = coordinator_body["multiagent"]["agents"]
+    created_ids = {r["agent_id"]: r["id"] for r in result["created"]}
+    for member in roster:
+        assert member["id"] in created_ids.values()
+        assert "${" not in member["id"]  # placeholder fully resolved
+
+    # manifest persisted with returned ids
+    saved = json.loads(manifest_path.read_text())
+    assert len(saved["created"]) == 9
+    assert saved["coordinator"]["id"].startswith("agt_")
+    assert "sk-ant-secret" not in manifest_path.read_text()  # never persist the key
+
+
+def test_emit_browser_script_is_runnable_playwright_python():
+    script = emit_browser_script(_plan())
+    assert "playwright" in script.lower()
+    assert "platform.claude.com" in script
+    assert "Create agent" in script  # the UI button the script clicks
+    # all 9 specialists + coordinator embedded in the AGENTS roster
+    assert script.count('"name":') == 10
+    assert "CL Internal Development Coordinator" in script
