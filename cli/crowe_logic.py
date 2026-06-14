@@ -3793,6 +3793,94 @@ def internal_plan_cmd(json_output: bool, surface: str):
     )
 
 
+@internal_cmd.command(name="deploy")
+@click.option(
+    "--backend",
+    type=click.Choice(["sovereign", "anthropic", "aws", "browser", "all"]),
+    default="sovereign",
+    show_default=True,
+    help="Deployment surface to plan for",
+)
+@click.option(
+    "--apply",
+    "do_apply",
+    is_flag=True,
+    help="Execute the plan (sovereign only; external backends stay gated)",
+)
+@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON")
+def internal_deploy_cmd(backend: str, do_apply: bool, json_output: bool):
+    """Plan (and, for sovereign, apply) internal agent deployment."""
+    from crowe_synapse_engine.internal_deployment import (
+        apply_sovereign,
+        build_actions,
+        render_plan,
+    )
+    from crowe_synapse_engine.internal_development import (
+        build_internal_development_plan,
+    )
+
+    plan = build_internal_development_plan()
+    actions = build_actions(plan, backend)
+
+    applied = False
+    written: list[str] = []
+    if do_apply:
+        external = [a for a in actions if a.backend != "sovereign"]
+        if external:
+            msg = (
+                f"Apply blocked: backend '{backend}' creates live external agents. "
+                "This is gated on an authenticated credential/session and explicit "
+                "owner approval. Run without --apply to inspect the plan, or use "
+                "--backend sovereign to apply locally."
+            )
+            if json_output:
+                click.echo(
+                    json.dumps({"backend": backend, "applied": False, "error": msg})
+                )
+            else:
+                console.print(f"[red]{_rich_escape(msg)}[/red]")
+            raise SystemExit(2)
+        written = apply_sovereign(actions)
+        applied = True
+
+    if json_output:
+        click.echo(
+            json.dumps(
+                {
+                    "backend": backend,
+                    "applied": applied,
+                    "written": written,
+                    "actions": [a.to_dict() for a in actions],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    console.print()
+    console.print(
+        f"[#bfa669 bold]Internal Deployment[/] [dim]backend: {backend} | "
+        f"actions: {len(actions)} | applied: {applied}[/dim]\n"
+    )
+    console.print(_rich_escape(render_plan(actions)))
+    console.print()
+    if applied:
+        console.print(f"[#6fbf73]Wrote {len(written)} sovereign persona(s):[/]")
+        for path in written:
+            console.print(f"  {_rich_escape(path)}")
+        console.print(
+            "\n[dim]These live under agents/internal/ and are NOT auto-loaded by the "
+            "flat public registry. Point an owner-gated AgentRegistry at that subdir "
+            "to enable them.[/dim]"
+        )
+    else:
+        console.print(
+            "[dim]Dry run. External backends (anthropic/aws/browser) require an "
+            "authenticated path + owner approval before --apply.[/dim]"
+        )
+    console.print()
+
+
 @main.command()
 def agents():
     """List registered sub-agents."""
