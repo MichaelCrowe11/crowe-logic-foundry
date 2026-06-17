@@ -146,10 +146,15 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 NVIDIA_NIM_ENDPOINT = os.environ.get("NVIDIA_NIM_ENDPOINT", "")
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
-# Azure AI Foundry: Anthropic Claude (native Anthropic API surface)
+# Azure AI Foundry: Anthropic Claude (native Anthropic API surface).
+# Crowe Logic sources frontier models exclusively through cloud providers
+# (Azure primary — Microsoft for Startups credit path), never direct from
+# the model vendor. Claude tiers ride the crowelm-prod-eastus2 Anthropic
+# surface; deployments are gated on Anthropic quota (vetting approved
+# 2026-06-08, quota=0 as of 2026-06-09).
 AZURE_ANTHROPIC_ENDPOINT = os.environ.get(
     "AZURE_ANTHROPIC_ENDPOINT",
-    "https://crowelogicos-4667-resource.openai.azure.com/anthropic",
+    "https://crowelm-prod-eastus2.services.ai.azure.com",
 )
 AZURE_ANTHROPIC_API_KEY = os.environ.get("AZURE_ANTHROPIC_API_KEY", "")
 
@@ -219,6 +224,40 @@ _BASE_MODEL_CHAIN = [
             "Operate at the highest executive level: strategic synthesis, complex multi-domain reasoning, "
             "and precision execution across science, technology, and business. "
             "Stay decisive, thorough, and first-party branded as Crowe Logic. "
+            "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
+        ),
+    },
+    # ─── Tier 0++: CroweLM Theory — Mythos-class frontier (claude-fable-5) ──
+    # Azure-exclusive: claude-fable-5 on the crowelm-prod-eastus2 Anthropic
+    # surface (same account key as AZURE_CORE). GOES LIVE when Anthropic
+    # quota lands and the deployment is created (ARM 2025-10-01-preview +
+    # modelProviderData; vetting approved 2026-06-08). Until then calls 404
+    # fast and the chain falls back. Fable 5 rejects sampling params and
+    # explicit thinking-disabled — the AnthropicProvider sends neither.
+    {
+        "name": "crowelm-theory",
+        "label": "CroweLM Theory",
+        "type": "reasoning",
+        "provider": "anthropic",
+        "backend_name": "claude-fable-5",
+        "endpoint_env": "AZURE_ANTHROPIC_ENDPOINT",
+        "api_key_env": "AZURE_CORE_API_KEY",
+        "aliases": [
+            "theory",
+            "crowelm-theory",
+            "fable",
+            "fable-5",
+            "claude-fable-5",
+            "mythos",
+            "CroweLM Theory",
+        ],
+        "prompt": (
+            "You are CroweLM Theory, Crowe Logic's pinnacle frontier tier. "
+            "You are powered by the CroweLM Unified Knowledge Base: 145,097 curated training samples "
+            "spanning biotech, mycology, pharmaceutical reasoning, scientific coding, and strategic analysis. "
+            "You excel at deep security analysis, hard scientific reasoning, and long-horizon "
+            "engineering work across the Crowe Logic portfolio. "
+            "Stay decisive, rigorous, and first-party branded as Crowe Logic. "
             "Do not volunteer vendor names unless the user explicitly asks about infrastructure."
         ),
     },
@@ -553,16 +592,18 @@ _BASE_MODEL_CHAIN = [
         ),
     },
     {
-        "name": "FW-GLM-5.1",
+        "name": "FW-GLM-5.2",
         "label": "CroweLM Dense",
         "type": "reasoning",
         "provider": "ollama",
-        "backend_name": "glm-5.1:cloud",
+        "backend_name": "glm-5.2:cloud",
         "aliases": [
             "dense",
             "crowelm-dense",
             "crowelm-glm",
             "glm",
+            "glm52",
+            "glm5.2",
             "glm51",
             "glm45",
             "CroweLM GLM",
@@ -1619,6 +1660,7 @@ TASK_CLASS_FALLBACKS: dict[str, list[str]] = {
         "CroweLM Lite",
         "CroweLM Edge",
         "CroweLM Helio",
+        "CroweLM Dense",
     ],
     "default": [
         "CroweLM Helio Pro",
