@@ -116,6 +116,46 @@ def _gateway_model_name(model_cfg: dict) -> str:
     return model_cfg.get("name", model_cfg.get("label"))
 
 
+def _gateway_stream_turn(console, model_cfg, user_input, session_state) -> str:
+    """Stream a signed-in turn from the CSP gateway, rendering reasoning live.
+
+    Drives the same StreamRenderer the local path uses, so reasoning tokens land
+    in the thinking panel and answer tokens stream into the reply — matching dp.
+    Returns the assembled answer text. Propagates gateway_client.PlanDenied and
+    auth.NotLoggedIn; raises gateway_client.StreamingUnavailable to tell the caller
+    to fall back to the non-streaming proxy.
+    """
+    from cli import gateway_client
+    from cli.renderer import StreamRenderer
+
+    renderer = StreamRenderer(
+        console,
+        model_cfg.get("label") or session_state.get("active_model") or "crowe-logic",
+        favicon=session_state.get("favicon", ""),
+    )
+    got_content = False
+    renderer.start()
+    try:
+        for channel, text in gateway_client.stream_chat(
+            model=_gateway_model_name(model_cfg),
+            messages=[{"role": "user", "content": user_input}],
+        ):
+            if channel == "thinking":
+                renderer.feed_reasoning(text)
+            else:
+                got_content = True
+                renderer.feed(text)
+    finally:
+        renderer.stop_spinner()
+    answer = renderer.current_segment_text
+    if got_content and answer.strip():
+        renderer.finish(session_state=session_state)
+    else:
+        renderer.end_segment()
+    console.print()
+    return answer
+
+
 def _provider_health_path() -> Path:
     return Path.home() / ".crowe-logic" / "runtime" / "provider_health.json"
 
@@ -1730,20 +1770,41 @@ def chat():
                         console, state=session_state, cwd=os.getcwd(), meta="turn"
                     )
                     console.print()
-                    try:
-                        with thinking_live(console):
-                            resp = gateway_client.chat(
-                                model=_gateway_model_name(model_cfg),
-                                messages=[{"role": "user", "content": user_input}],
+                    # Prefer streaming from the CSP gateway when one is configured
+                    # (FOUNDRY_BASE_URL / CROWE_LOGIC_GATEWAY_STREAM_URL): reasoning
+                    # streams into the thinking panel, matching dp. Any streaming
+                    # gap (no /v1 route, transport error) falls back cleanly to the
+                    # non-streaming proxy below — so this is safe and opt-in.
+                    streamed = False
+                    if gateway_client.streaming_available():
+                        try:
+                            _gateway_stream_turn(
+                                console, model_cfg, user_input, session_state
                             )
-                    except gateway_client.PlanDenied as exc:
-                        _render_error(str(exc), "Plan does not allow this model")
-                        continue
-                    except auth.NotLoggedIn:
-                        routed = False  # token died mid-call; fall through to local
+                            streamed = True
+                        except gateway_client.PlanDenied as exc:
+                            _render_error(str(exc), "Plan does not allow this model")
+                            continue
+                        except gateway_client.StreamingUnavailable:
+                            streamed = False  # endpoint has no stream route; fall back
+                        except auth.NotLoggedIn:
+                            routed = False
+                    if routed and not streamed:
+                        try:
+                            with thinking_live(console):
+                                resp = gateway_client.chat(
+                                    model=_gateway_model_name(model_cfg),
+                                    messages=[{"role": "user", "content": user_input}],
+                                )
+                        except gateway_client.PlanDenied as exc:
+                            _render_error(str(exc), "Plan does not allow this model")
+                            continue
+                        except auth.NotLoggedIn:
+                            routed = False  # token died mid-call; fall through to local
+                        if routed:
+                            render_reply(console, resp.get("content", ""))
+                            console.print()
                     if routed:
-                        render_reply(console, resp.get("content", ""))
-                        console.print()
                         session_state["api_status"] = "ok"
                         iterm_set_var("crowe_logic_api", "ok")
                         continue
