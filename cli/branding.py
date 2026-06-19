@@ -33,7 +33,23 @@ RESET = "\033[0m"
 
 # Glyph alphabet. Selected for legibility in monospace fonts and
 # absence of ambiguous-width characters.
-MARK = "\u25c6"  # signature mark (fallback when no inline image)
+MARK = "\u25c6"  # last-resort glyph (no inline image AND no block-art mark)
+
+# Pre-rendered truecolor block-art of the official corporate mark, used as the
+# splash mark in terminals without inline-image support (e.g. Apple Terminal).
+# Generated offline from the design-system PNG; needs no Pillow at runtime.
+try:
+    from cli.mark_art import (
+        MARK_ART_LINES,
+        MARK_ART_WIDTH,
+        MARK_PIXELS,
+        MARK_COLS,
+        MARK_BLUE,
+        MARK_GOLD,
+    )
+except Exception:  # module absent or malformed: fall back to the glyph
+    MARK_ART_LINES, MARK_ART_WIDTH = [], 0
+    MARK_PIXELS, MARK_COLS, MARK_BLUE, MARK_GOLD = [], 0, (0, 0, 0), (0, 0, 0)
 RULE = "\u2500"  # hairline horizontal rule
 RULE_HEAVY = "\u2501"  # heavy horizontal rule
 DOT = "\u00b7"  # inline separator
@@ -161,6 +177,26 @@ def thinking_spinner(label: str = "thinking"):
     except Exception:
         # The slot module is optional; never let a spinner import brick a turn.
         return ThinkingSpinner(label)
+
+
+def thinking_live(console, label: str = "thinking"):
+    """Transient Live wrapping the animated thinking spinner.
+
+    For blocking calls that produce no token stream of their own (e.g. the
+    signed-in gateway, which returns one JSON blob): the Live refresh thread
+    animates the spinner while the main thread waits. Use as a context manager::
+
+        with thinking_live(console):
+            resp = gateway_client.chat(...)
+    """
+    from rich.live import Live
+
+    return Live(
+        thinking_spinner(label),
+        console=console,
+        refresh_per_second=12,
+        transient=True,
+    )
 
 
 # ── Layout primitives ────────────────────────────────────────
@@ -313,6 +349,93 @@ def render_transcript_markdown(
     console.print(build_transcript_markdown(console, text, title=title, meta=meta))
 
 
+# ── Branded reply rendering ──────────────────────────────────
+# Rich's default Markdown palette (bold-cyan-on-black inline code, padded
+# cyan-on-black code panels, magenta underlined headings, bright-blue links)
+# reads like a rendered README. This recolours markdown to the Crowe palette —
+# gold accents, headings as quiet prose with a thin gold rule, code on the
+# terminal's own background — so a reply reads as a reply.
+_REPLY_THEME = None
+
+
+def _reply_markdown_classes():
+    """Lazily build the themed Markdown subclass (import rich only on first use)."""
+    from rich.markdown import CodeBlock, Heading, Markdown
+    from rich.syntax import Syntax
+    from rich.text import Text
+
+    class _QuietHeading(Heading):
+        """Left-aligned headings; h1/h2 get a thin gold rule instead of a banner."""
+
+        def __rich_console__(self, console, options):
+            text = self.text.copy()
+            text.justify = "left"
+            if self.tag in ("h1", "h2"):
+                line = Text("▍ ", style=GOLD_HEX)
+                line.append_text(text)
+                yield line
+            else:
+                yield text
+
+    class _QuietCodeBlock(CodeBlock):
+        """Code on the terminal's own background — no full-width colour panel."""
+
+        def __rich_console__(self, console, options):
+            code = str(self.text).rstrip()
+            yield Syntax(
+                code,
+                self.lexer_name,
+                theme=self.theme,
+                word_wrap=True,
+                background_color="default",
+                padding=(0, 2),
+            )
+
+    class _Reply(Markdown):
+        elements = {
+            **Markdown.elements,
+            "heading_open": _QuietHeading,
+            "fence": _QuietCodeBlock,
+            "code_block": _QuietCodeBlock,
+        }
+
+    return _Reply
+
+
+def render_reply(console, content: str) -> None:
+    """Render an assistant reply as Crowe-branded prose rather than a raw README."""
+    global _REPLY_THEME
+    content = (content or "").strip()
+    if not content:
+        return
+    from rich.theme import Theme
+
+    if _REPLY_THEME is None:
+        _REPLY_THEME = Theme(
+            {
+                "markdown.h1": f"bold {GOLD_HEX}",
+                "markdown.h2": f"bold {GOLD_HEX}",
+                "markdown.h3": f"bold {GOLD_HEX}",
+                "markdown.h4": f"bold {GOLD_HEX}",
+                "markdown.h5": f"bold {GOLD_HEX}",
+                "markdown.h6": f"bold {GOLD_HEX}",
+                "markdown.item.bullet": GOLD_HEX,
+                "markdown.item.number": GOLD_HEX,
+                "markdown.hr": f"dim {GOLD_HEX}",
+                "markdown.link": f"underline {GOLD_HEX}",
+                "markdown.link_url": "dim",
+                "markdown.code": "#d8c79a",  # soft gold inline code, no black bg
+                "markdown.block_quote": "italic dim",
+                "markdown.table.header": f"bold {GOLD_HEX}",
+                "markdown.table.border": "dim",
+            },
+            inherit=True,
+        )
+    reply_cls = _reply_markdown_classes()
+    with console.use_theme(_REPLY_THEME):
+        console.print(reply_cls(content, code_theme="ansi_dark"))
+
+
 def build_reasoning_panel(
     console, text: str, *, live: bool = False, meta: str | None = None
 ):
@@ -430,6 +553,21 @@ def _get_avatar_seq(width: int = 8) -> str:
     return _inline_image_seq(avatar_path, width=width)
 
 
+def _get_mark_seq(width: int = 10) -> str:
+    """Inline-image the official corporate mark for the splash centre, or ''.
+
+    The mark PNG is already transparent, so unlike the avatar it needs no
+    background-cleanup pass. Returns '' on terminals without inline images
+    (e.g. Apple Terminal), where the caller falls back to block-art / glyph.
+    """
+    mark_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "corporate-mark.png"
+    )
+    if not _is_iterm_compatible() or not os.path.exists(mark_path):
+        return ""
+    return _inline_image_seq(mark_path, width=width)
+
+
 def welcome_screen(version: str = "0.2.7", avatar_seq: str = "") -> str:
     """Render the Crowe Logic signature welcome screen.
 
@@ -456,17 +594,20 @@ def welcome_screen(version: str = "0.2.7", avatar_seq: str = "") -> str:
     wordmark = f"{GOLD}{BOLD}{wordmark_plain}{RESET}"
     wordmark_line = center(wordmark, w)
 
-    # Mark: inline image where supported, glyph fallback otherwise.
-    # Both modes are visually equivalent: a single anchor point.
+    # Mark: the official corporate mark, rendered the richest way the terminal
+    # allows — (1) inline image (iTerm2/WezTerm/Ghostty: the literal PNG),
+    # (2) truecolor block-art (any 24-bit terminal, incl. Apple Terminal),
+    # (3) a single glyph as last resort. All three are one centred anchor.
     if avatar_seq:
-        # The avatar_seq is an iTerm2 inline image escape, which has
-        # zero measurable width to len(). We approximate the visual
-        # width as 4 cells (matching the width=4 setting in
-        # _get_avatar_seq) and pad accordingly.
-        mark_pad = max(0, (w - 4) // 2)
-        mark_line = " " * mark_pad + avatar_seq
+        # Inline-image escapes have zero measurable width to len(); approximate
+        # the visual width (matches the width= passed to _get_mark_seq) and pad.
+        mark_pad = max(0, (w - 10) // 2)
+        mark_block = " " * mark_pad + avatar_seq
+    elif MARK_ART_LINES:
+        pad = " " * max(0, (w - MARK_ART_WIDTH) // 2)
+        mark_block = "\n".join(pad + line for line in MARK_ART_LINES)
     else:
-        mark_line = center(f"{GOLD}{BOLD}{MARK}{RESET}", w)
+        mark_block = center(f"{GOLD}{BOLD}{MARK}{RESET}", w)
 
     # Build version + model line. The active model is read from
     # session_state if set; otherwise the line shows just the version.
@@ -489,7 +630,7 @@ def welcome_screen(version: str = "0.2.7", avatar_seq: str = "") -> str:
         f"{rule}\n"
         "\n"
         "\n"
-        f"{mark_line}\n"
+        f"{mark_block}\n"
         "\n"
         "\n"
         f"{wordmark_line}\n"
@@ -537,28 +678,128 @@ def _animate_wordmark_ignite(wordmark_plain: str, w: int) -> None:
     sys.stdout.flush()
 
 
-def show_welcome(version: str = "0.2.7"):
-    """Print the full welcome: avatar inside the banner.
-
-    On a real terminal the typographic wordmark ignites into place; otherwise the
-    banner prints static. The animation only restyles the wordmark line, located
-    by an exact match against the same string `welcome_screen` embeds, so any
-    layout change falls back to the static print rather than mis-animating.
+def _mark_frame_lines(blue_dx: int, gold_dx: int):
+    """Render the mark to half-block lines with the blue piece shifted by
+    ``blue_dx`` columns and the gold piece by ``gold_dx`` (pixels off either
+    edge are clipped). dx == 0 for both yields the assembled mark.
     """
-    avatar_seq = _get_avatar_seq(width=8)
-    full = welcome_screen(version, avatar_seq=avatar_seq)
-    if not sys.stdout.isatty():
+    cols = MARK_COLS
+
+    def shift(row):
+        out = ["."] * cols
+        for x, ch in enumerate(row):
+            if ch == ".":
+                continue
+            nx = x + (blue_dx if ch == "B" else gold_dx)
+            if 0 <= nx < cols:
+                out[nx] = ch
+        return out
+
+    grid = [shift(r) for r in MARK_PIXELS]
+
+    def rgb(ch):
+        return MARK_BLUE if ch == "B" else MARK_GOLD if ch == "G" else None
+
+    lines = []
+    for r in range(0, len(grid), 2):
+        top, bot = grid[r], grid[r + 1]
+        cells = []
+        for c in range(cols):
+            tc, bc = rgb(top[c]), rgb(bot[c])
+            if tc is None and bc is None:
+                cells.append(f"{RESET} ")
+            elif tc and bc:
+                cells.append(
+                    f"\033[38;2;{tc[0]};{tc[1]};{tc[2]}m\033[48;2;{bc[0]};{bc[1]};{bc[2]}m▀"
+                )
+            elif tc:
+                cells.append(f"\033[49m\033[38;2;{tc[0]};{tc[1]};{tc[2]}m▀")
+            else:
+                cells.append(f"\033[49m\033[38;2;{bc[0]};{bc[1]};{bc[2]}m▄")
+        lines.append("".join(cells) + RESET)
+    return lines
+
+
+def _animate_mark_converge(pad: str) -> None:
+    """The brand's two pieces come together: the blue bracket slides in from the
+    left and the gold chevron from the right, easing into the locked mark. Drawn
+    in place (cursor up + clear each frame). Leaves the assembled mark followed by
+    one newline — the caller compensates so the layout matches the static splash.
+    """
+    import time
+
+    n_rows = len(MARK_PIXELS) // 2
+    offset = max(2, MARK_COLS // 2)
+    frames = 16
+    for f in range(frames + 1):
+        t = f / frames
+        eased = 1 - (1 - t) * (1 - t)  # ease-out: fast in, gentle lock
+        dx = round(offset * (1 - eased))
+        lines = _mark_frame_lines(-dx, dx)  # blue from left, gold from right
+        if f:
+            sys.stdout.write(f"\033[{n_rows}A")  # back to top of the block
+        for line in lines:
+            sys.stdout.write("\r\033[K" + pad + line + "\n")
+        sys.stdout.flush()
+        time.sleep(0.022)
+
+
+def _anim_disabled() -> bool:
+    """Honour reduced-motion conventions (NO_COLOR is a reasonable proxy too)."""
+    return bool(
+        os.environ.get("CROWE_LOGIC_NO_ANIM", "").strip()
+        or os.environ.get("NO_COLOR", "").strip()
+    )
+
+
+def show_welcome(version: str = "0.2.7"):
+    """Print the full welcome with an orchestrated page-load: the corporate mark
+    assembles top-down, then the typographic wordmark ignites.
+
+    Both animations locate their target by exact-matching the same strings
+    `welcome_screen` embeds; any layout drift (or a non-tty / reduced-motion
+    environment, or an inline-image mark) falls back to a clean static print.
+    """
+    mark_seq = _get_mark_seq(width=10)
+    full = welcome_screen(version, avatar_seq=mark_seq)
+    if not sys.stdout.isatty() or _anim_disabled():
         print(full)
         return
+
+    w = term_width()
     wordmark_plain = "C R O W E   L O G I C"
-    wordmark_line = center(f"{GOLD}{BOLD}{wordmark_plain}{RESET}", term_width())
+    wordmark_line = center(f"{GOLD}{BOLD}{wordmark_plain}{RESET}", w)
+
+    # Preferred path: animate the block-art mark, then the wordmark. Only when
+    # both segments are locatable in the static splash — else fall through.
+    if MARK_ART_LINES and not mark_seq:
+        pad = " " * max(0, (w - MARK_ART_WIDTH) // 2)
+        mark_block = "\n".join(pad + line for line in MARK_ART_LINES)
+        head, sep1, rest = full.partition(mark_block)
+        before_wm, sep2, after_wm = rest.partition(wordmark_line)
+        if sep1 and sep2:
+            sys.stdout.write(head)
+            sys.stdout.flush()
+            _animate_mark_converge(pad)
+            # The converge animation emits the assembled mark plus one trailing
+            # newline; the static gap (before_wm) opens with that same newline,
+            # so drop one to keep the spacing byte-identical to the static splash.
+            gap = before_wm[1:] if before_wm.startswith("\n") else before_wm
+            sys.stdout.write(gap)
+            sys.stdout.flush()
+            _animate_wordmark_ignite(wordmark_plain, w)
+            sys.stdout.write(after_wm)
+            sys.stdout.flush()
+            return
+
+    # Fallback: wordmark-only ignite (inline-image mark, or layout drift).
     before, sep, after = full.partition(wordmark_line)
-    if not sep:  # layout drifted from what we expect: don't risk a broken reveal
+    if not sep:
         print(full)
         return
     sys.stdout.write(before)
     sys.stdout.flush()
-    _animate_wordmark_ignite(wordmark_plain, term_width())
+    _animate_wordmark_ignite(wordmark_plain, w)
     sys.stdout.write(after)
     sys.stdout.flush()
 

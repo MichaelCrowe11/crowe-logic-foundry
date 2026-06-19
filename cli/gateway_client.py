@@ -16,7 +16,7 @@ import httpx
 from cli import auth
 
 GATEWAY_BASE = os.environ.get(
-    "CROWE_LOGIC_GATEWAY_URL", "https://chat.crowelogic.com"
+    "CROWE_LOGIC_GATEWAY_URL", "https://api.crowelogic.com"
 ).rstrip("/")
 _TIMEOUT = 120
 

@@ -39,6 +39,8 @@ from cli.branding import (
     welcome_screen,
     show_welcome,
     show_inline_image,
+    thinking_live,
+    render_reply,
     get_favicon,
     session_state,
     reset_session_state,
@@ -85,6 +87,33 @@ def _current_model() -> dict:
     if idx < len(MODEL_CHAIN):
         return MODEL_CHAIN[idx]
     return MODEL_CHAIN[0]  # wrap around to primary
+
+
+# Providers the Crowe gateway serves directly (it holds these keys server-side).
+# The `auto` meta-model is a routing placeholder, not a real provider — sending
+# it verbatim returns 400 "Unsupported provider: auto". Local Ollama tiers live
+# only on the personal lane and the gateway cannot reach them either.
+_GATEWAY_PROVIDERS = ("azure_openai",)
+
+
+def _gateway_model_name(model_cfg: dict) -> str:
+    """Resolve a model_cfg to a concrete model id the signed-in gateway can serve.
+
+    The interactive/run paths only resolve the `auto` meta-model to a concrete
+    tier when CROWE_LOGIC_AUTO_ROUTE is on. With routing pinned off (the default
+    in this repo's .env), `_current_model()` returns the `auto` meta-model and
+    its placeholder name would reach the gateway, which 400s. Map any non-servable
+    model (the meta-model, or a local Ollama tier) to the first gateway-servable
+    tier in MODEL_CHAIN so a real model always answers.
+    """
+    if model_cfg.get("provider") in _GATEWAY_PROVIDERS:
+        return model_cfg.get("name", model_cfg.get("label"))
+    for cand in MODEL_CHAIN:
+        if cand.get("provider") in _GATEWAY_PROVIDERS:
+            return cand.get("name", cand.get("label"))
+    # No servable tier configured — send what we have so the gateway reports
+    # the real error rather than masking it.
+    return model_cfg.get("name", model_cfg.get("label"))
 
 
 def _provider_health_path() -> Path:
@@ -1654,13 +1683,16 @@ def chat():
             auto_route_index = None
             task_class = None
             # CroweLM Auto: pick the best concrete tier for this user turn.
-            if model_cfg.get("provider") == "auto":
+            if _auto_route_enabled():
                 from config.agent_config import route_candidates_for_auto
 
-                router_cfg = model_cfg
+                router_cfg = next(
+                    (m for m in MODEL_CHAIN if m.get("provider") == "auto"),
+                    None,
+                ) or {"label": "CroweLM Auto"}
                 auto_candidates, task_class = route_candidates_for_auto(
                     user_input,
-                    availability_check=lambda c: _model_switch_error(c) is None,
+                    availability_check=_auto_route_available,
                 )
                 auto_route_index = 0
                 model_cfg = auto_candidates[auto_route_index]
@@ -1694,24 +1726,23 @@ def chat():
                         session_state["_relogin_hinted"] = True
 
                 if routed:
-                    from rich.markdown import Markdown
-
                     render_session_hud(
                         console, state=session_state, cwd=os.getcwd(), meta="turn"
                     )
                     console.print()
                     try:
-                        resp = gateway_client.chat(
-                            model=model_cfg.get("name", model_cfg.get("label")),
-                            messages=[{"role": "user", "content": user_input}],
-                        )
+                        with thinking_live(console):
+                            resp = gateway_client.chat(
+                                model=_gateway_model_name(model_cfg),
+                                messages=[{"role": "user", "content": user_input}],
+                            )
                     except gateway_client.PlanDenied as exc:
                         _render_error(str(exc), "Plan does not allow this model")
                         continue
                     except auth.NotLoggedIn:
                         routed = False  # token died mid-call; fall through to local
                     if routed:
-                        console.print(Markdown(resp.get("content", "")))
+                        render_reply(console, resp.get("content", ""))
                         console.print()
                         session_state["api_status"] = "ok"
                         iterm_set_var("crowe_logic_api", "ok")
@@ -2922,17 +2953,31 @@ def run(prompt: str):
     if _handle_local_runtime_command(prompt, session_state):
         return
 
+    model_cfg = _current_model()
+    auto_candidates = [model_cfg]
+    auto_route_index = 0
+
     # Synapse auto-routing for the single-prompt path. Same opt-in flag
     # as chat(); when enabled the router picks the best tier before any
     # model gets instantiated.
     if _auto_route_enabled():
+        from config.agent_config import route_candidates_for_auto
         from config.router import route_prompt
 
         decision = route_prompt(prompt, availability=_auto_route_available)
         _apply_route_decision(decision, session_state, prompt)
         _render_route_badge(console, decision)
+        auto_candidates, _task_class = route_candidates_for_auto(
+            prompt,
+            availability_check=_auto_route_available,
+        )
+        if auto_candidates:
+            auto_route_index = 0
+            model_cfg = auto_candidates[auto_route_index]
+        else:
+            model_cfg = _current_model()
+            auto_candidates = [model_cfg]
 
-    model_cfg = _current_model()
     session_state["active_model"] = model_cfg["label"]
     orch.prepare(prompt, thread_id=synthetic_thread_id)
     render_session_hud(console, state=session_state, cwd=os.getcwd(), meta="run")
@@ -2963,59 +3008,58 @@ def run(prompt: str):
             )
 
         if routed:
-            from rich.markdown import Markdown
-
             try:
-                resp = gateway_client.chat(
-                    model=model_cfg.get("name", model_cfg.get("label")),
-                    messages=[{"role": "user", "content": prompt}],
-                )
+                with thinking_live(console):
+                    resp = gateway_client.chat(
+                        model=_gateway_model_name(model_cfg),
+                        messages=[{"role": "user", "content": prompt}],
+                    )
             except gateway_client.PlanDenied as exc:
                 console.print(f"  [#bf6f6f]Plan does not allow this model:[/] {exc}")
                 return
             except auth.NotLoggedIn:
                 routed = False  # token died mid-call; fall through to local
             if routed:
-                console.print(Markdown(resp.get("content", "")))
+                render_reply(console, resp.get("content", ""))
                 console.print()
                 return
 
-    provider_kind = model_cfg.get("provider")
-    try:
-        runtime_instructions = _runtime_system_instructions(model_cfg, session_state)
+    def _stream_run_once(active_cfg: dict) -> None:
+        provider_kind = active_cfg.get("provider")
+        runtime_instructions = _runtime_system_instructions(active_cfg, session_state)
         if provider_kind == "anthropic":
             provider = _get_anthropic_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         elif provider_kind == "azure_openai":
             provider = _get_azure_openai_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         elif provider_kind == "openai_compat":
             provider = _get_hosted_openai_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         elif provider_kind == "nvidia":
             provider = _get_nvidia_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         elif provider_kind == "watsonx":
             provider = _get_watsonx_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         elif provider_kind == "openrouter":
             provider = _get_openrouter_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         elif provider_kind == "ollama":
             provider = _get_ollama_provider(
-                model_cfg,
+                active_cfg,
                 system_instructions=runtime_instructions,
             )
         else:
@@ -3036,16 +3080,55 @@ def run(prompt: str):
             session_state,
             _get_orchestrator,
         )
-        _clear_provider_health(provider_kind)
-    except Exception as e:
-        if _is_provider_wide_error(str(e)):
-            _set_provider_health(
-                provider_kind,
-                status="blocked",
-                reason=str(e),
-                model_label=model_cfg.get("label", ""),
+        _clear_provider_health(str(provider_kind or ""))
+
+    while True:
+        provider_kind = model_cfg.get("provider")
+        session_state["active_model"] = model_cfg["label"]
+        try:
+            _stream_run_once(model_cfg)
+            return
+        except Exception as e:
+            error_msg = str(e)
+            _model_state["failures"][model_cfg["name"]] = (
+                _model_state["failures"].get(model_cfg["name"], 0) + 1
             )
-        _render_error(str(e))
+            try:
+                from config.health import registry as _health_registry
+
+                _health_registry.record_failure(model_cfg["name"], error_msg)
+            except Exception:
+                pass
+
+            if _is_provider_wide_error(error_msg):
+                _set_provider_health(
+                    str(provider_kind or ""),
+                    status="blocked",
+                    reason=error_msg,
+                    model_label=model_cfg.get("label", ""),
+                )
+
+            if _is_failover_eligible_error(error_msg):
+                next_index, next_model = _next_auto_model_after_failure(
+                    auto_candidates,
+                    auto_route_index,
+                    model_cfg,
+                    error_msg,
+                )
+                if next_model is not None and next_index is not None:
+                    auto_route_index = next_index
+                    model_cfg = next_model
+                    reason = "timeout" if "ttft" in error_msg.lower() else "error"
+                    console.print(
+                        _hedge_banner(
+                            target_label=next_model["label"],
+                            reason=reason,
+                        )
+                    )
+                    continue
+
+            _render_error(error_msg)
+            return
 
 
 def _deploy_timeout_seconds() -> float:
