@@ -35,11 +35,15 @@ class InternalAccessPolicy:
 
     @property
     def allowed_principals(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(self.owner_principals + self.approved_staff_principals))
+        return tuple(
+            dict.fromkeys(self.owner_principals + self.approved_staff_principals)
+        )
 
     def allows(self, principal: str | None) -> bool:
         principal = (principal or "").strip().lower()
-        return bool(principal and principal in {p.lower() for p in self.allowed_principals})
+        return bool(
+            principal and principal in {p.lower() for p in self.allowed_principals}
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -140,9 +144,13 @@ def access_policy_from_environment() -> InternalAccessPolicy:
     owners = _split_env_list(os.environ.get(OWNER_ENV))
     staff = _split_env_list(os.environ.get(STAFF_ENV))
     if not owners:
-        local_user = os.environ.get("USER") or os.environ.get("LOGNAME") or "local-owner"
+        local_user = (
+            os.environ.get("USER") or os.environ.get("LOGNAME") or "local-owner"
+        )
         owners = (local_user,)
-    workspace = os.environ.get(WORKSPACE_ENV, DEFAULT_WORKSPACE).strip() or DEFAULT_WORKSPACE
+    workspace = (
+        os.environ.get(WORKSPACE_ENV, DEFAULT_WORKSPACE).strip() or DEFAULT_WORKSPACE
+    )
     return InternalAccessPolicy(
         scope="owner_and_approved_staff_only",
         workspace=workspace,
@@ -160,9 +168,12 @@ def recommended_internal_agents() -> tuple[InternalAgentProfile, ...]:
     creating redundant agents.
     """
 
+    # All internal development agents run on CroweLM Theory / Fable 5 as the
+    # primary model (owner directive 2026-06-14). Lower tiers stay as ordered
+    # fallbacks for sovereign/offline routing where Fable 5 isn't reachable.
     deep = ("claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6")
-    balanced = ("claude-opus-4-8", "claude-sonnet-4-6")
-    fast = ("claude-sonnet-4-6", "claude-haiku-4-5")
+    balanced = ("claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6")
+    fast = ("claude-fable-5", "claude-sonnet-4-6", "claude-haiku-4-5")
     return (
         InternalAgentProfile(
             agent_id="internal-architecture-steward",
@@ -172,7 +183,12 @@ def recommended_internal_agents() -> tuple[InternalAgentProfile, ...]:
                 "and long-horizon platform design before implementation work fans out."
             ),
             model_preference=deep,
-            tool_domains=("repo_read", "architecture_docs", "dependency_graph", "design_review"),
+            tool_domains=(
+                "repo_read",
+                "architecture_docs",
+                "dependency_graph",
+                "design_review",
+            ),
             mission_tags=("architecture", "synapse", "mission_alignment"),
             self_heal_duties=(
                 "Detect architectural drift between CLI, control plane, Synapse, and provider modules.",
@@ -307,7 +323,12 @@ def self_heal_loops() -> tuple[SelfHealLoop, ...]:
         SelfHealLoop(
             name="Provider and model failover repair",
             trigger="deploy health check, route telemetry, or streaming turn records provider failure",
-            evidence=("provider_health.json", "crowe-logic deploy", "route decision", "focused provider tests"),
+            evidence=(
+                "provider_health.json",
+                "crowe-logic deploy",
+                "route decision",
+                "focused provider tests",
+            ),
             repair_path=(
                 "classify failure",
                 "select healthy fallback",
@@ -320,7 +341,12 @@ def self_heal_loops() -> tuple[SelfHealLoop, ...]:
         SelfHealLoop(
             name="CLI install and runtime repair",
             trigger="installed crowe-logic wrapper, venv, or headless protocol fails",
-            evidence=("which crowe-logic", ".venv/bin/crowe-logic", "headless smoke", "pytest family"),
+            evidence=(
+                "which crowe-logic",
+                ".venv/bin/crowe-logic",
+                "headless smoke",
+                "pytest family",
+            ),
             repair_path=(
                 "verify live wrapper path",
                 "repair editable install if stale",
@@ -427,13 +453,14 @@ def build_coordinator_payload(
         ),
         "tools": _agent_toolset(policy.default_tool_policy),
         "multiagent": {
+            "type": "coordinator",
             "agents": [
                 {
                     "type": "agent",
                     "id": f"${{{agent.agent_id}.claude_agent_id}}",
                 }
                 for agent in agents
-            ]
+            ],
         },
         "metadata": {
             "crowe_internal": "true",

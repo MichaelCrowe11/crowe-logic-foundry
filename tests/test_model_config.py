@@ -77,11 +77,20 @@ def test_resolve_model_config_accepts_legacy_synapse_alias():
 
 
 def test_build_system_instructions_includes_crowelm_tier_prompt():
+    # "apex"/"pro" resolve to the active Azure tier (CroweLM Helio Pro) after the
+    # watsonx CroweLM Apex tier was superseded via models.extra.json (cloud-only
+    # sourcing — _merge_model_chain unions the legacy aliases onto the Azure
+    # tier). Assert against the resolved active tier so the test survives alias
+    # migrations instead of pinning a retired label.
     cfg = resolve_model_config("apex")
+    assert cfg is not None
     instructions = build_system_instructions(cfg)
 
-    assert "CroweLM Apex" in instructions
-    assert "peak-performance reasoning tier" in instructions
+    # The resolved tier's branded label and a tier-guidance section are woven
+    # into the composed system prompt.
+    assert cfg["label"] in instructions
+    assert "Active CroweLM Tier" in instructions
+    assert "Tier Guidance" in instructions
 
 
 def test_provider_model_name_supports_env_var_interpolation(monkeypatch):
@@ -104,15 +113,19 @@ def test_provider_model_name_falls_back_to_name_when_backend_missing():
 
 def test_model_chain_loads_extra_models_from_json_file(tmp_path, monkeypatch):
     extra_path = tmp_path / "models.extra.json"
-    extra_path.write_text(json.dumps({
-        "models": [
+    extra_path.write_text(
+        json.dumps(
             {
-                "name": "gpt-4.1-mini",
-                "label": "CroweLM Scout",
-                "aliases": ["scout"],
+                "models": [
+                    {
+                        "name": "gpt-4.1-mini",
+                        "label": "CroweLM Scout",
+                        "aliases": ["scout"],
+                    }
+                ]
             }
-        ]
-    }))
+        )
+    )
 
     original_extra_models_path = os.environ.get("CROWE_LOGIC_EXTRA_MODELS_PATH")
     monkeypatch.setenv("CROWE_LOGIC_EXTRA_MODELS_PATH", str(extra_path))
@@ -141,7 +154,10 @@ def test_classify_task_handles_core_classes():
     assert classify_task("write a python function to parse csv") == "code"
     assert classify_task("refactor this class") == "code"
     assert classify_task("write a poem about mushrooms") == "creative"
-    assert classify_task("what is the best substrate for lion's mane cultivation") == "domain_qa"
+    assert (
+        classify_task("what is the best substrate for lion's mane cultivation")
+        == "domain_qa"
+    )
     assert classify_task("summarize recent research on mycelium networks") == "research"
     assert classify_task("hello") == "chat"
     assert classify_task("hi how are you?") == "chat"
@@ -192,7 +208,18 @@ def test_route_candidates_for_auto_returns_same_turn_fallbacks():
     assert cls == "chat"
     assert candidates
     assert candidates[0]["label"] == "CroweLM Hyphae Legacy"
+    assert "CroweLM Dense" in {cfg["label"] for cfg in candidates}
     assert all(cfg["provider"] != "auto" for cfg in candidates)
+
+
+def test_route_candidates_for_auto_can_gate_local_personal_lane():
+    candidates, cls = route_candidates_for_auto(
+        "hello",
+        availability_check=lambda c: c.get("provider") != "ollama",
+    )
+
+    assert cls == "chat"
+    assert "CroweLM Dense" not in {cfg["label"] for cfg in candidates}
 
 
 def test_route_candidates_for_auto_skips_blocked_providers():

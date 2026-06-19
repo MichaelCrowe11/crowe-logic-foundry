@@ -933,6 +933,477 @@
         "crowelm-synapse",
         "CroweLM Synapse"
       ]
+    },
+    {
+      "name": "crowelm-bastion-edge",
+      "backend_name": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "label": "CroweLM Bastion Edge",
+      "aliases": [
+        "bastion-edge",
+        "cf-bastion",
+        "cf-llama"
+      ],
+      "notes": "Cloudflare Workers AI failover for Bastion (Llama-3.3-70B). Edge inference, separate cloud backend from Azure.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "crowelm-talon-edge",
+      "backend_name": "@cf/nvidia/nemotron-3-120b-a12b",
+      "label": "CroweLM Talon Edge",
+      "aliases": [
+        "talon-edge",
+        "cf-talon",
+        "cf-nemotron"
+      ],
+      "notes": "Cloudflare Workers AI failover for Talon (Nemotron-3-120B). 256k ctx, tools.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "crowelm-hyphae-edge",
+      "backend_name": "@cf/moonshotai/kimi-k2.7-code",
+      "label": "CroweLM Hyphae Edge",
+      "aliases": [
+        "hyphae-edge",
+        "cf-kimi",
+        "cf-hyphae"
+      ],
+      "notes": "Cloudflare Workers AI failover for Hyphae (Kimi K2.7 Code). 262k ctx, tools.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "crowelm-ember",
+      "backend_name": "@cf/openai/gpt-oss-120b",
+      "label": "CroweLM Ember",
+      "aliases": [
+        "ember",
+        "cf-gpt-oss",
+        "cf-ember"
+      ],
+      "notes": "Cloudflare Workers AI: GPT-OSS-120B open weights. Reasoning + tools, 128k ctx.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "crowelm-glint",
+      "backend_name": "@cf/zai-org/glm-4.7-flash",
+      "label": "CroweLM Glint",
+      "aliases": [
+        "glint",
+        "cf-glm",
+        "cf-glint"
+      ],
+      "notes": "Cloudflare Workers AI: GLM-4.7-Flash. Fast, 131k ctx, tools.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-google-gemma-2b-it-lora",
+      "backend_name": "@cf/google/gemma-2b-it-lora",
+      "label": "Cloudflare: gemma-2b-it-lora",
+      "aliases": [
+        "gemma-2b-it-lora"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-3-2-3b-instruct",
+      "backend_name": "@cf/meta/llama-3.2-3b-instruct",
+      "label": "Cloudflare: llama-3.2-3b-instruct",
+      "aliases": [
+        "llama-3.2-3b-instruct"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-guard-3-8b",
+      "backend_name": "@cf/meta/llama-guard-3-8b",
+      "label": "Cloudflare: llama-guard-3-8b",
+      "aliases": [
+        "llama-guard-3-8b"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-mistral-mistral-7b-instruct-v0-2-lora",
+      "backend_name": "@cf/mistral/mistral-7b-instruct-v0.2-lora",
+      "label": "Cloudflare: mistral-7b-instruct-v0.2-lora",
+      "aliases": [
+        "mistral-7b-instruct-v0.2-lora"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-deepseek-ai-deepseek-r1-distill-qwen-32b",
+      "backend_name": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      "label": "Cloudflare: deepseek-r1-distill-qwen-32b",
+      "aliases": [
+        "deepseek-r1-distill-qwen-32b"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-3-1-8b-instruct-fp8",
+      "backend_name": "@cf/meta/llama-3.1-8b-instruct-fp8",
+      "label": "Cloudflare: llama-3.1-8b-instruct-fp8",
+      "aliases": [
+        "llama-3.1-8b-instruct-fp8"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-3-2-1b-instruct",
+      "backend_name": "@cf/meta/llama-3.2-1b-instruct",
+      "label": "Cloudflare: llama-3.2-1b-instruct",
+      "aliases": [
+        "llama-3.2-1b-instruct"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-moonshotai-kimi-k2-6",
+      "backend_name": "@cf/moonshotai/kimi-k2.6",
+      "label": "Cloudflare: kimi-k2.6",
+      "aliases": [
+        "kimi-k2.6"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-llama-2-7b-chat-hf-lora",
+      "backend_name": "@cf/meta-llama/llama-2-7b-chat-hf-lora",
+      "label": "Cloudflare: llama-2-7b-chat-hf-lora",
+      "aliases": [
+        "llama-2-7b-chat-hf-lora"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-ibm-granite-granite-4-0-h-micro",
+      "backend_name": "@cf/ibm-granite/granite-4.0-h-micro",
+      "label": "Cloudflare: granite-4.0-h-micro",
+      "aliases": [
+        "granite-4.0-h-micro"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-qwen-qwen2-5-coder-32b-instruct",
+      "backend_name": "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "label": "Cloudflare: qwen2.5-coder-32b-instruct",
+      "aliases": [
+        "qwen2.5-coder-32b-instruct"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-zai-org-glm-5-2",
+      "backend_name": "@cf/zai-org/glm-5.2",
+      "label": "Cloudflare: glm-5.2",
+      "aliases": [
+        "glm-5.2"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-aisingapore-gemma-sea-lion-v4-27b-it",
+      "backend_name": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+      "label": "Cloudflare: gemma-sea-lion-v4-27b-it",
+      "aliases": [
+        "gemma-sea-lion-v4-27b-it"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-qwen-qwen3-30b-a3b-fp8",
+      "backend_name": "@cf/qwen/qwen3-30b-a3b-fp8",
+      "label": "Cloudflare: qwen3-30b-a3b-fp8",
+      "aliases": [
+        "qwen3-30b-a3b-fp8"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-google-gemma-7b-it-lora",
+      "backend_name": "@cf/google/gemma-7b-it-lora",
+      "label": "Cloudflare: gemma-7b-it-lora",
+      "aliases": [
+        "gemma-7b-it-lora"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-google-gemma-4-26b-a4b-it",
+      "backend_name": "@cf/google/gemma-4-26b-a4b-it",
+      "label": "Cloudflare: gemma-4-26b-a4b-it",
+      "aliases": [
+        "gemma-4-26b-a4b-it"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-mistralai-mistral-small-3-1-24b-instruct",
+      "backend_name": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "label": "Cloudflare: mistral-small-3.1-24b-instruct",
+      "aliases": [
+        "mistral-small-3.1-24b-instruct"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-3-2-11b-vision-instruct",
+      "backend_name": "@cf/meta/llama-3.2-11b-vision-instruct",
+      "label": "Cloudflare: llama-3.2-11b-vision-instruct",
+      "aliases": [
+        "llama-3.2-11b-vision-instruct"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-openai-gpt-oss-20b",
+      "backend_name": "@cf/openai/gpt-oss-20b",
+      "label": "Cloudflare: gpt-oss-20b",
+      "aliases": [
+        "gpt-oss-20b"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-llama-4-scout-17b-16e-instruct",
+      "backend_name": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "label": "Cloudflare: llama-4-scout-17b-16e-instruct",
+      "aliases": [
+        "llama-4-scout-17b-16e-instruct"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-qwen-qwq-32b",
+      "backend_name": "@cf/qwen/qwq-32b",
+      "label": "Cloudflare: qwq-32b",
+      "aliases": [
+        "qwq-32b"
+      ],
+      "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-llava-hf-llava-1-5-7b-hf",
+      "backend_name": "@cf/llava-hf/llava-1.5-7b-hf",
+      "label": "Cloudflare: llava-1.5-7b-hf",
+      "aliases": [
+        "llava-1.5-7b-hf"
+      ],
+      "notes": "Cloudflare Workers AI (Image-to-Text). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "vision",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-meta-m2m100-1-2b",
+      "backend_name": "@cf/meta/m2m100-1.2b",
+      "label": "Cloudflare: m2m100-1.2b",
+      "aliases": [
+        "m2m100-1.2b"
+      ],
+      "notes": "Cloudflare Workers AI (Translation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "cf-ai4bharat-indictrans2-en-indic-1b",
+      "backend_name": "@cf/ai4bharat/indictrans2-en-indic-1B",
+      "label": "Cloudflare: indictrans2-en-indic-1B",
+      "aliases": [
+        "indictrans2-en-indic-1B"
+      ],
+      "notes": "Cloudflare Workers AI (Translation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
+      "provider": "openai_compat",
+      "type": "reasoning",
+      "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+      "api_key_env": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "name": "gw-apex",
+      "label": "Gateway \u00b7 Apex (DeepSeek-V4-Pro)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "crowelm-apex",
+      "endpoint_env": "GATEWAY_ENDPOINT",
+      "api_key_env": "GATEWAY_API_KEY",
+      "aliases": [
+        "gw-apex",
+        "apex",
+        "Gateway \u00b7 Apex (DeepSeek-V4-Pro)"
+      ]
+    },
+    {
+      "name": "gw-zenith",
+      "label": "Gateway \u00b7 Zenith (gpt-5.5)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "crowelm-zenith",
+      "endpoint_env": "GATEWAY_ENDPOINT",
+      "api_key_env": "GATEWAY_API_KEY",
+      "aliases": [
+        "gw-zenith",
+        "zenith",
+        "Gateway \u00b7 Zenith (gpt-5.5)"
+      ]
+    },
+    {
+      "name": "gw-quasar",
+      "label": "Gateway \u00b7 Quasar (grok-4-3)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "crowelm-quasar",
+      "endpoint_env": "GATEWAY_ENDPOINT",
+      "api_key_env": "GATEWAY_API_KEY",
+      "aliases": [
+        "gw-quasar",
+        "quasar",
+        "Gateway \u00b7 Quasar (grok-4-3)"
+      ]
+    },
+    {
+      "name": "gw-reason",
+      "label": "Gateway \u00b7 Reason (DeepSeek-R1)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "crowelm-reason",
+      "endpoint_env": "GATEWAY_ENDPOINT",
+      "api_key_env": "GATEWAY_API_KEY",
+      "aliases": [
+        "gw-reason",
+        "reason",
+        "Gateway \u00b7 Reason (DeepSeek-R1)"
+      ]
+    },
+    {
+      "name": "gw-flash",
+      "label": "Gateway \u00b7 Flash (DeepSeek-V4-Flash)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "crowelm-flash",
+      "endpoint_env": "GATEWAY_ENDPOINT",
+      "api_key_env": "GATEWAY_API_KEY",
+      "aliases": [
+        "gw-flash",
+        "flash",
+        "Gateway \u00b7 Flash (DeepSeek-V4-Flash)"
+      ]
+    },
+    {
+      "name": "gw-eclipse",
+      "label": "Gateway \u00b7 Eclipse (Kimi-K2-6)",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "crowelm-eclipse",
+      "endpoint_env": "GATEWAY_ENDPOINT",
+      "api_key_env": "GATEWAY_API_KEY",
+      "aliases": [
+        "gw-eclipse",
+        "eclipse",
+        "Gateway \u00b7 Eclipse (Kimi-K2-6)"
+      ]
     }
   ]
 }

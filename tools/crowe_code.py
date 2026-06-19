@@ -96,9 +96,57 @@ def in_crowe_terminal() -> bool:
     """True when running inside a Crowe Terminal block with wsh reachable.
 
     Requires ``WAVETERM_JWT`` (set by the host block for RPC auth) and a
-    resolvable ``wsh`` binary. Both are necessary for the tools to function.
+    resolvable ``wsh`` binary. Both are necessary — but NOT sufficient: stock
+    Wave Terminal sets the identical ``WAVETERM_*`` env and ships the same
+    ``wsh``. Use :func:`_crowe_code_capable` to confirm the runtime can
+    actually serve Crowe Code block work before advertising the tools.
     """
     return bool(os.environ.get("WAVETERM_JWT")) and _wsh_path() is not None
+
+
+# Cache the one-shot capability probe: it shells out to wsh, so run it at most
+# once per process. ``None`` = not yet probed; ``True``/``False`` = result.
+_CAPABILITY_CACHE: Optional[bool] = None
+
+
+def _crowe_code_capable() -> bool:
+    """Confirm the runtime can actually serve Crowe Code block work.
+
+    ``in_crowe_terminal()`` only proves we're in *a* Wave-family block with a
+    reachable wsh. Stock Wave Terminal passes that check too, yet has no Crowe
+    Code (``crowecode``) view and (in some builds) an empty workspace registry,
+    so the bridge's wsh calls fail with ``no workspaces found``. This probe
+    exercises wsh once to tell a Crowe-Code-capable runtime from stock Wave.
+
+    The result is cached in :data:`_CAPABILITY_CACHE` so wsh is invoked at most
+    once per process. Callers gate ``register()`` / ``system_prompt()`` on this
+    so the tools never advertise themselves where they cannot work.
+
+    :return: True only when the bridge's wsh operations can succeed.
+    :rtype: bool
+    """
+    global _CAPABILITY_CACHE
+    if _CAPABILITY_CACHE is not None:
+        return _CAPABILITY_CACHE
+
+    try:
+        rc, out, _err = _run_wsh(["blocks", "list", "--json"])
+    except _WshError:
+        _CAPABILITY_CACHE = False
+        return _CAPABILITY_CACHE
+
+    if rc != 0:
+        _CAPABILITY_CACHE = False
+        return _CAPABILITY_CACHE
+
+    try:
+        blocks = json.loads(out or "[]")
+    except json.JSONDecodeError:
+        _CAPABILITY_CACHE = False
+        return _CAPABILITY_CACHE
+
+    _CAPABILITY_CACHE = isinstance(blocks, list)
+    return _CAPABILITY_CACHE
 
 
 def _run_wsh(args: List[str], timeout: int = 10):
@@ -596,7 +644,7 @@ def register(target: Set) -> List[str]:
     :return: The names of the tools that were registered.
     :rtype: list
     """
-    if not in_crowe_terminal():
+    if not (in_crowe_terminal() and _crowe_code_capable()):
         return []
     for fn in (
         crowe_code_read_block,
@@ -660,6 +708,6 @@ def system_prompt() -> str:
     :return: The addendum string when inside a Crowe Terminal block, else "".
     :rtype: str
     """
-    if not in_crowe_terminal():
+    if not (in_crowe_terminal() and _crowe_code_capable()):
         return ""
     return SYSTEM_PROMPT_ADDENDUM

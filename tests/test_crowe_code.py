@@ -42,6 +42,7 @@ def make_wsh(handlers):
 def in_terminal(monkeypatch):
     """Force the runtime gate on so tool bodies run."""
     monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+    monkeypatch.setattr(cc, "_crowe_code_capable", lambda: True)
 
 
 UUID = "d03e0bea-a89a-4b3b-94b0-1b6680664b2c"
@@ -324,6 +325,7 @@ class TestListBlocks:
 class TestRegister:
     def test_adds_tools_when_in_terminal(self, monkeypatch):
         monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+        monkeypatch.setattr(cc, "_crowe_code_capable", lambda: True)
         target: set = set()
         added = cc.register(target)
         assert cc.crowe_code_read_block in target
@@ -348,6 +350,7 @@ class TestWiring:
         import cli.session_runtime as sr
 
         monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+        monkeypatch.setattr(cc, "_crowe_code_capable", lambda: True)
         text = sr.build_runtime_system_instructions()
         assert "Crowe Code blocks" in text
 
@@ -523,7 +526,74 @@ class TestCurrentBlock:
 
     def test_registered_and_in_tool_names(self, monkeypatch):
         monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+        monkeypatch.setattr(cc, "_crowe_code_capable", lambda: True)
         target: set = set()
         cc.register(target)
         assert cc.crowe_code_current_block in target
         assert "crowe_code_current_block" in cc._TOOL_NAMES
+
+
+# ---------------------------------------------------------------------------
+# Capability gate — distinguish a Crowe-Code-capable runtime from stock Wave
+# ---------------------------------------------------------------------------
+
+
+class TestCapabilityGate:
+    """The cheap JWT+wsh check is necessary but NOT sufficient: stock Wave
+    Terminal sets identical WAVETERM_* env and ships the same wsh, yet cannot
+    serve Crowe Code block work. `_crowe_code_capable()` probes wsh once to
+    tell the two apart, and register()/system_prompt() must honor it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        cc._CAPABILITY_CACHE = None
+        yield
+        cc._CAPABILITY_CACHE = None
+
+    def test_capable_when_blocks_list_returns_json(self, monkeypatch):
+        monkeypatch.setattr(cc, "_run_wsh", make_wsh({"blocks": (0, "[]", "")}))
+        assert cc._crowe_code_capable() is True
+
+    def test_incapable_when_no_workspaces(self, monkeypatch):
+        monkeypatch.setattr(
+            cc,
+            "_run_wsh",
+            make_wsh({"blocks": (1, "", "Error: no workspaces found")}),
+        )
+        assert cc._crowe_code_capable() is False
+
+    def test_incapable_when_output_not_json(self, monkeypatch):
+        monkeypatch.setattr(cc, "_run_wsh", make_wsh({"blocks": (0, "not json", "")}))
+        assert cc._crowe_code_capable() is False
+
+    def test_fail_closed_on_wsh_error(self, monkeypatch):
+        def boom(args, timeout=10):
+            raise cc._WshError("wsh exploded")
+
+        monkeypatch.setattr(cc, "_run_wsh", boom)
+        assert cc._crowe_code_capable() is False
+
+    def test_probe_is_cached(self, monkeypatch):
+        calls = {"n": 0}
+
+        def counting(args, timeout=10):
+            calls["n"] += 1
+            return (0, "[]", "")
+
+        monkeypatch.setattr(cc, "_run_wsh", counting)
+        cc._crowe_code_capable()
+        cc._crowe_code_capable()
+        assert calls["n"] == 1
+
+    def test_register_noop_when_incapable(self, monkeypatch):
+        monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+        monkeypatch.setattr(cc, "_crowe_code_capable", lambda: False)
+        target: set = set()
+        assert cc.register(target) == []
+        assert target == set()
+
+    def test_system_prompt_empty_when_incapable(self, monkeypatch):
+        monkeypatch.setattr(cc, "in_crowe_terminal", lambda: True)
+        monkeypatch.setattr(cc, "_crowe_code_capable", lambda: False)
+        assert cc.system_prompt() == ""
