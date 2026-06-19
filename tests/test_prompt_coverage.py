@@ -14,6 +14,12 @@ NONCHAT_BACKENDS = {
     "text-embedding-3-large",  # CroweLM Embed Large (embeddings)
     "sora-2",  # CroweLM Reel (video)
     "model-router",  # CroweLM Model Router (meta-routing)
+    # Cloudflare Workers AI specialist backends with no chat persona by design:
+    "cf-meta-m2m100-1-2b",  # translation
+    "cf-ai4bharat-indictrans2-en-indic-1b",  # translation
+    "cf-llava-hf-llava-1-5-7b-hf",  # vision
+    "cf-meta-llama-3-2-11b-vision-instruct",  # vision
+    "cf-meta-llama-guard-3-8b",  # content moderation / guard
 }
 
 

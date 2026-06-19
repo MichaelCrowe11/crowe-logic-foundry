@@ -1157,7 +1157,8 @@
       "backend_name": "@cf/zai-org/glm-5.2",
       "label": "Cloudflare: glm-5.2",
       "aliases": [
-        "glm-5.2"
+        "cf-glm-5.2",
+        "cf-glm"
       ],
       "notes": "Cloudflare Workers AI (Text Generation). Edge inference via the Workers AI OpenAI-compatible endpoint.",
       "provider": "openai_compat",
@@ -1373,7 +1374,6 @@
       "api_key_env": "GATEWAY_API_KEY",
       "aliases": [
         "gw-reason",
-        "reason",
         "Gateway \u00b7 Reason (DeepSeek-R1)"
       ]
     },
@@ -1401,7 +1401,6 @@
       "api_key_env": "GATEWAY_API_KEY",
       "aliases": [
         "gw-eclipse",
-        "eclipse",
         "Gateway \u00b7 Eclipse (Kimi-K2-6)"
       ]
     }

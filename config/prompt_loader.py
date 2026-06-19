@@ -44,6 +44,37 @@ _BASE_ALIAS = {
     "crowelm-talon-nemoclaw": "talon",
     "vanguard-super": "vanguard",
     "vanguard-nano": "vanguard",
+    # Edge variants of branded tiers collapse onto the shared CroweLM Edge persona.
+    "bastion-edge": "edge",
+    "talon-edge": "edge",
+    "hyphae-edge": "edge",
+    # Cloudflare Workers AI chat-capable vendor models are surfaced under the
+    # CroweLM Edge persona (one brand voice, never per-vendor identities). Non-chat
+    # CF models (translation/vision/moderation) are excluded via NONCHAT_BACKENDS.
+    "glint": "edge",
+    "gemma-2b-it-lora": "edge",
+    "llama-3.2-3b-instruct": "edge",
+    "mistral-7b-instruct-v0.2-lora": "edge",
+    "deepseek-r1-distill-qwen-32b": "edge",
+    "llama-3.1-8b-instruct-fp8": "edge",
+    "llama-3.2-1b-instruct": "edge",
+    "llama-2-7b-chat-hf-lora": "edge",
+    "granite-4.0-h-micro": "edge",
+    "qwen2.5-coder-32b-instruct": "edge",
+    "gemma-sea-lion-v4-27b-it": "edge",
+    "qwen3-30b-a3b-fp8": "edge",
+    "gemma-7b-it-lora": "edge",
+    "gemma-4-26b-a4b-it": "edge",
+    "mistral-small-3.1-24b-instruct": "edge",
+    "gpt-oss-20b": "edge",
+    "llama-4-scout-17b-16e-instruct": "edge",
+    "qwq-32b": "edge",
+    # Gateway-routed tiers collapse onto their closest CroweLM reasoning persona.
+    "gw-zenith": "reason",
+    "gw-quasar": "reason",
+    "gw-reason": "reason",
+    "gw-flash": "reason",
+    "gw-eclipse": "eclipse",
 }
 
 
