@@ -99,12 +99,33 @@ verified with injected fakes. A **live** multi-tier run needs provider credentia
 3. ✅ **`openai_bridge` lit up** (done) — `crowe-logic serve` runs the
    OpenAI-compatible API; verified live (`GET /v1/models` → 200). Any OpenAI
    client can now drive the agent.
-4. **Consolidate retry on `tenacity`** — replace hand-rolled backoff in
-   `deepparallel.py` and providers; installed, unused. *(next)*
-5. **Specification Mode (evolve, not copy)** — a read-only autonomy tier + plan
-   model + approval gate, built on a reusable tool-permission gate that also gives
-   us the graduated-autonomy dial. The one genuine Droid idea worth adapting.
+4. ✅ **Retry consolidated on `tenacity`** (done) — `deepparallel.py`'s
+   hand-rolled loop + `_sleep_backoff` replaced with `Retrying`; semantics
+   preserved (retry 5xx/timeout only) and now verified by 4 injected-session
+   tests. The installed-but-unused dep is in use; `import random` dropped.
+5. ✅ **Autonomy gate + Specification Mode** (done) — `cli/autonomy.py`: a
+   graduated tool-permission tier (`read_only ⊂ edit ⊂ execute ⊂ full`),
+   fail-closed (unknown tools never leak into read-only). Wired into
+   `_get_tool_map()` so the agent *physically cannot* call forbidden tools, not
+   just instructed not to. `crowe-logic run --autonomy <tier>` exposes the dial;
+   `crowe-logic spec "<task>"` runs read-only with a planning prompt → returns a
+   spec, not code. This is the one genuine Droid idea, evolved onto a reusable
+   gate. 14 tests (incl. a live-registry wiring test proving write/shell are
+   excluded under read-only).
 
-> Verification boundary: auto-ensemble's policy + the cache + the serve endpoint
-> are verified (35 tests + a live /v1/models boot). A *live* multi-tier ensemble
-> run still needs provider credentials (Azure / a funded tier).
+> Verification boundary (whole effort): 53 tests pass; the serve endpoint booted
+> live (`/v1/models` 200); the read-only gate is proven on the real tool
+> registry. What still needs credentials: a *live* multi-tier ensemble run and a
+> *live* spec/planning turn (both reuse provider paths that work in dual mode).
+
+---
+
+## 5. Net result
+
+crowe-logic gained five capabilities this effort — **all by activating or
+completing code that already existed**, plus the one Droid idea (spec mode) worth
+adapting, built Crowe-native on a reusable autonomy gate. Zero new heavy
+dependencies; one previously-unused dep (`tenacity`) put to work. The agent now
+has: multi-tier ensemble reasoning, auto-fan-out on high-stakes turns, per-turn
+tool caching, an OpenAI-compatible server, a graduated autonomy dial, and
+read-only Specification Mode.

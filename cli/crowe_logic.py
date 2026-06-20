@@ -1171,14 +1171,36 @@ def _cancel_active_runs(client, thread_id: str):
 _tool_map_cache = None
 
 
+_AUTONOMY_LEVEL = "full"
+
+
+def _set_autonomy(level: str) -> None:
+    """Set the active tool autonomy level (read_only|edit|execute|full).
+
+    Filters which registered tools the agent may call this turn — the
+    execution-side half of the autonomy gate (defense in depth: even if a model
+    requests a forbidden tool, it is not in the map and cannot run).
+    """
+    global _AUTONOMY_LEVEL
+    from cli.autonomy import AUTONOMY_LEVELS
+
+    if level not in AUTONOMY_LEVELS:
+        raise ValueError(f"unknown autonomy level: {level!r}")
+    _AUTONOMY_LEVEL = level
+
+
 def _get_tool_map() -> dict:
-    """Cached name -> function lookup from registered user_functions."""
+    """Cached name -> function lookup, filtered by the active autonomy level."""
     global _tool_map_cache
     if _tool_map_cache is None:
         from tools import user_functions
 
         _tool_map_cache = {f.__name__: f for f in user_functions}
-    return _tool_map_cache
+    if _AUTONOMY_LEVEL == "full":
+        return _tool_map_cache
+    from cli.autonomy import filter_tools
+
+    return filter_tools(_tool_map_cache, _AUTONOMY_LEVEL)
 
 
 _orchestrator = None
@@ -3110,14 +3132,38 @@ def serve(host, port):
     raise SystemExit(bridge_main())
 
 
+@main.command("spec")
+@click.argument("prompt")
+def spec(prompt: str):
+    """Specification mode: a read-only analysis that returns a plan, not code.
+
+    Runs the turn under read-only autonomy (no writes, shell, or state changes —
+    enforced by the tool gate, not just instructions) with a planning prompt, so
+    the agent studies the codebase and returns a structured spec (acceptance
+    criteria, technical strategy, file-by-file plan) for you to approve first.
+    """
+    from cli.autonomy import SPEC_SYSTEM_PROMPT
+
+    planning_turn = f"{SPEC_SYSTEM_PROMPT}\n\n---\nTask to specify:\n{prompt}"
+    ctx = click.get_current_context()
+    ctx.invoke(run, prompt=planning_turn, autonomy="read_only")
+
+
 @main.command()
 @click.argument("prompt")
-def run(prompt: str):
+@click.option(
+    "--autonomy",
+    default="full",
+    type=click.Choice(["read_only", "edit", "execute", "full"]),
+    help="Tool permission tier: read_only | edit | execute | full (default).",
+)
+def run(prompt: str, autonomy: str = "full"):
     """Run a single prompt and print the response."""
     from cli.first_run import ensure_first_run
 
     if not ensure_first_run(console, session_state=session_state):
         return
+    _set_autonomy(autonomy)
     # Route through the primary model in the chain.
     # No Azure Agents thread/client needed unless the chain falls through to
     # the legacy "azure" provider.
