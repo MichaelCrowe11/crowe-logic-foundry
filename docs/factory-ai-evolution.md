@@ -87,17 +87,24 @@ verified with injected fakes. A **live** multi-tier run needs provider credentia
 
 ---
 
-## 4. Punch-list — remaining latent assets to activate (prioritized)
+## 4. Punch-list — latent assets to activate
 
-1. **Auto-fan-out in chat** — wire the Synapse Router to emit `companions`, so
-   high-stakes turns automatically ensemble (the dispatcher is now ready). The
-   router was designed for this; only the wire is missing.
-2. **Activate `tool_cache`** — wrap `_execute_tool_call` with per-turn memoization
-   (kills the documented double-call waste). Small, pure, high-ROI.
-3. **Light up `openai_bridge`** — expose `crowe-logic serve` so any OpenAI client
-   (Cortex, LangChain, SDKs) drives the agent. Deps already present.
+1. ✅ **Auto-fan-out** (done) — the Synapse Router already emits `companions` for
+   domain/deep intents; added `should_auto_ensemble` / `selectors_from_decision`
+   and wired the `run` path to ensemble when `CROWE_LOGIC_AUTO_ENSEMBLE=1`
+   (default off — opt-in because it costs more). Connects emit → dispatcher.
+2. ✅ **`tool_cache` activated** (done) — `_execute_tool_call` now memoizes
+   pure-read calls per turn (reset each turn), excluding stateful tools. Kills
+   the documented double-call waste. Default on (`CROWE_LOGIC_TOOL_CACHE=1`).
+3. ✅ **`openai_bridge` lit up** (done) — `crowe-logic serve` runs the
+   OpenAI-compatible API; verified live (`GET /v1/models` → 200). Any OpenAI
+   client can now drive the agent.
 4. **Consolidate retry on `tenacity`** — replace hand-rolled backoff in
-   `deepparallel.py` and providers; installed, unused.
+   `deepparallel.py` and providers; installed, unused. *(next)*
 5. **Specification Mode (evolve, not copy)** — a read-only autonomy tier + plan
    model + approval gate, built on a reusable tool-permission gate that also gives
    us the graduated-autonomy dial. The one genuine Droid idea worth adapting.
+
+> Verification boundary: auto-ensemble's policy + the cache + the serve endpoint
+> are verified (35 tests + a live /v1/models boot). A *live* multi-tier ensemble
+> run still needs provider credentials (Azure / a funded tier).

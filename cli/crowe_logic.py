@@ -1200,6 +1200,34 @@ def _get_orchestrator():
     return _orchestrator
 
 
+_TOOL_CACHE = None
+
+
+def _tool_cache():
+    """Per-turn tool-result cache (activates cli/tool_cache.py).
+
+    Returns None when disabled via CROWE_LOGIC_TOOL_CACHE=0. Safe by default:
+    stateful tools (writes, shell, deepparallel, sends) are excluded inside
+    ToolCache, so only pure-read re-calls within one turn are deduped.
+    """
+    global _TOOL_CACHE
+    if os.environ.get("CROWE_LOGIC_TOOL_CACHE", "1") == "0":
+        return None
+    if _TOOL_CACHE is None:
+        from cli.tool_cache import ToolCache
+
+        _TOOL_CACHE = ToolCache()
+        _TOOL_CACHE.start_turn()
+    return _TOOL_CACHE
+
+
+def _reset_tool_cache() -> None:
+    """Clear the tool cache at the start of a user turn."""
+    cache = _tool_cache()
+    if cache is not None:
+        cache.start_turn()
+
+
 def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
     """Execute a single tool function by name and return the result as a string.
 
@@ -1207,6 +1235,10 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
     ``content`` field contains raw newlines / tabs / Rich markup don't hard-fail
     with ``JSONDecodeError``. Recovery is best-effort; truly malformed calls
     still surface the exception as a structured error.
+
+    Pure-read calls are memoized for the current turn via the tool cache, so a
+    model re-issuing an identical read (the documented duplicate-call failure
+    mode) short-circuits instead of paying latency/tokens again.
     """
     from cli.tool_args import parse_tool_arguments
 
@@ -1224,8 +1256,19 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
         from providers._shared import _coerce_tool_args
 
         args = _coerce_tool_args(func, args)
+
+        cache = _tool_cache()
+        if cache is not None:
+            hit = cache.lookup(name, args)
+            if hit.cached:
+                return hit.result if isinstance(hit.result, str) else str(hit.result)
+
         result = func(**args)
-        return str(result) if result is not None else ""
+        out = str(result) if result is not None else ""
+
+        if cache is not None:
+            cache.record(name, args, out)
+        return out
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
@@ -1635,6 +1678,7 @@ def chat():
             if swapped or decision.low_confidence:
                 _render_route_badge(console, decision)
 
+        _reset_tool_cache()
         try:
             _sync_session_runtime(session_state)
 
@@ -3034,6 +3078,38 @@ def ensemble(prompt: str, models: str, strategy: str, synth, timeout: float):
     console.print(render_outcome(outcome))
 
 
+@main.command("serve")
+@click.option(
+    "--host", default=None, help="Bind host (default 127.0.0.1 / CROWE_BRIDGE_HOST)."
+)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Bind port (default 8011 / CROWE_BRIDGE_PORT).",
+)
+def serve(host, port):
+    """Serve the agent as an OpenAI-compatible HTTP API.
+
+    Exposes POST /v1/chat/completions and GET /v1/models, so any OpenAI client
+    (Cortex, LangChain, the OpenAI SDK) can drive the same agent loop the CLI
+    uses. Activates cli/openai_bridge.py.
+    """
+    if host:
+        os.environ["CROWE_BRIDGE_HOST"] = host
+    if port:
+        os.environ["CROWE_BRIDGE_PORT"] = str(port)
+    h = os.environ.get("CROWE_BRIDGE_HOST", "127.0.0.1")
+    p = os.environ.get("CROWE_BRIDGE_PORT", "8011")
+    console.print(
+        f"[bold #bfa669]Crowe Logic OpenAI bridge[/bold #bfa669] "
+        f"→ http://{h}:{p}/v1  [dim](Ctrl+C to stop)[/dim]"
+    )
+    from cli.openai_bridge import main as bridge_main
+
+    raise SystemExit(bridge_main())
+
+
 @main.command()
 @click.argument("prompt")
 def run(prompt: str):
@@ -3069,6 +3145,31 @@ def run(prompt: str):
         _apply_route_decision(decision, session_state, prompt)
         _render_route_badge(console, decision)
 
+        # Auto-ensemble: the router attaches companion tiers only for
+        # high-stakes (domain/deep) intents. When enabled, fan the prompt
+        # across primary+companions and synthesize instead of one model.
+        from cli.ensemble import (
+            should_auto_ensemble,
+            selectors_from_decision,
+            run_ensemble,
+            render_outcome,
+        )
+
+        if should_auto_ensemble(
+            decision, enabled=os.environ.get("CROWE_LOGIC_AUTO_ENSEMBLE") == "1"
+        ):
+            selectors = selectors_from_decision(decision)
+            console.print(
+                f"[dim #bfa669]auto-ensemble → {', '.join(selectors)}[/dim #bfa669]"
+            )
+            try:
+                outcome = run_ensemble(prompt, selectors=selectors)
+                console.print(render_outcome(outcome))
+            except ValueError as exc:
+                console.print(f"[red]ensemble error:[/red] {exc}")
+            return
+
+    _reset_tool_cache()
     model_cfg = _current_model()
     session_state["active_model"] = (
         "CroweLM Mycelium"

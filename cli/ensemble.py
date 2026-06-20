@@ -132,6 +132,32 @@ def run_ensemble(
 
 
 # ---------------------------------------------------------------------------
+# Auto-ensemble policy — connects the Synapse Router (which already emits
+# companions for high-stakes domain/deep intents) to this ensemble path.
+# ---------------------------------------------------------------------------
+
+
+def selectors_from_decision(decision) -> list[str]:
+    """Primary + companion tier selectors from a Synapse ``RouteDecision``."""
+    selectors = [str(getattr(decision, "selected_label", "") or "")]
+    for c in getattr(decision, "companions", ()) or ():
+        selectors.append(str(c.get("label", c.get("name", ""))))
+    return [s for s in selectors if s]
+
+
+def should_auto_ensemble(decision, *, enabled: bool) -> bool:
+    """True when auto-ensemble is on AND the router flagged companion tiers.
+
+    The router only attaches companions for high-stakes intents (domain/deep),
+    so this fires exactly on the turns worth the extra cost — and never unless
+    explicitly enabled (it is slower and costs more tokens).
+    """
+    if not enabled:
+        return False
+    return bool(getattr(decision, "companions", ()) or ())
+
+
+# ---------------------------------------------------------------------------
 # Default adapters — bind to the real provider stack. Imports are lazy so this
 # module stays importable (and testable) without pulling in the heavy CLI.
 # The provider call mirrors cli/dual_mode.py exactly (a path proven in dual mode).
