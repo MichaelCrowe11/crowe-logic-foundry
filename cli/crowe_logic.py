@@ -86,6 +86,25 @@ def _current_model() -> dict:
     return MODEL_CHAIN[0]  # wrap around to primary
 
 
+def _resolve_auto_to_concrete(model_cfg: dict) -> dict:
+    """Resolve the ``auto`` meta-model to a concrete tier.
+
+    ``auto`` is a routing placeholder, not a runnable provider. When
+    auto-routing is disabled it survives to the dispatch, where the local path
+    has no case for it (falling through to the dead legacy-agents branch) and
+    the signed-in gateway rejects it as "Unsupported provider: auto". Map it to
+    the first concrete tier in the chain — the primary azure_openai tier, which
+    streams reasoning — so a real model always handles the turn. Concrete
+    configs pass through unchanged.
+    """
+    if model_cfg.get("provider") != "auto":
+        return model_cfg
+    for cand in MODEL_CHAIN:
+        if cand.get("provider") != "auto":
+            return cand
+    return model_cfg
+
+
 def _provider_health_path() -> Path:
     return Path.home() / ".crowe-logic" / "runtime" / "provider_health.json"
 
@@ -3280,7 +3299,10 @@ def run(prompt: str, autonomy: str = "full"):
             return
 
     _reset_tool_cache()
-    model_cfg = _current_model()
+    # Resolve the `auto` meta-model to a concrete tier before dispatch. With
+    # auto-routing off, `_current_model()` returns `auto`, which the local
+    # dispatch can't run (dead legacy-agents branch) and the gateway rejects.
+    model_cfg = _resolve_auto_to_concrete(_current_model())
     session_state["active_model"] = (
         "CroweLM Mycelium"
         if session_state.get("anon_device_token")
