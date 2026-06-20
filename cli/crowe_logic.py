@@ -1491,6 +1491,7 @@ def chat():
         return t.id if t is not None else synthetic_thread_id
 
     from cli.first_run import ensure_first_run
+
     if not ensure_first_run(console, session_state=session_state):
         return
 
@@ -2133,7 +2134,9 @@ def chat():
 
 
 @main.command()
-@click.option("--node", is_flag=True, help="Scaffold ~/.crowe-logic.env for a self-managed node.")
+@click.option(
+    "--node", is_flag=True, help="Scaffold ~/.crowe-logic.env for a self-managed node."
+)
 def init(node):
     """Set up credentials for this machine."""
     from cli.first_run import render_first_run_card, scaffold_node_env
@@ -2986,11 +2989,57 @@ def _summarize_synapse_telemetry(tail_n: int) -> dict | None:
     }
 
 
+@main.command("ensemble")
+@click.argument("prompt")
+@click.option(
+    "--models",
+    "-m",
+    "models",
+    default="supreme,oracle,prime",
+    help="Comma-separated CroweLM tier selectors; the first is the primary.",
+)
+@click.option(
+    "--strategy",
+    "-s",
+    default="merge",
+    type=click.Choice(["merge", "judge", "diff"]),
+    help="Synthesis strategy (merge=fuse, judge=pick best, diff=compare).",
+)
+@click.option(
+    "--synth", default=None, help="Tier that synthesizes (default: the primary)."
+)
+@click.option(
+    "--timeout", default=90.0, type=float, help="Per-tier timeout in seconds."
+)
+def ensemble(prompt: str, models: str, strategy: str, synth, timeout: float):
+    """Fan a question across multiple CroweLM tiers in parallel and synthesize one answer.
+
+    Activates the parallel dispatcher's ensemble_synthesis fusion: every tier
+    answers independently, then a synthesizer tier fuses them into one response.
+    """
+    from cli.ensemble import run_ensemble, render_outcome
+
+    selectors = [s.strip() for s in models.split(",") if s.strip()]
+    try:
+        outcome = run_ensemble(
+            prompt,
+            selectors=selectors,
+            strategy=strategy,
+            synth_selector=synth,
+            timeout_s=timeout,
+        )
+    except ValueError as exc:
+        console.print(f"[red]ensemble error:[/red] {exc}")
+        return
+    console.print(render_outcome(outcome))
+
+
 @main.command()
 @click.argument("prompt")
 def run(prompt: str):
     """Run a single prompt and print the response."""
     from cli.first_run import ensure_first_run
+
     if not ensure_first_run(console, session_state=session_state):
         return
     # Route through the primary model in the chain.

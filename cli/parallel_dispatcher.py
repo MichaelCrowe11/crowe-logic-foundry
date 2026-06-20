@@ -80,6 +80,25 @@ class DispatchOutcome:
 
 InvokeFn = Callable[[dict, str], DispatchResult]
 
+# A synthesizer adapter: given the original prompt and the list of successful
+# per-model results, return a single fused answer. Kept provider-agnostic (like
+# InvokeFn) so the dispatcher never imports a provider module.
+SynthFn = Callable[[str, "list[DispatchResult]"], str]
+
+
+# Default system prompt for the ensemble synthesizer. Generalizes dual_mode's
+# proven "merge" strategy from two peers to N CroweLM tiers. This is a behavior
+# knob worth tuning for your domain (see build_synthesis_input below).
+DEFAULT_ENSEMBLE_SYNTH_PROMPT = (
+    "You are CroweLM's synthesis layer. Several peer CroweLM tiers answered the "
+    "same user question independently. Produce a single authoritative response "
+    "that keeps the strongest, best-supported claims from across the answers, "
+    "reconciles contradictions by reasoning from evidence (and flags any that "
+    "cannot be reconciled), and drops filler and repetition. Do not name or "
+    "count the source models. Do not narrate the merging process. Write as if "
+    "this were the original, final answer."
+)
+
 
 def dispatch(
     prompt: str,
@@ -89,6 +108,7 @@ def dispatch(
     companions: list[dict] | tuple[dict, ...] = (),
     timeout_s: float = 45.0,
     fusion: FusionMode = "primary_only",
+    synthesize: SynthFn | None = None,
 ) -> DispatchOutcome:
     """Fan out ``prompt`` to ``primary`` + ``companions`` in parallel; fuse results.
 
@@ -103,43 +123,48 @@ def dispatch(
     accounting on the caller side to ensure abandoned calls are still metered
     if they eventually return.
     """
-    if fusion == "ensemble_synthesis":
-        raise NotImplementedError(
-            "ensemble_synthesis fusion is reserved; use present_both for now"
-        )
-
     targets: list[tuple[dict, bool]] = [(primary, True)]
     targets.extend((cfg, False) for cfg in companions)
     started = time.time()
 
-    primary_result: DispatchResult | None = None
-    companion_results: list[DispatchResult] = []
+    # Collect by future, then reassemble in stable SUBMISSION order (primary
+    # first, then companions as given) so present_both / ensemble output is
+    # deterministic regardless of which model finishes first.
+    result_for: dict = {}
 
     with ThreadPoolExecutor(max_workers=max(len(targets), 1)) as pool:
         futures = {
-            pool.submit(_safe_invoke, invoke, cfg, prompt, is_primary): (cfg, is_primary)
+            pool.submit(_safe_invoke, invoke, cfg, prompt, is_primary): (
+                cfg,
+                is_primary,
+            )
             for cfg, is_primary in targets
         }
         try:
             for fut in as_completed(futures, timeout=timeout_s):
-                result = fut.result()
-                if result.is_primary:
-                    primary_result = result
-                else:
-                    companion_results.append(result)
+                result_for[fut] = fut.result()
         except FutureTimeoutError:
             for fut, (cfg, is_primary) in futures.items():
-                if fut.done():
+                if fut in result_for:
                     continue
-                stub = DispatchResult(
+                result_for[fut] = DispatchResult(
                     model_label=str(cfg.get("label", cfg.get("name", "?"))),
                     error=FutureTimeoutError(f"timed out after {timeout_s}s"),
                     is_primary=is_primary,
                 )
-                if is_primary:
-                    primary_result = primary_result or stub
-                else:
-                    companion_results.append(stub)
+
+    primary_result: DispatchResult | None = None
+    companion_results: list[DispatchResult] = []
+    for fut, (cfg, is_primary) in futures.items():
+        res = result_for.get(fut) or DispatchResult(
+            model_label=str(cfg.get("label", cfg.get("name", "?"))),
+            error=RuntimeError("future did not complete"),
+            is_primary=is_primary,
+        )
+        if is_primary:
+            primary_result = res
+        else:
+            companion_results.append(res)
 
     if primary_result is None:
         primary_result = DispatchResult(
@@ -149,7 +174,10 @@ def dispatch(
         )
 
     all_results: list[DispatchResult] = [primary_result, *companion_results]
-    fused = _fuse(primary_result, companion_results, fusion)
+    if fusion == "ensemble_synthesis":
+        fused = _ensemble_synthesize(prompt, all_results, synthesize)
+    else:
+        fused = _fuse(primary_result, companion_results, fusion)
 
     return DispatchOutcome(
         fused_answer=fused,
@@ -159,7 +187,9 @@ def dispatch(
     )
 
 
-def _safe_invoke(invoke: InvokeFn, cfg: dict, prompt: str, is_primary: bool) -> DispatchResult:
+def _safe_invoke(
+    invoke: InvokeFn, cfg: dict, prompt: str, is_primary: bool
+) -> DispatchResult:
     """Run the user-provided ``invoke`` adapter and trap any exception into the result."""
     started = time.time()
     label = str(cfg.get("label", cfg.get("name", "?")))
@@ -196,19 +226,55 @@ def _fuse(
         return _first_success_answer(companions)
 
     if mode == "present_both":
-        sections: list[str] = []
-        if primary.succeeded:
-            sections.append(f"### {primary.model_label}\n\n{primary.answer.strip()}")
-        elif primary.error is not None:
-            sections.append(f"### {primary.model_label} (error)\n\n{primary.error}")
-        for c in companions:
-            if c.succeeded:
-                sections.append(f"### {c.model_label}\n\n{c.answer.strip()}")
-            elif c.error is not None:
-                sections.append(f"### {c.model_label} (error)\n\n{c.error}")
-        return "\n\n---\n\n".join(sections) if sections else ""
+        return _present_sections([primary, *companions])
 
     raise ValueError(f"Unknown fusion mode: {mode!r}")
+
+
+def _present_sections(results: list[DispatchResult]) -> str:
+    """Render each result as a labeled markdown section (stable input order)."""
+    sections: list[str] = []
+    for r in results:
+        if r.succeeded:
+            sections.append(f"### {r.model_label}\n\n{r.answer.strip()}")
+        elif r.error is not None:
+            sections.append(f"### {r.model_label} (error)\n\n{r.error}")
+    return "\n\n---\n\n".join(sections) if sections else ""
+
+
+def _ensemble_synthesize(
+    prompt: str,
+    results: list[DispatchResult],
+    synthesize: SynthFn | None,
+) -> str:
+    """Fuse N successful answers into one via the caller's synthesizer.
+
+    Degrades safely: zero successes -> empty; a single success is itself the
+    answer (no synth call, no wasted tokens); and when no synthesizer is wired
+    we fall back to a readable side-by-side rather than dropping content.
+    """
+    successful = [r for r in results if r.succeeded]
+    if not successful:
+        return ""
+    if len(successful) == 1:
+        return successful[0].answer.strip()
+    if synthesize is None:
+        return _present_sections(results)
+    return synthesize(prompt, successful)
+
+
+def build_synthesis_input(prompt: str, results: list[DispatchResult]) -> str:
+    """Frame the original question + each peer answer as one synthesizer message.
+
+    Mirrors dual_mode's proven framing, generalized from two peers to N. The
+    synthesizer sees this as a single stateless user turn (no peer history).
+    """
+    parts = [f"User's original question:\n{prompt.strip()}\n"]
+    for r in results:
+        if r.succeeded:
+            parts.append(f"--- Answer from {r.model_label} ---\n{r.answer.strip()}\n")
+    parts.append("Produce the final synthesis now.")
+    return "\n".join(parts)
 
 
 def _first_success_answer(results: list[DispatchResult]) -> str:
@@ -222,5 +288,8 @@ __all__ = [
     "DispatchResult",
     "DispatchOutcome",
     "FusionMode",
+    "SynthFn",
     "dispatch",
+    "build_synthesis_input",
+    "DEFAULT_ENSEMBLE_SYNTH_PROMPT",
 ]
