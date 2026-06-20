@@ -22,21 +22,32 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import random
 import threading
 import time
 
 import requests
+from tenacity import (
+    Retrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_random_exponential,
+)
 
 
 _raw_ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_BASE = _raw_ollama_url.replace("/v1", "").rstrip("/")
-DEEPPARALLEL_MODEL = os.environ.get("DEEPPARALLEL_MODEL", "Mcrowe1210/DeepParallel:latest")
+DEEPPARALLEL_MODEL = os.environ.get(
+    "DEEPPARALLEL_MODEL", "Mcrowe1210/DeepParallel:latest"
+)
 
 _REQUEST_TIMEOUT_S = 120
 _MAX_RETRIES = 3
 _BACKOFF_BASE_S = 0.8
 _BACKOFF_MAX_S = 8.0
+
+# Indirection so tests can patch out the real backoff sleep (tenacity calls this
+# between attempts). Production keeps time.sleep.
+_RETRY_SLEEP = time.sleep
 _CACHE_TTL_S = 30.0
 
 _session_lock = threading.Lock()
@@ -59,7 +70,9 @@ def _http_session() -> requests.Session:
         if _session is None:
             s = requests.Session()
             adapter = requests.adapters.HTTPAdapter(
-                pool_connections=4, pool_maxsize=10, max_retries=0,
+                pool_connections=4,
+                pool_maxsize=10,
+                max_retries=0,
             )
             s.mount("http://", adapter)
             s.mount("https://", adapter)
@@ -68,11 +81,22 @@ def _http_session() -> requests.Session:
 
 
 def _cache_key(
-    model: str, prompt: str, system: str,
-    temperature: float, max_tokens: int, reasoning_chains: str,
+    model: str,
+    prompt: str,
+    system: str,
+    temperature: float,
+    max_tokens: int,
+    reasoning_chains: str,
 ) -> str:
     blob = json.dumps(
-        [model, prompt, system, round(float(temperature), 3), int(max_tokens), reasoning_chains],
+        [
+            model,
+            prompt,
+            system,
+            round(float(temperature), 3),
+            int(max_tokens),
+            reasoning_chains,
+        ],
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.blake2b(blob, digest_size=16).hexdigest()
@@ -126,10 +150,19 @@ def deepparallel_query(
         temperature = float(temperature)
         max_tokens = int(max_tokens)
     except (TypeError, ValueError):
-        return json.dumps({"error": f"Invalid numeric args: temperature={temperature!r} max_tokens={max_tokens!r}"})
+        return json.dumps(
+            {
+                "error": f"Invalid numeric args: temperature={temperature!r} max_tokens={max_tokens!r}"
+            }
+        )
 
     key = _cache_key(
-        DEEPPARALLEL_MODEL, prompt, system, temperature, max_tokens, reasoning_chains,
+        DEEPPARALLEL_MODEL,
+        prompt,
+        system,
+        temperature,
+        max_tokens,
+        reasoning_chains,
     )
 
     cached = _cache_get(key)
@@ -175,26 +208,87 @@ def _build_messages(prompt: str, system: str, reasoning_chains: str) -> list[dic
         if reasoning_chains.lower() != "all":
             chains = [c.strip().upper() for c in reasoning_chains.split(",")]
             chain_spec = f"\n\nFocus specifically on these chains: {', '.join(chains)}"
-        messages.append({
-            "role": "system",
-            "content": (
-                "You are DeepParallel, Crowe Logic's local 8-chain parallel reasoning engine. "
-                "Apply thorough multi-chain analysis to the query."
-                f"{chain_spec}"
-            ),
-        })
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "You are DeepParallel, Crowe Logic's local 8-chain parallel reasoning engine. "
+                    "Apply thorough multi-chain analysis to the query."
+                    f"{chain_spec}"
+                ),
+            }
+        )
     messages.append({"role": "user", "content": prompt})
     return messages
 
 
-def _dispatch_with_retry(messages: list[dict], temperature: float, max_tokens: int) -> str:
-    """POST to Ollama with bounded exponential backoff.
+class _RetryableHTTP(Exception):
+    """A transient fault worth retrying (HTTP 5xx, timeout). 4xx / connection
+    refused / unknown errors are terminal and never raised as this."""
 
-    Retries ONLY on transient faults: ConnectionError, Timeout, and HTTP
-    5xx. 4xx responses are structured model errors; retrying would
-    reproduce them and waste quota.
+
+def _post_once(session: requests.Session, payload: dict) -> str:
+    """One attempt. Returns the answer (or a terminal JSON error string), or
+    raises :class:`_RetryableHTTP` for faults tenacity should retry.
+
+    Retry policy unchanged from the previous hand-rolled loop: retry only on
+    5xx / Timeout / ChunkedEncodingError; surface 4xx, connection-refused, and
+    unknown errors immediately.
     """
-    session = _http_session()
+    try:
+        resp = session.post(
+            f"{OLLAMA_BASE}/v1/chat/completions",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=_REQUEST_TIMEOUT_S,
+        )
+        if 500 <= resp.status_code < 600:
+            raise _RetryableHTTP(f"{resp.status_code} {resp.reason}")
+        if 400 <= resp.status_code < 500:
+            # Structured model/client error. Surface immediately (no retry).
+            return json.dumps(
+                {
+                    "error": f"HTTPError {resp.status_code} {resp.reason}",
+                    "body": resp.text[:2000],
+                    "model": DEEPPARALLEL_MODEL,
+                }
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
+
+    except requests.exceptions.ConnectionError:
+        return json.dumps(
+            {
+                "error": "Ollama not running. Start with: ollama serve",
+                "model": DEEPPARALLEL_MODEL,
+            }
+        )
+    except (
+        requests.exceptions.Timeout,
+        requests.exceptions.ChunkedEncodingError,
+    ) as exc:
+        raise _RetryableHTTP(f"{type(exc).__name__}: {exc}") from exc
+    except _RetryableHTTP:
+        raise  # 5xx: let tenacity retry; must precede the generic handler
+    except Exception as exc:  # noqa: BLE001 - unknown error: surface, don't retry
+        return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
+
+
+def _dispatch_with_retry(
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    *,
+    session: requests.Session | None = None,
+) -> str:
+    """POST to Ollama with bounded exponential backoff, via tenacity.
+
+    Behaviorally identical to the previous hand-rolled loop; the retry
+    bookkeeping (attempt cap, exponential backoff + jitter, sleep) is now
+    declarative. ``session`` is injectable so the policy is testable sans Ollama.
+    """
+    session = session or _http_session()
     payload = {
         "model": DEEPPARALLEL_MODEL,
         "messages": messages,
@@ -202,56 +296,27 @@ def _dispatch_with_retry(messages: list[dict], temperature: float, max_tokens: i
         "max_tokens": max_tokens,
         "stream": False,
     }
-    last_error: Exception | None = None
-
-    for attempt in range(_MAX_RETRIES):
-        try:
-            resp = session.post(
-                f"{OLLAMA_BASE}/v1/chat/completions",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=_REQUEST_TIMEOUT_S,
-            )
-            if 500 <= resp.status_code < 600:
-                last_error = requests.HTTPError(
-                    f"{resp.status_code} {resp.reason}", response=resp,
-                )
-                _sleep_backoff(attempt)
-                continue
-            if 400 <= resp.status_code < 500:
-                # Structured model/client error. Surface immediately.
-                return json.dumps({
-                    "error": f"HTTPError {resp.status_code} {resp.reason}",
-                    "body": resp.text[:2000],
-                    "model": DEEPPARALLEL_MODEL,
-                })
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
-
-        except requests.exceptions.ConnectionError:
-            return json.dumps({
-                "error": "Ollama not running. Start with: ollama serve",
-                "model": DEEPPARALLEL_MODEL,
-            })
-        except (requests.exceptions.Timeout, requests.exceptions.ChunkedEncodingError) as exc:
-            last_error = exc
-            _sleep_backoff(attempt)
-            continue
-        except Exception as exc:
-            # Unknown error. Don't retry blindly, surface it.
-            return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
-
-    return json.dumps({
-        "error": f"DeepParallel retry budget exhausted after {_MAX_RETRIES} attempts",
-        "last_error": f"{type(last_error).__name__}: {last_error}" if last_error else "unknown",
-    })
-
-
-def _sleep_backoff(attempt: int) -> None:
-    delay = min(_BACKOFF_BASE_S * (2 ** attempt), _BACKOFF_MAX_S)
-    delay += random.uniform(0, delay * 0.3)
-    time.sleep(delay)
+    try:
+        for attempt in Retrying(
+            stop=stop_after_attempt(_MAX_RETRIES),
+            wait=wait_random_exponential(
+                multiplier=_BACKOFF_BASE_S, max=_BACKOFF_MAX_S
+            ),
+            retry=retry_if_exception_type(_RetryableHTTP),
+            sleep=_RETRY_SLEEP,
+            reraise=True,
+        ):
+            with attempt:
+                return _post_once(session, payload)
+    except _RetryableHTTP as exc:
+        return json.dumps(
+            {
+                "error": f"DeepParallel retry budget exhausted after {_MAX_RETRIES} attempts",
+                "last_error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+    # Unreachable: the loop returns on success or raises after the budget.
+    return json.dumps({"error": "DeepParallel: no attempt produced a result"})
 
 
 def deepparallel_status() -> str:
@@ -264,24 +329,30 @@ def deepparallel_status() -> str:
         resp.raise_for_status()
         models = resp.json().get("models", [])
         dp_models = [
-            m for m in models
+            m
+            for m in models
             if "deepparallel" in m.get("name", "").lower()
             or "deep-parallel" in m.get("name", "").lower()
         ]
-        return json.dumps({
-            "ollama_running": True,
-            "deepparallel_available": len(dp_models) > 0,
-            "models": [
-                {
-                    "name": m["name"],
-                    "size_gb": round(m.get("size", 0) / 1e9, 2),
-                    "modified": m.get("modified_at", ""),
-                }
-                for m in dp_models
-            ],
-        }, indent=2)
+        return json.dumps(
+            {
+                "ollama_running": True,
+                "deepparallel_available": len(dp_models) > 0,
+                "models": [
+                    {
+                        "name": m["name"],
+                        "size_gb": round(m.get("size", 0) / 1e9, 2),
+                        "modified": m.get("modified_at", ""),
+                    }
+                    for m in dp_models
+                ],
+            },
+            indent=2,
+        )
     except Exception as e:
-        return json.dumps({
-            "ollama_running": False,
-            "error": str(e),
-        })
+        return json.dumps(
+            {
+                "ollama_running": False,
+                "error": str(e),
+            }
+        )

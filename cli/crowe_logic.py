@@ -979,8 +979,10 @@ def _deploy_with_model(client, model_name: str) -> str:
     from config.agent_config import SYSTEM_INSTRUCTIONS, AGENT_NAME
     from tools import user_functions
 
+    from cli.autonomy import filter_functions, get_active_level
+
     toolset = ToolSet()
-    toolset.add(FunctionTool(user_functions))
+    toolset.add(FunctionTool(set(filter_functions(user_functions, get_active_level()))))
     toolset.add(CodeInterpreterTool())
     client.enable_auto_function_calls(toolset)
 
@@ -1171,14 +1173,32 @@ def _cancel_active_runs(client, thread_id: str):
 _tool_map_cache = None
 
 
+def _set_autonomy(level: str) -> None:
+    """Set the active tool autonomy level (read_only|edit|execute|full).
+
+    Process-wide state in cli.autonomy, so BOTH the execution gate
+    (_get_tool_map) and the model-facing tool schema (providers) restrict in
+    lockstep. Raises ValueError on an unknown level.
+    """
+    from cli.autonomy import set_active_level
+
+    set_active_level(level)
+
+
 def _get_tool_map() -> dict:
-    """Cached name -> function lookup from registered user_functions."""
+    """Cached name -> function lookup, filtered by the active autonomy level
+    (execution-side gate: a forbidden tool is not in the map and cannot run)."""
     global _tool_map_cache
     if _tool_map_cache is None:
         from tools import user_functions
 
         _tool_map_cache = {f.__name__: f for f in user_functions}
-    return _tool_map_cache
+    from cli.autonomy import get_active_level, filter_tools
+
+    level = get_active_level()
+    if level == "full":
+        return _tool_map_cache
+    return filter_tools(_tool_map_cache, level)
 
 
 _orchestrator = None
@@ -1200,6 +1220,34 @@ def _get_orchestrator():
     return _orchestrator
 
 
+_TOOL_CACHE = None
+
+
+def _tool_cache():
+    """Per-turn tool-result cache (activates cli/tool_cache.py).
+
+    Returns None when disabled via CROWE_LOGIC_TOOL_CACHE=0. Safe by default:
+    stateful tools (writes, shell, deepparallel, sends) are excluded inside
+    ToolCache, so only pure-read re-calls within one turn are deduped.
+    """
+    global _TOOL_CACHE
+    if os.environ.get("CROWE_LOGIC_TOOL_CACHE", "1") == "0":
+        return None
+    if _TOOL_CACHE is None:
+        from cli.tool_cache import ToolCache
+
+        _TOOL_CACHE = ToolCache()
+        _TOOL_CACHE.start_turn()
+    return _TOOL_CACHE
+
+
+def _reset_tool_cache() -> None:
+    """Clear the tool cache at the start of a user turn."""
+    cache = _tool_cache()
+    if cache is not None:
+        cache.start_turn()
+
+
 def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
     """Execute a single tool function by name and return the result as a string.
 
@@ -1207,6 +1255,10 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
     ``content`` field contains raw newlines / tabs / Rich markup don't hard-fail
     with ``JSONDecodeError``. Recovery is best-effort; truly malformed calls
     still surface the exception as a structured error.
+
+    Pure-read calls are memoized for the current turn via the tool cache, so a
+    model re-issuing an identical read (the documented duplicate-call failure
+    mode) short-circuits instead of paying latency/tokens again.
     """
     from cli.tool_args import parse_tool_arguments
 
@@ -1224,8 +1276,19 @@ def _execute_tool_call(tool_map: dict, name: str, arguments_json: str) -> str:
         from providers._shared import _coerce_tool_args
 
         args = _coerce_tool_args(func, args)
+
+        cache = _tool_cache()
+        if cache is not None:
+            hit = cache.lookup(name, args)
+            if hit.cached:
+                return hit.result if isinstance(hit.result, str) else str(hit.result)
+
         result = func(**args)
-        return str(result) if result is not None else ""
+        out = str(result) if result is not None else ""
+
+        if cache is not None:
+            cache.record(name, args, out)
+        return out
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
@@ -1465,9 +1528,18 @@ def main(ctx):
 
 
 @main.command()
-def chat():
+@click.option(
+    "--autonomy",
+    default="full",
+    type=click.Choice(["read_only", "edit", "execute", "full"]),
+    help="Tool permission tier for the session: read_only | edit | execute | full.",
+)
+def chat(autonomy: str = "full"):
     """Start an interactive chat session with the agent."""
     import uuid
+
+    # Session-wide tool autonomy; change mid-session with /autonomy <level>.
+    _set_autonomy(autonomy)
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.formatted_text import HTML
@@ -1491,6 +1563,7 @@ def chat():
         return t.id if t is not None else synthetic_thread_id
 
     from cli.first_run import ensure_first_run
+
     if not ensure_first_run(console, session_state=session_state):
         return
 
@@ -1580,6 +1653,24 @@ def chat():
             continue
         if handle_dual_command(user_input, dual_state, console, session_state):
             continue
+        if user_input.lower().strip().startswith("/autonomy"):
+            from cli.autonomy import AUTONOMY_LEVELS, get_active_level
+
+            parts = user_input.strip().split(maxsplit=1)
+            if len(parts) == 1:
+                console.print(
+                    f"  autonomy: [bold #bfa669]{get_active_level()}[/bold #bfa669]  "
+                    f"[dim]({' | '.join(AUTONOMY_LEVELS)})[/dim]"
+                )
+            else:
+                try:
+                    _set_autonomy(parts[1].strip())
+                    console.print(
+                        f"  autonomy → [bold #bfa669]{get_active_level()}[/bold #bfa669]"
+                    )
+                except ValueError as exc:
+                    console.print(f"  [red]{exc}[/red]")
+            continue
 
         # /replay N and /fork N commands: reissue a past user turn. These
         # rewrite user_input to the past turn's input and fall through to
@@ -1634,6 +1725,7 @@ def chat():
             if swapped or decision.low_confidence:
                 _render_route_badge(console, decision)
 
+        _reset_tool_cache()
         try:
             _sync_session_runtime(session_state)
 
@@ -2133,7 +2225,9 @@ def chat():
 
 
 @main.command()
-@click.option("--node", is_flag=True, help="Scaffold ~/.crowe-logic.env for a self-managed node.")
+@click.option(
+    "--node", is_flag=True, help="Scaffold ~/.crowe-logic.env for a self-managed node."
+)
 def init(node):
     """Set up credentials for this machine."""
     from cli.first_run import render_first_run_card, scaffold_node_env
@@ -2986,13 +3080,115 @@ def _summarize_synapse_telemetry(tail_n: int) -> dict | None:
     }
 
 
+@main.command("ensemble")
+@click.argument("prompt")
+@click.option(
+    "--models",
+    "-m",
+    "models",
+    default="supreme,oracle,prime",
+    help="Comma-separated CroweLM tier selectors; the first is the primary.",
+)
+@click.option(
+    "--strategy",
+    "-s",
+    default="merge",
+    type=click.Choice(["merge", "judge", "diff"]),
+    help="Synthesis strategy (merge=fuse, judge=pick best, diff=compare).",
+)
+@click.option(
+    "--synth", default=None, help="Tier that synthesizes (default: the primary)."
+)
+@click.option(
+    "--timeout", default=90.0, type=float, help="Per-tier timeout in seconds."
+)
+def ensemble(prompt: str, models: str, strategy: str, synth, timeout: float):
+    """Fan a question across multiple CroweLM tiers in parallel and synthesize one answer.
+
+    Activates the parallel dispatcher's ensemble_synthesis fusion: every tier
+    answers independently, then a synthesizer tier fuses them into one response.
+    """
+    from cli.ensemble import run_ensemble, render_outcome
+
+    selectors = [s.strip() for s in models.split(",") if s.strip()]
+    try:
+        outcome = run_ensemble(
+            prompt,
+            selectors=selectors,
+            strategy=strategy,
+            synth_selector=synth,
+            timeout_s=timeout,
+        )
+    except ValueError as exc:
+        console.print(f"[red]ensemble error:[/red] {exc}")
+        return
+    console.print(render_outcome(outcome))
+
+
+@main.command("serve")
+@click.option(
+    "--host", default=None, help="Bind host (default 127.0.0.1 / CROWE_BRIDGE_HOST)."
+)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Bind port (default 8011 / CROWE_BRIDGE_PORT).",
+)
+def serve(host, port):
+    """Serve the agent as an OpenAI-compatible HTTP API.
+
+    Exposes POST /v1/chat/completions and GET /v1/models, so any OpenAI client
+    (Cortex, LangChain, the OpenAI SDK) can drive the same agent loop the CLI
+    uses. Activates cli/openai_bridge.py.
+    """
+    if host:
+        os.environ["CROWE_BRIDGE_HOST"] = host
+    if port:
+        os.environ["CROWE_BRIDGE_PORT"] = str(port)
+    h = os.environ.get("CROWE_BRIDGE_HOST", "127.0.0.1")
+    p = os.environ.get("CROWE_BRIDGE_PORT", "8011")
+    console.print(
+        f"[bold #bfa669]Crowe Logic OpenAI bridge[/bold #bfa669] "
+        f"→ http://{h}:{p}/v1  [dim](Ctrl+C to stop)[/dim]"
+    )
+    from cli.openai_bridge import main as bridge_main
+
+    raise SystemExit(bridge_main())
+
+
+@main.command("spec")
+@click.argument("prompt")
+def spec(prompt: str):
+    """Specification mode: a read-only analysis that returns a plan, not code.
+
+    Runs the turn under read-only autonomy (no writes, shell, or state changes —
+    enforced by the tool gate, not just instructions) with a planning prompt, so
+    the agent studies the codebase and returns a structured spec (acceptance
+    criteria, technical strategy, file-by-file plan) for you to approve first.
+    """
+    from cli.autonomy import SPEC_SYSTEM_PROMPT
+
+    planning_turn = f"{SPEC_SYSTEM_PROMPT}\n\n---\nTask to specify:\n{prompt}"
+    ctx = click.get_current_context()
+    ctx.invoke(run, prompt=planning_turn, autonomy="read_only")
+
+
 @main.command()
 @click.argument("prompt")
-def run(prompt: str):
+@click.option(
+    "--autonomy",
+    default="full",
+    type=click.Choice(["read_only", "edit", "execute", "full"]),
+    help="Tool permission tier: read_only | edit | execute | full (default).",
+)
+def run(prompt: str, autonomy: str = "full"):
     """Run a single prompt and print the response."""
     from cli.first_run import ensure_first_run
+
     if not ensure_first_run(console, session_state=session_state):
         return
+    _set_autonomy(autonomy)
     # Route through the primary model in the chain.
     # No Azure Agents thread/client needed unless the chain falls through to
     # the legacy "azure" provider.
@@ -3020,6 +3216,31 @@ def run(prompt: str):
         _apply_route_decision(decision, session_state, prompt)
         _render_route_badge(console, decision)
 
+        # Auto-ensemble: the router attaches companion tiers only for
+        # high-stakes (domain/deep) intents. When enabled, fan the prompt
+        # across primary+companions and synthesize instead of one model.
+        from cli.ensemble import (
+            should_auto_ensemble,
+            selectors_from_decision,
+            run_ensemble,
+            render_outcome,
+        )
+
+        if should_auto_ensemble(
+            decision, enabled=os.environ.get("CROWE_LOGIC_AUTO_ENSEMBLE") == "1"
+        ):
+            selectors = selectors_from_decision(decision)
+            console.print(
+                f"[dim #bfa669]auto-ensemble → {', '.join(selectors)}[/dim #bfa669]"
+            )
+            try:
+                outcome = run_ensemble(prompt, selectors=selectors)
+                console.print(render_outcome(outcome))
+            except ValueError as exc:
+                console.print(f"[red]ensemble error:[/red] {exc}")
+            return
+
+    _reset_tool_cache()
     model_cfg = _current_model()
     session_state["active_model"] = (
         "CroweLM Mycelium"
