@@ -149,6 +149,38 @@ def _build_model_catalog() -> list[dict]:
     return sorted(catalog, key=lambda item: (plan_rank(item["min_plan"]), item["name"]))
 
 
+_CONTEXT_LENGTH_MARKERS = (
+    "context length",
+    "context_length_exceeded",
+    "maximum context",
+    "context window",
+    "too many tokens",
+    "string too long",
+    "reduce the length",
+)
+
+
+def _is_context_length_error(exc: Exception) -> bool:
+    """True if a provider/SDK exception is a context-window / oversize-input
+    rejection rather than a generic tier failure.
+
+    Matches on the OpenAI-style ``code`` attribute (``context_length_exceeded``)
+    when present, otherwise falls back to substring markers in the message —
+    Azure/OpenAI/OpenRouter phrase this differently, so we keep the net wide.
+    """
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and "context_length" in code.lower():
+        return True
+    # The OpenAI SDK nests the API code under .body / .error in some versions.
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        body_code = str(body.get("code", "")).lower()
+        if "context_length" in body_code:
+            return True
+    text = str(exc).lower()
+    return any(marker in text for marker in _CONTEXT_LENGTH_MARKERS)
+
+
 async def _call_provider(
     model: str,
     messages: list[dict],
@@ -325,8 +357,52 @@ async def _call_provider(
         if temperature is not None:
             kwargs["temperature"] = temperature
 
-        response = provider.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content or ""
+        try:
+            response = provider.client.chat.completions.create(**kwargs)
+        except HTTPException:
+            # Credential/unsupported errors raised before/around the call
+            # (e.g. "missing credentials" 503) already carry the right status —
+            # don't swallow and re-wrap them.
+            raise
+        except Exception as exc:  # noqa: BLE001 - any provider/SDK failure
+            if _is_context_length_error(exc):
+                # An over-budget prompt (e.g. a multi-thousand-line paste) is
+                # rejected by EVERY tier, so "retry another tier" (503) is
+                # misleading. The honest, actionable answer is 413: your input
+                # is too large — trim it.
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "error": "input_too_large",
+                        "tier": name,
+                        "message": (
+                            "Your input is too large for this model's context "
+                            "window and was rejected before any tokens were "
+                            "generated."
+                        ),
+                        "hint": (
+                            "Trim or reduce the input (e.g. paste fewer lines, "
+                            "split it into smaller requests) and try again."
+                        ),
+                    },
+                ) from exc
+            # A misconfigured or unreachable tier must surface as a clean,
+            # client-recoverable 503, never a bare 500 that reads as a gateway
+            # bug. The client-side fallback (WS-A) hops from this cleanly.
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "tier_unavailable",
+                    "tier": name,
+                    "message": f"{name} is not currently servable ({type(exc).__name__})",
+                    "hint": "retry with a different model tier",
+                },
+            ) from exc
+        # Defensive: a provider can return an empty choices list (e.g. a
+        # content-filter block or upstream truncation). Accessing choices[0]
+        # then raises IndexError -> bare 500. Treat it as clean empty content.
+        choices = getattr(response, "choices", None) or []
+        content = (choices[0].message.content or "") if choices else ""
         usage = response.usage
         return (
             content,
