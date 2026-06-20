@@ -127,12 +127,26 @@ def load_tools() -> tuple[list[dict], dict]:
 
     key = id(user_functions)
     cached = _TOOL_CACHE.get(key)
-    if cached is not None:
-        return cached
-    schemas = build_tool_schemas(user_functions)
-    name_map = {f.__name__: f for f in user_functions}
-    _TOOL_CACHE[key] = (schemas, name_map)
-    return _TOOL_CACHE[key]
+    if cached is None:
+        schemas = build_tool_schemas(user_functions)
+        name_map = {f.__name__: f for f in user_functions}
+        _TOOL_CACHE[key] = (schemas, name_map)
+        cached = _TOOL_CACHE[key]
+
+    schemas, name_map = cached
+    # Apply the active autonomy level so the model only SEES tools it may use
+    # (restricted levels hide write/shell/etc from the schema itself). The full
+    # build stays memoized; filtering a per-call view is cheap. Fail-open if the
+    # autonomy module is unavailable (e.g. providers used outside the CLI).
+    try:
+        from cli.autonomy import get_active_level, filter_schemas, filter_tools
+
+        level = get_active_level()
+    except Exception:
+        return schemas, name_map
+    if level == "full":
+        return schemas, name_map
+    return filter_schemas(schemas, level), filter_tools(name_map, level)
 
 
 def should_send_tool_budget_warning(

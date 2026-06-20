@@ -108,6 +108,58 @@ def filter_tools(tool_map: dict, level: str) -> dict:
     return {name: fn for name, fn in tool_map.items() if tool_allowed(name, level)}
 
 
+def filter_functions(functions, level: str) -> list:
+    """Filter an iterable of tool callables by autonomy ``level`` (by __name__).
+
+    Used where the model's tool SCHEMA is built from function objects, so a
+    restricted level hides forbidden tools from the model entirely (not just at
+    execution time).
+    """
+    if level == "full":
+        return list(functions)
+    return [fn for fn in functions if tool_allowed(getattr(fn, "__name__", ""), level)]
+
+
+def filter_schemas(schemas, level: str) -> list:
+    """Filter OpenAI-style tool schemas (``{'function': {'name': ...}}``) by level."""
+    if level == "full":
+        return list(schemas)
+    out = []
+    for s in schemas:
+        name = ""
+        if isinstance(s, dict):
+            fn = s.get("function")
+            name = (
+                (fn or {}).get("name", "")
+                if isinstance(fn, dict)
+                else s.get("name", "")
+            )
+        if tool_allowed(name, level):
+            out.append(s)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Active level — process-wide state both cli/ and providers/ read, so the
+# execution gate and the model-facing schema stay in lockstep. Lives here
+# (a leaf module that imports nothing) to avoid an import cycle.
+# ---------------------------------------------------------------------------
+_ACTIVE_LEVEL = DEFAULT_LEVEL
+
+
+def get_active_level() -> str:
+    return _ACTIVE_LEVEL
+
+
+def set_active_level(level: str) -> None:
+    global _ACTIVE_LEVEL
+    if level not in AUTONOMY_LEVELS:
+        raise ValueError(
+            f"unknown autonomy level: {level!r} (use one of {AUTONOMY_LEVELS})"
+        )
+    _ACTIVE_LEVEL = level
+
+
 # Planning-phase system prompt for Specification Mode. The autonomy gate makes
 # the read-only guarantee real; this prompt makes the model use it well.
 SPEC_SYSTEM_PROMPT = (

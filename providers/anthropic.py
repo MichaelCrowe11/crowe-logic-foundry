@@ -276,6 +276,17 @@ class AnthropicProvider:
 
             tool_map = {f.__name__: f for f in user_functions}
             tool_schemas = self._build_tool_schemas()
+            # Apply the active autonomy level so restricted modes hide forbidden
+            # tools from Claude's schema too (not just at execution time).
+            try:
+                from cli.autonomy import get_active_level, filter_schemas, filter_tools
+
+                _lvl = get_active_level()
+            except Exception:
+                _lvl = "full"
+            if _lvl != "full":
+                tool_map = filter_tools(tool_map, _lvl)
+                tool_schemas = filter_schemas(tool_schemas, _lvl)
         else:
             tool_map = {}
             tool_schemas = []

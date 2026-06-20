@@ -979,8 +979,10 @@ def _deploy_with_model(client, model_name: str) -> str:
     from config.agent_config import SYSTEM_INSTRUCTIONS, AGENT_NAME
     from tools import user_functions
 
+    from cli.autonomy import filter_functions, get_active_level
+
     toolset = ToolSet()
-    toolset.add(FunctionTool(user_functions))
+    toolset.add(FunctionTool(set(filter_functions(user_functions, get_active_level()))))
     toolset.add(CodeInterpreterTool())
     client.enable_auto_function_calls(toolset)
 
@@ -1171,36 +1173,32 @@ def _cancel_active_runs(client, thread_id: str):
 _tool_map_cache = None
 
 
-_AUTONOMY_LEVEL = "full"
-
-
 def _set_autonomy(level: str) -> None:
     """Set the active tool autonomy level (read_only|edit|execute|full).
 
-    Filters which registered tools the agent may call this turn — the
-    execution-side half of the autonomy gate (defense in depth: even if a model
-    requests a forbidden tool, it is not in the map and cannot run).
+    Process-wide state in cli.autonomy, so BOTH the execution gate
+    (_get_tool_map) and the model-facing tool schema (providers) restrict in
+    lockstep. Raises ValueError on an unknown level.
     """
-    global _AUTONOMY_LEVEL
-    from cli.autonomy import AUTONOMY_LEVELS
+    from cli.autonomy import set_active_level
 
-    if level not in AUTONOMY_LEVELS:
-        raise ValueError(f"unknown autonomy level: {level!r}")
-    _AUTONOMY_LEVEL = level
+    set_active_level(level)
 
 
 def _get_tool_map() -> dict:
-    """Cached name -> function lookup, filtered by the active autonomy level."""
+    """Cached name -> function lookup, filtered by the active autonomy level
+    (execution-side gate: a forbidden tool is not in the map and cannot run)."""
     global _tool_map_cache
     if _tool_map_cache is None:
         from tools import user_functions
 
         _tool_map_cache = {f.__name__: f for f in user_functions}
-    if _AUTONOMY_LEVEL == "full":
-        return _tool_map_cache
-    from cli.autonomy import filter_tools
+    from cli.autonomy import get_active_level, filter_tools
 
-    return filter_tools(_tool_map_cache, _AUTONOMY_LEVEL)
+    level = get_active_level()
+    if level == "full":
+        return _tool_map_cache
+    return filter_tools(_tool_map_cache, level)
 
 
 _orchestrator = None
@@ -1530,9 +1528,18 @@ def main(ctx):
 
 
 @main.command()
-def chat():
+@click.option(
+    "--autonomy",
+    default="full",
+    type=click.Choice(["read_only", "edit", "execute", "full"]),
+    help="Tool permission tier for the session: read_only | edit | execute | full.",
+)
+def chat(autonomy: str = "full"):
     """Start an interactive chat session with the agent."""
     import uuid
+
+    # Session-wide tool autonomy; change mid-session with /autonomy <level>.
+    _set_autonomy(autonomy)
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.formatted_text import HTML
@@ -1645,6 +1652,24 @@ def chat():
         if _handle_local_runtime_command(user_input, session_state):
             continue
         if handle_dual_command(user_input, dual_state, console, session_state):
+            continue
+        if user_input.lower().strip().startswith("/autonomy"):
+            from cli.autonomy import AUTONOMY_LEVELS, get_active_level
+
+            parts = user_input.strip().split(maxsplit=1)
+            if len(parts) == 1:
+                console.print(
+                    f"  autonomy: [bold #bfa669]{get_active_level()}[/bold #bfa669]  "
+                    f"[dim]({' | '.join(AUTONOMY_LEVELS)})[/dim]"
+                )
+            else:
+                try:
+                    _set_autonomy(parts[1].strip())
+                    console.print(
+                        f"  autonomy → [bold #bfa669]{get_active_level()}[/bold #bfa669]"
+                    )
+                except ValueError as exc:
+                    console.print(f"  [red]{exc}[/red]")
             continue
 
         # /replay N and /fork N commands: reissue a past user turn. These
