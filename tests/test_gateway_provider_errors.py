@@ -142,7 +142,10 @@ def test_empty_choices_does_not_raise_indexerror(monkeypatch):
 
     _install_fake_provider(monkeypatch, create=_create)
 
-    content, prompt_tokens, completion_tokens = _call()
-    assert content == ""
-    assert prompt_tokens == 5
-    assert completion_tokens == 0
+    turn = _call()
+    # _call_provider returns a _ProviderTurn (Phase 1); empty choices -> clean
+    # empty content, token counts still honoured.
+    assert turn.content == ""
+    assert turn.prompt_tokens == 5
+    assert turn.completion_tokens == 0
+    assert turn.finish_reason == "stop"

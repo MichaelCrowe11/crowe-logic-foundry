@@ -49,12 +49,19 @@ def resolve_agent_principal(authorization: str | None) -> dict:
 
 
 async def call_model(*, model, messages, max_tokens, temperature):
-    """Forward to the existing provider call (lazy import avoids an import cycle)."""
+    """Forward to the existing provider call (lazy import avoids an import cycle).
+
+    Returns the legacy ``(content, prompt_tokens, completion_tokens)`` tuple this
+    x402 path expects. ``_call_provider`` now returns a ``_ProviderTurn`` (Phase 1
+    tool-passthrough contract); the agent-payment surface does not pass tools, so
+    we flatten the answer turn back to the tuple here.
+    """
     from .gateway import _call_provider
 
-    return await _call_provider(
+    turn = await _call_provider(
         model=model, messages=messages, max_tokens=max_tokens, temperature=temperature
     )
+    return (turn.content, turn.prompt_tokens, turn.completion_tokens)
 
 
 def _payment_required(price: int) -> Response:

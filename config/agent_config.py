@@ -1475,6 +1475,35 @@ def _is_reasoning_backend(backend_name: str) -> bool:
     return backend_name in _REASONING_BACKENDS
 
 
+# Backends that reject the OpenAI ``tools`` / function-calling parameter
+# outright. NOTE: this is deliberately NOT the same as ``type == "reasoning"``
+# — most "reasoning" tiers (the gpt-5.4 family, Claude Opus, grok-reasoning,
+# Kimi) DO support function calling. The DeepSeek-R1 series is the genuine
+# tool-incapable case: it is a pure chain-of-thought model with no tool slot,
+# so passing ``tools`` 400s upstream. Capability is keyed off the deployed
+# ``backend_name`` (what's actually served) rather than the friendly label.
+_NO_TOOL_BACKENDS = frozenset(
+    {
+        "DeepSeek-R1-0528",
+        "DeepSeek-R1",
+    }
+)
+
+
+def model_supports_tools(model_cfg: dict | None) -> bool:
+    """True if the model can accept client-executed tool *schemas* (function
+    calling). False only for backends known to reject the ``tools`` parameter
+    (currently the DeepSeek-R1 reasoning-only series).
+
+    Used by the metered gateway to fail a tools-bearing request with a clean
+    400 instead of letting the provider raise an opaque error.
+    """
+    if not model_cfg:
+        return True
+    backend = model_cfg.get("backend_name") or model_cfg.get("name") or ""
+    return backend not in _NO_TOOL_BACKENDS
+
+
 def tier_runtime_params(model_cfg: dict | None) -> dict:
     """Return API params (temperature, top_p, max_tokens) for a model's tier.
 

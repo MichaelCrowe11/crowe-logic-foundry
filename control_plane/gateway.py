@@ -13,6 +13,7 @@ This module is imported by the Control Plane API; it doesn't run standalone.
 import json
 import os
 import time
+from dataclasses import dataclass, field
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, Depends
@@ -181,13 +182,42 @@ def _is_context_length_error(exc: Exception) -> bool:
     return any(marker in text for marker in _CONTEXT_LENGTH_MARKERS)
 
 
+@dataclass
+class _ToolCall:
+    """One client-executed tool-call request from the model. ``arguments`` is the
+    raw JSON string the model produced (parsed by the client, not the gateway)."""
+
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass
+class _ProviderTurn:
+    """Result of a single provider turn. Carries either an answer (``content`` +
+    ``finish_reason == "stop"``) OR a list of tool-call requests
+    (``tool_calls`` + ``finish_reason == "tool_calls"``), never read both ways."""
+
+    content: str
+    tool_calls: list[_ToolCall] = field(default_factory=list)
+    finish_reason: str = "stop"
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
 async def _call_provider(
     model: str,
     messages: list[dict],
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
-) -> tuple[str, int, int]:
-    """Call a CroweLM provider and return (content, prompt_tokens, completion_tokens).
+    tools: Optional[list[dict]] = None,
+) -> "_ProviderTurn":
+    """Call a CroweLM provider and return a ``_ProviderTurn``.
+
+    When ``tools`` is provided the schemas are forwarded to the model. If the
+    model responds with ``finish_reason == "tool_calls"`` the turn carries the
+    extracted tool-call requests (Approach B: the *client* executes them and
+    loops). Otherwise it carries the answer content as before.
 
     Runs the synchronous OpenAI SDK call in a thread pool so the event loop
     stays responsive.
@@ -356,6 +386,11 @@ async def _call_provider(
             kwargs["max_tokens"] = max_tokens
         if temperature is not None:
             kwargs["temperature"] = temperature
+        # Approach B: pass tool *schemas* so the model can request tool calls the
+        # client will execute. Only inject when present so a tool-less turn is
+        # byte-for-byte the previous single-shot request (no empty `tools`).
+        if tools:
+            kwargs["tools"] = tools
 
         try:
             response = provider.client.chat.completions.create(**kwargs)
@@ -402,12 +437,50 @@ async def _call_provider(
         # content-filter block or upstream truncation). Accessing choices[0]
         # then raises IndexError -> bare 500. Treat it as clean empty content.
         choices = getattr(response, "choices", None) or []
-        content = (choices[0].message.content or "") if choices else ""
         usage = response.usage
-        return (
-            content,
-            (usage.prompt_tokens if usage else 0),
-            (usage.completion_tokens if usage else 0),
+        prompt_tokens = usage.prompt_tokens if usage else 0
+        completion_tokens = usage.completion_tokens if usage else 0
+
+        if not choices:
+            return _ProviderTurn(
+                content="",
+                finish_reason="stop",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+
+        choice = choices[0]
+        finish_reason = getattr(choice, "finish_reason", None) or "stop"
+        message = choice.message
+
+        if finish_reason == "tool_calls":
+            # The model emitted tool-call *requests*, not an answer. Extract them
+            # for the client to execute; do NOT read message.content as the
+            # answer (it is empty/stray when finish_reason is tool_calls).
+            raw_calls = getattr(message, "tool_calls", None) or []
+            extracted = [
+                _ToolCall(
+                    id=getattr(tc, "id", "") or "",
+                    name=getattr(getattr(tc, "function", None), "name", "") or "",
+                    arguments=getattr(getattr(tc, "function", None), "arguments", "")
+                    or "",
+                )
+                for tc in raw_calls
+            ]
+            return _ProviderTurn(
+                content="",
+                tool_calls=extracted,
+                finish_reason="tool_calls",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+
+        content = (getattr(message, "content", None) or "")
+        return _ProviderTurn(
+            content=content,
+            finish_reason=finish_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
 
     # Run the blocking SDK call in a thread
@@ -422,12 +495,28 @@ class GatewayRequest(BaseModel):
     tools: Optional[list[dict]] = None
 
 
+class ToolCallRequest(BaseModel):
+    """A model-issued tool-call the client must execute and answer (Approach B).
+
+    ``arguments`` is the raw JSON string the model produced; the client parses
+    it, runs the named tool, and sends the result back in the next round echoing
+    this ``id`` so the model can match the result to its request."""
+
+    id: str
+    name: str
+    arguments: str
+
+
 class GatewayResponse(BaseModel):
     id: str
     model: str
     content: str
     usage: dict
     latency_ms: int
+    # Defaulted -> backward compatible. When ``finish_reason == "tool_calls"``,
+    # ``content`` is "" and ``tool_calls`` carries the requests for the client.
+    tool_calls: list[ToolCallRequest] = []
+    finish_reason: str = "stop"
 
 
 @router.get("/catalog")
@@ -549,6 +638,21 @@ async def gateway_chat(
             detail=f"Model '{model}' requires {required_plan} plan or higher",
         )
 
+    # ── Tool-capability guardrail ──
+    # If the caller passes tool schemas but the resolved model can't do function
+    # calling (e.g. the DeepSeek-R1 reasoning-only series), fail with a clean 400
+    # rather than letting the provider raise an opaque error mid-call. Capability
+    # is checked against the deployed backend, not the friendly label or type.
+    if req.tools:
+        from config.agent_config import model_supports_tools, resolve_model_config
+
+        tool_cfg = resolve_model_config(model)
+        if not model_supports_tools(tool_cfg):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{model}' does not support tools (function calling)",
+            )
+
     # ── Anonymous daily turn cap (deny-by-default; increment before call) ──
     if key_info.get("principal") == "anonymous":
         from datetime import date
@@ -601,14 +705,17 @@ async def gateway_chat(
     # ── Forward to provider ──
     start = time.monotonic()
 
-    content, prompt_tokens, completion_tokens = await _call_provider(
+    turn = await _call_provider(
         model=model,
         messages=req.messages,
         max_tokens=req.max_tokens,
         temperature=req.temperature,
+        tools=req.tools,
     )
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
+    prompt_tokens = turn.prompt_tokens
+    completion_tokens = turn.completion_tokens
     token_count = prompt_tokens + completion_tokens
 
     # ── Record usage (workspace principals only) ──
@@ -625,13 +732,18 @@ async def gateway_chat(
     return GatewayResponse(
         id=f"gw_{int(time.time())}",
         model=model,
-        content=content,
+        content=turn.content,
         usage={
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": token_count,
         },
         latency_ms=elapsed_ms,
+        tool_calls=[
+            ToolCallRequest(id=tc.id, name=tc.name, arguments=tc.arguments)
+            for tc in turn.tool_calls
+        ],
+        finish_reason=turn.finish_reason,
     )
 
 

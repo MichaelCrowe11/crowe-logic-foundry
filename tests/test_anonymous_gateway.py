@@ -161,12 +161,17 @@ def test_anon_chat_under_cap_calls_provider(monkeypatch):
     from control_plane import gateway
 
     async def fake_provider(**kwargs):
-        return ("hello from mycelium", 5, 7)
+        # _call_provider now returns a _ProviderTurn (Phase 1 contract change).
+        return gateway._ProviderTurn(
+            content="hello from mycelium", prompt_tokens=5, completion_tokens=7
+        )
 
     monkeypatch.setattr(gateway, "_call_provider", lambda **kw: fake_provider(**kw))
     req = gateway.GatewayRequest(model="crowelm-mycelium", messages=[{"role": "user", "content": "hi"}])
     resp = asyncio.run(gateway.gateway_chat(req, key_info=_anon_key_info(), db=FakeDb(turns_today=3)))
     assert resp.content == "hello from mycelium"
+    assert resp.finish_reason == "stop"
+    assert resp.tool_calls == []
 
 
 def test_anon_chat_cap_hit_returns_structured_402():

@@ -53,7 +53,7 @@ def test_gateway_calls_hosted_openai_backend(monkeypatch):
 
     monkeypatch.setattr(hosted_mod, "HostedOpenAIProvider", _FakeHostedProvider)
 
-    content, prompt_tokens, completion_tokens = asyncio.run(
+    turn = asyncio.run(
         gateway_mod._call_provider(
             "gpt-5.4",
             [{"role": "user", "content": "hello"}],
@@ -63,9 +63,12 @@ def test_gateway_calls_hosted_openai_backend(monkeypatch):
     assert captured["init"]["model"] == "z-ai/glm5.1"
     assert captured["init"]["endpoint"] == "https://models.crowe.logic"
     assert captured["init"]["api_key"] == ""
-    assert content == "OK"
-    assert prompt_tokens == 12
-    assert completion_tokens == 7
+    # _call_provider now returns a _ProviderTurn (Phase 1 contract change).
+    assert turn.content == "OK"
+    assert turn.prompt_tokens == 12
+    assert turn.completion_tokens == 7
+    assert turn.finish_reason == "stop"
+    assert turn.tool_calls == []
 
 
 def test_gateway_sends_model_persona_system_prompt(monkeypatch):
