@@ -5,6 +5,8 @@ Targets self-hosted vLLM / SGLang / NIM-compatible endpoints that expose the
 standard OpenAI chat completions API.
 """
 
+import re
+
 from openai import OpenAI
 
 from providers._shared import BaseOpenAIProvider
@@ -25,7 +27,10 @@ class HostedOpenAIProvider(BaseOpenAIProvider):
         super().__init__(model, system_instructions, label)
 
         base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/v1"):
+        # Append the OpenAI-style /v1 only when the endpoint doesn't already carry
+        # a version segment. Some OpenAI-compatible vendors version differently
+        # (e.g. Z.AI/GLM uses /api/paas/v4); forcing /v1 there would 404.
+        if not re.search(r"/v\d+$", base_url):
             base_url += "/v1"
 
         self.client = OpenAI(

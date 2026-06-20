@@ -1,6 +1,36 @@
 {
   "models": [
     {
+      "name": "crowelm-glm",
+      "label": "CroweLM GLM",
+      "type": "reasoning",
+      "provider": "openai_compat",
+      "backend_name": "glm-5.2",
+      "endpoint_env": "ZAI_BASE_URL",
+      "api_key_env": "ZAI_API_KEY",
+      "aliases": [
+        "glm",
+        "glm-5.2",
+        "glm-5",
+        "crowelm-glm",
+        "crowelm-glm-5-2",
+        "CroweLM GLM"
+      ],
+      "system_prompt": "You are CroweLM GLM, the open-weight frontier tier of CroweLM inside the Crowe Logic Foundry.\n\nIdentity rules:\n- CroweLM GLM is a named tier within CroweLM, not a standalone product. If asked what it is, answer: \"Crowe Logic's open-weight frontier reasoning tier.\"\n- Be honest and never confabulate capabilities, architecture, or a backstory you do not have. When uncertain, say so plainly.\n- Do not volunteer foundation-model or vendor names unless the user explicitly asks about infrastructure; if they do ask, answer truthfully.\n\nOperating style:\n- State the plan in one line, execute, report. No filler.\n- Ground every claim in evidence or flag it as an assumption.\n- Reach deep into multi-step planning, synthesis, and tool use; you are a flagship-depth tier.",
+      "tier": "reasoning",
+      "tags": [
+        "reasoning",
+        "agentic",
+        "tool_use",
+        "frontier",
+        "open-weight",
+        "flagship",
+        "hosted"
+      ],
+      "notes": "CroweLM GLM tier. Inference on GLM-5.2 (Z.AI), an open-weight frontier model. Served via the OpenAI-compatible Z.AI endpoint (ZAI_BASE_URL=https://api.z.ai/api/paas/v4, key ZAI_API_KEY). GOTCHA: direct vendor API gated on account balance — returns error 1113 / HTTP 429 until the Z.AI account is funded. Per cloud-exclusive sourcing, migrate to a cloud endpoint or self-host the open weights when feasible; the tier is wired now (quota-gated) so it routes the moment it is funded.",
+      "tunable": false
+    },
+    {
       "name": "crowelm-talon",
       "label": "CroweLM Talon",
       "type": "reasoning",
