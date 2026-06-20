@@ -947,12 +947,19 @@ def _is_provider_wide_error(error_str: str) -> bool:
     return any(ind in lower for ind in indicators)
 
 
+def _is_missing_agent_error(error_str: str) -> bool:
+    """A stale/deleted Azure agent id — recoverable by failing over to the next model."""
+    s = (error_str or "").lower()
+    return "no assistant found" in s or "no agent found" in s
+
+
 def _is_failover_eligible_error(error_str: str) -> bool:
     """Detect provider failures that should trigger model fallback instead of aborting."""
     return (
         is_rate_limit_error(error_str)
         or _is_model_error(error_str)
         or _is_provider_wide_error(error_str)
+        or _is_missing_agent_error(error_str)
     )
 
 
@@ -1033,6 +1040,20 @@ def get_agent_id() -> str | None:
         return None
 
 
+def _clear_stale_agent_id() -> None:
+    """Drop a cached agent id that no longer resolves on Azure.
+
+    Removes the in-memory cache and the ``.agent_id`` file so the next
+    ``crowe-logic deploy`` starts clean instead of re-loading a dead id.
+    """
+    _model_state["agent_id"] = None
+    try:
+        if os.path.exists(AGENT_ID_FILE):
+            os.remove(AGENT_ID_FILE)
+    except OSError:
+        pass
+
+
 def get_client():
     """Build an Azure AI Agents client. Raises if the Azure identity isn't set up."""
     from azure.ai.agents import AgentsClient
@@ -1062,6 +1083,24 @@ def _ensure_azure_agents(azure_state: dict):
         )
 
     client = get_client()
+
+    # Validate the cached agent still exists before using it. A stale
+    # `.agent_id` (assistant deleted server-side) otherwise surfaces as a
+    # cryptic "No assistant found with id 'asst_...'" deep in the run. Detect
+    # it here, clear the stale cache so a later `crowe-logic deploy` is clean,
+    # and raise a clear, failover-eligible error so the chain falls through.
+    from azure.core.exceptions import ResourceNotFoundError
+
+    try:
+        client.get_agent(agent_id)
+    except ResourceNotFoundError as exc:
+        _clear_stale_agent_id()
+        raise RuntimeError(
+            f"Cached Azure agent '{agent_id}' no longer exists (cleared it). "
+            f"Run `crowe-logic deploy` to recreate it, or the chain will fall "
+            f"through to the next model."
+        ) from exc
+
     thread = azure_state.get("thread") or client.threads.create()
 
     azure_state["agent_id"] = agent_id
