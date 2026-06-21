@@ -1,7 +1,10 @@
 # Design — Agentic Coding Eval Harness (head-to-head vs frontier)
 
 **Date:** 2026-06-20
-**Status:** Approved design; ready for implementation plan
+**Status:** Implemented (SP-0) 2026-06-20 — `bench/agentic/` built, 27 harness
+tests green, token-free end-to-end scoreboard verified over the 12-task suite.
+Real harness-isolated baseline run (#4) pending Anthropic creds + cost approval.
+Implementation plan: `docs/superpowers/plans/2026-06-20-agentic-coding-eval-harness.md`.
 **Scope:** Sub-project SP-0 of the "make crowe-logic rival frontier agents" program
 
 ---

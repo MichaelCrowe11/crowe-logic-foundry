@@ -1,0 +1,1 @@
+is_balanced(s) should return True only if the brackets ()[]{} are balanced and correctly nested (type-matched). It currently just counts parentheses. Make the tests pass.

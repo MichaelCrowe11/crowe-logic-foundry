@@ -1,0 +1,1 @@
+roman_to_int(s) should convert a Roman numeral string to an integer, handling subtractive notation (IV=4, IX=9, XL=40, ...). It currently sums each symbol naively. Make the tests pass.

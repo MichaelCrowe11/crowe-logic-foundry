@@ -1,0 +1,1 @@
+shortest_path(graph, start, end) should return the minimum-cost path cost using Dijkstra's algorithm (non-negative weights; graph maps node -> list of (neighbor, weight)), or float('inf') if unreachable. It currently returns the first path found, not the cheapest. Make the tests pass.

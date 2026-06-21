@@ -1,0 +1,1 @@
+topo_sort(graph) should return a topological ordering where each node's dependencies appear before it (graph maps node -> list of prerequisites), and raise ValueError if there is a cycle. It currently returns keys in arbitrary order. Make the tests pass.

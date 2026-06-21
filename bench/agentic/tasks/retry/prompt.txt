@@ -1,0 +1,1 @@
+retry(fn, attempts) should call fn() up to `attempts` times, returning the first successful result; if all attempts raise, it should re-raise the last exception. It currently tries once and swallows errors. Make the tests pass.

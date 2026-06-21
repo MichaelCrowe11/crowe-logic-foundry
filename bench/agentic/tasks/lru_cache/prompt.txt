@@ -1,0 +1,1 @@
+LRUCache(capacity) should evict the least-recently-used key when full; get() and put() both count as a use. It currently never evicts. Make the tests pass.

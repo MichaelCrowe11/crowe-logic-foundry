@@ -1,0 +1,1 @@
+dedupe(items) should remove duplicates while preserving the first-seen order of elements. It currently uses set() and loses ordering. Make the tests pass.

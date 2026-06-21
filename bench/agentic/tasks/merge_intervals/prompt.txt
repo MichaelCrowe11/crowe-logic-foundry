@@ -1,0 +1,1 @@
+merge(intervals) should merge overlapping or touching [start, end] intervals and return a sorted, merged list. It currently sorts but never merges. Make the tests pass.

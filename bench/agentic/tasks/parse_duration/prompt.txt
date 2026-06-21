@@ -1,0 +1,1 @@
+parse_duration(s) should parse duration strings like '1h30m', '45m', '2h15m30s', '90s' into a total number of seconds (h=3600, m=60, s=1). It currently only handles a leading hours value. Make the tests pass.

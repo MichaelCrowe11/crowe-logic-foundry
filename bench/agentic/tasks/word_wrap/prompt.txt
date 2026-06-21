@@ -1,0 +1,1 @@
+wrap(text, width) should greedily word-wrap whitespace-separated text into lines no longer than `width` characters, never splitting a word across lines. It currently slices by raw character count. Make the tests pass.

@@ -1,0 +1,1 @@
+column_sum(rows, col) sums an integer column of CSV-like rows where rows[0] is the header and must be skipped. It currently includes the header and raises ValueError. Make the tests pass.
