@@ -161,3 +161,53 @@ def test_deploy_metadata_probe_avoids_chat_for_marked_azure_models(monkeypatch):
     assert result.exit_code == 0
     assert captured["retrieved"] == ["Cohere-Command-A"]
     assert "2/2 models online" in result.output
+
+
+def test_deploy_openai_compat_preserves_existing_versioned_base_url(monkeypatch):
+    from click.testing import CliRunner
+    import openai
+    import requests
+
+    runner = CliRunner()
+    captured: dict[str, str] = {}
+
+    monkeypatch.setenv("ZAI_BASE_URL", "https://api.z.ai/api/paas/v4")
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key")
+    monkeypatch.setattr(
+        agent_config,
+        "MODEL_CHAIN",
+        [
+            {
+                # Generic openai_compat fixture exercising normalize_hosted_base_url's
+                # /vN-preservation (endpoint already ends in /v4 → no /v1 appended).
+                # Not the real CroweLM Dense tier, which routes via ollama.
+                "name": "crowelm-compat-probe",
+                "label": "CroweLM Compat Probe",
+                "provider": "openai_compat",
+                "backend_name": "compat-model",
+                "endpoint_env": "ZAI_BASE_URL",
+                "api_key_env": "ZAI_API_KEY",
+            },
+        ],
+    )
+    monkeypatch.setattr(agent_config, "NEON_DATABASE_URL", "")
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_: SimpleNamespace(
+                        choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))]
+                    )
+                )
+            )
+
+    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(requests, "head", lambda *_, **__: SimpleNamespace(status_code=200))
+    monkeypatch.setattr(requests, "get", lambda *_, **__: SimpleNamespace(status_code=200))
+
+    result = runner.invoke(cli_mod.main, ["deploy"])
+
+    assert result.exit_code == 0
+    assert captured["base_url"] == "https://api.z.ai/api/paas/v4"

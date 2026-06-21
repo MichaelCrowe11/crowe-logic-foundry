@@ -69,6 +69,18 @@ def test_resolve_model_config_accepts_recovered_local_ollama_aliases():
     assert provider_model_name(unified) == "crowelm-unified-v2:latest"
 
 
+def test_resolve_model_config_accepts_general_lm_aliases():
+    general = resolve_model_config("crowe-general-lm")
+    typo = resolve_model_config("crowe-genral-lm")
+
+    assert general is not None
+    assert typo is not None
+    assert general["label"] == "CroweLM Dense"
+    assert general["provider"] == "ollama"
+    assert provider_model_name(general) == "glm-5.2:cloud"
+    assert typo["label"] == "CroweLM Dense"
+
+
 def test_resolve_model_config_accepts_legacy_synapse_alias():
     """Legacy workstation settings still resolve after the Synapse rename."""
     synapse = resolve_model_config("CroweLM Synapse")

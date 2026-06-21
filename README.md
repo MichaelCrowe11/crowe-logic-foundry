@@ -134,8 +134,10 @@ See [crowe-logic-mcp](https://github.com/MichaelCrowe11/crowe-logic-mcp) for con
 | `AZURE_ANTHROPIC_API_KEY` | API key for the CroweLM Prime endpoint |
 | `AZURE_1960_ANTHROPIC_ENDPOINT` | Azure Anthropic endpoint for CroweLM Sovereign and Classic |
 | `AZURE_1960_API_KEY` | API key for the CroweLM Sovereign / Classic endpoint |
-| `AZURE_GLM_ENDPOINT` | Optional GLM endpoint for CroweLM Dense (`FW-GLM-5`) |
-| `AZURE_GLM_API_KEY` | API key for the CroweLM Dense endpoint |
+| `ZAI_BASE_URL` | OpenAI-compatible base URL for CroweLM Dense / the Crowe general LM variant (`https://api.z.ai/api/paas/v4`) |
+| `ZAI_API_KEY` | API key for the CroweLM Dense / GLM 5.2 endpoint |
+| `AZURE_GLM_ENDPOINT` | Legacy Azure GLM endpoint retained for older CroweLM Dense scripts (`FW-GLM-5`) |
+| `AZURE_GLM_API_KEY` | API key for the legacy Azure GLM endpoint |
 | `AZURE_SORA_ENDPOINT` | Optional dedicated CroweLM Motion endpoint; falls back to `AZURE_CORE_ENDPOINT` |
 | `AZURE_SORA_API_KEY` | Optional dedicated CroweLM Motion API key; falls back to `AZURE_CORE_API_KEY` |
 | `AZURE_SORA_DEPLOYMENT_NAME` | CroweLM Motion deployment name, usually `sora-2` |

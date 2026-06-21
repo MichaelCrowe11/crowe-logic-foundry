@@ -3,6 +3,14 @@
 All notable changes to Crowe Logic Foundry are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-06-20
+
+### Changed
+
+- Bumped the primary Crowe Logic package and CLI version surfaces to `0.5.1`
+  so the Python package metadata, CLI runtime version, and npm package stay in
+  sync above `0.5.0`.
+
 ## [0.3.0] - 2026-04-30
 
 The Synapse release. Adds a confidence-gated routing layer in front of

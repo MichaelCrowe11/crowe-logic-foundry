@@ -845,10 +845,19 @@
       "provider": "ollama",
       "type": "reasoning",
       "deploy_probe": "metadata",
-      "backend_name": "glm-5.1:cloud",
+      "backend_name": "glm-5.2:cloud",
       "aliases": [
         "CroweLM Dense",
-        "dense"
+        "dense",
+        "crowelm-glm",
+        "CroweLM GLM",
+        "crowelm-general-lm",
+        "crowe-general-lm",
+        "crowe-genral-lm",
+        "general-lm",
+        "glm",
+        "glm-5.2",
+        "CroweLM General LM"
       ]
     },
     {

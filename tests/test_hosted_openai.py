@@ -24,3 +24,24 @@ def test_hosted_openai_provider_normalizes_v1_and_supplies_placeholder_key(monke
 
     assert captured["base_url"] == "https://models.crowe.logic/v1"
     assert captured["api_key"] == "crowe-logic"
+
+
+def test_hosted_openai_provider_preserves_existing_versioned_base_url(monkeypatch):
+    captured = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(hosted_mod, "OpenAI", _FakeOpenAI)
+
+    hosted_mod.HostedOpenAIProvider(
+        model="glm-5.2",
+        system_instructions="system",
+        endpoint="https://api.z.ai/api/paas/v4",
+        api_key="test-key",
+        label="CroweLM Dense",
+    )
+
+    assert captured["base_url"] == "https://api.z.ai/api/paas/v4"
+    assert captured["api_key"] == "test-key"

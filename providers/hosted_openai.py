@@ -5,9 +5,19 @@ Targets self-hosted vLLM / SGLang / NIM-compatible endpoints that expose the
 standard OpenAI chat completions API.
 """
 
+import re
+
 from openai import OpenAI
 
 from providers._shared import BaseOpenAIProvider
+
+
+def normalize_hosted_base_url(endpoint: str) -> str:
+    """Normalize versioned OpenAI-compatible base URLs for the OpenAI SDK."""
+    base_url = endpoint.rstrip("/")
+    if re.search(r"/v\d+$", base_url):
+        return base_url
+    return f"{base_url}/v1"
 
 
 class HostedOpenAIProvider(BaseOpenAIProvider):
@@ -24,9 +34,7 @@ class HostedOpenAIProvider(BaseOpenAIProvider):
     ):
         super().__init__(model, system_instructions, label)
 
-        base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/v1"):
-            base_url += "/v1"
+        base_url = normalize_hosted_base_url(endpoint)
 
         self.client = OpenAI(
             api_key=api_key or "crowe-logic",

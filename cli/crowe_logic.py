@@ -3654,6 +3654,8 @@ def deploy():
                         status = "live" if resp.choices else "empty"
 
             elif provider == "openai_compat":
+                from providers.hosted_openai import normalize_hosted_base_url
+
                 endpoint_var = model.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
                 api_key_var = model.get("api_key_env", "CROWE_OPEN_API_KEY")
                 endpoint = os.environ.get(endpoint_var, "")
@@ -3661,9 +3663,7 @@ def deploy():
                 if not endpoint:
                     status = "no endpoint"
                 else:
-                    base_url = endpoint.rstrip("/")
-                    if not base_url.endswith("/v1"):
-                        base_url += "/v1"
+                    base_url = normalize_hosted_base_url(endpoint)
                     client = OpenAI(
                         api_key=api_key or "crowe-logic",
                         base_url=base_url,
