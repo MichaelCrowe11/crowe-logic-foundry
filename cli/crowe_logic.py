@@ -516,6 +516,23 @@ def _get_hosted_openai_provider(
     return _apply_provider_instructions(provider, system_instructions, model_cfg)
 
 
+def _azure_surface_is_responses(model_cfg: dict) -> bool:
+    """Whether an Azure tier must use the Responses API rather than chat-completions.
+
+    Reasoning-class deployments get ``reasoning_effort`` injected by
+    ``tier_runtime_params``; Azure rejects that combined with function tools on
+    /v1/chat/completions ("Please use /v1/responses instead"). Honor an explicit
+    ``surface=responses``, and infer it for reasoning backends so a tier missing
+    that flag isn't routed to the unsupported chat path.
+    """
+    if model_cfg.get("surface") == "responses":
+        return True
+    from config.agent_config import _is_reasoning_backend
+
+    backend = model_cfg.get("backend_name") or model_cfg.get("name") or ""
+    return _is_reasoning_backend(backend)
+
+
 def _get_azure_openai_provider(
     model_cfg: dict, *, system_instructions: str | None = None
 ):
@@ -551,7 +568,7 @@ def _get_azure_openai_provider(
 
     provider_cls = (
         AzureResponsesProvider
-        if model_cfg.get("surface") == "responses"
+        if _azure_surface_is_responses(model_cfg)
         else AzureOpenAIProvider
     )
     provider = provider_cls(
@@ -4664,6 +4681,7 @@ def iterm_status_cmd():
     table.add_row("Python API enabled", _yn(info["python_api_enabled"]))
     table.add_row("Daemon installed", _yn(info["daemon_installed"]))
     table.add_row("Venv exists", _yn(info["venv_exists"]))
+    table.add_row("Profile installed", _yn(info.get("profile_installed", False)))
 
     console.print()
     console.print(table)
