@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crowe-logic"
-version = "0.4.2"
+version = "0.5.1"
 description = "Crowe Logic. Universal AI Agent powered by CroweLM on Azure AI Foundry."
 readme = "README.md"
 license = "LicenseRef-Proprietary"
@@ -48,6 +48,7 @@ dependencies = [
     "wcwidth>=0.2.13",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.30.0",
+    "tenacity>=8.0.0",
 ]
 
 [project.optional-dependencies]
