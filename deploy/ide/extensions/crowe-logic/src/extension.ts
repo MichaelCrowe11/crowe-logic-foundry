@@ -87,8 +87,8 @@ export async function activate(context: vscode.ExtensionContext) {
     participant.followupProvider = {
         provideFollowups(_result, _context, _token) {
             return [
-                { prompt: 'Plan the next step', label: '📋 Plan next step', command: 'plan' },
-                { prompt: 'Run the current plan', label: '▶ Run plan', command: 'run' },
+                { prompt: 'Plan the next step', label: 'Plan next step', command: 'plan' },
+                { prompt: 'Run the current plan', label: 'Run plan', command: 'run' },
             ];
         }
     };
