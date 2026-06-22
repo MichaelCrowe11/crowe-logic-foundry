@@ -2,7 +2,7 @@
   "name": "crowe-logic",
   "displayName": "Crowe Logic Workstation",
   "description": "Crowe Logic Workstation: Foundry agent, chat, plans, and tool execution inside your editor.",
-  "version": "0.2.43",
+  "version": "0.2.44",
   "publisher": "crowe-logic",
   "license": "SEE LICENSE IN README.md",
   "repository": {
@@ -11,7 +11,7 @@
     "directory": "deploy/ide/extensions/crowe-logic"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "AI",
@@ -93,9 +93,25 @@
           "title": "Crowe Logic",
           "icon": "media/mark.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "crowe-logic-browser",
+          "title": "Browser",
+          "icon": "media/mark.svg"
+        }
       ]
     },
     "views": {
+      "crowe-logic-browser": [
+        {
+          "type": "webview",
+          "id": "crowe-logic.browser",
+          "name": "Preview",
+          "icon": "media/mark.svg",
+          "contextualTitle": "Browser"
+        }
+      ],
       "crowe-logic": [
         {
           "type": "webview",
@@ -175,6 +191,21 @@
         "title": "Crowe Logic: Pick Model",
         "category": "Crowe Logic",
         "icon": "$(symbol-event)"
+      },
+      {
+        "command": "crowe-logic.browser.open",
+        "title": "Crowe Logic: Open Browser Preview",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "crowe-logic.browser.refresh",
+        "title": "Crowe Logic: Reload Browser Preview",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "crowe-logic.browser.rescan",
+        "title": "Crowe Logic: Rescan Ports",
+        "icon": "$(search-refresh)"
       }
     ],
     "keybindings": [
@@ -220,6 +251,16 @@
           "command": "crowe-logic.pickModel",
           "when": "view == crowe-logic.chat",
           "group": "navigation@2"
+        },
+        {
+          "command": "crowe-logic.browser.refresh",
+          "when": "view == crowe-logic.browser",
+          "group": "navigation@1"
+        },
+        {
+          "command": "crowe-logic.browser.rescan",
+          "when": "view == crowe-logic.browser",
+          "group": "navigation@2"
         }
       ],
       "editor/title/run": [
@@ -251,7 +292,10 @@
       "properties": {
         "croweLogic.chatPersona": {
           "type": "string",
-          "enum": ["face", "mark"],
+          "enum": [
+            "face",
+            "mark"
+          ],
           "enumDescriptions": [
             "Show the Crowe Logic face avatar next to every assistant message. Personality-forward.",
             "Show the diamond emblem next to every assistant message. Brand-forward, quieter."
@@ -313,6 +357,31 @@
           "default": "https://ide.crowelogic.com",
           "description": "Remote IDE origin used as a fallback when handoff fails.",
           "order": 7
+        },
+        "croweLogic.autoLaunchAgent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically launch the Crowe Logic CLI agent in the terminal on pod startup when no terminals are open."
+        },
+        "croweLogic.browser.autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically preview a newly detected port when exactly one new port appears."
+        },
+        "croweLogic.browser.pollSeconds": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "How often (in seconds) to poll for open ports in the Browser panel."
+        },
+        "croweLogic.browser.ignorePorts": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "default": [],
+          "description": "Port numbers to exclude from the Browser panel port scanner (8080 is always excluded)."
         }
       }
     },
@@ -346,7 +415,7 @@
           {
             "id": "sign-in",
             "title": "Sign in with your API token",
-            "description": "Run **Crowe Logic: Sign In** from the command palette and paste your `crowe_pat_…` token. The token is stored in the OS keychain and unlocks programmatic access to the AI platform.\n[Sign In](command:crowe-logic.signIn)",
+            "description": "Run **Crowe Logic: Sign In** from the command palette and paste your `crowe_pat_\u2026` token. The token is stored in the OS keychain and unlocks programmatic access to the AI platform.\n[Sign In](command:crowe-logic.signIn)",
             "media": {
               "image": "media/avatar-light.png",
               "altText": "Crowe Logic avatar"
@@ -374,12 +443,13 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --out crowe-logic.vsix"
+    "package": "vsce package --out crowe-logic.vsix",
+    "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "@types/vscode": "^1.85.0",
-    "typescript": "^5.3.0",
-    "@vscode/vsce": "^2.22.0"
+    "@types/node": "^20.19.43",
+    "@types/vscode": "^1.125.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.9.3"
   }
 }

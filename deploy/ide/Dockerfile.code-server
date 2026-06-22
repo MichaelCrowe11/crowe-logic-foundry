@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     curl \
     build-essential \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create Python venv (avoids PEP 668 externally-managed-environment error)
@@ -98,6 +99,8 @@ COPY --chown=coder:coder sandbox-template/ /opt/sandbox-template/
 # Install entrypoint script (needs +x, done as root before user switch)
 COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY scripts/crowe-agent.sh /usr/local/bin/crowe-agent
+RUN chmod +x /usr/local/bin/crowe-agent
 
 # Switch to coder for the extension installs so they land under
 # /home/coder/.local/share/code-server/extensions where the runtime

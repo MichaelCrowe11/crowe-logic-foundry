@@ -10,6 +10,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { createHash } from 'crypto';
 import { runFoundryTurn, FoundryMessage, FoundryEvent } from './agent';
 import { PlanViewProvider } from './views/planView';
@@ -24,6 +25,8 @@ import { CroweCodeActionProvider, CROWE_CODE_ACTION_KINDS } from './codeActions'
 import { registerStatusBar } from './statusBar';
 import { resolveFoundryPath, resolvePythonPath, pythonNotFoundMessage, clearPathCache } from './resolvePaths';
 import { CroweChatViewProvider } from './views/chatView';
+import { BrowserViewProvider } from './views/browserView';
+import { PortScanner } from './ports/portScanner';
 import { registerCroweLogicLanguageModel } from './lmProvider';
 
 const BRAND_THEME_DARK = 'Crowe Logic Dark';
@@ -49,6 +52,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const toolsView = new ToolsViewProvider();
 
     const chatView = new CroweChatViewProvider(context);
+    const browserView = new BrowserViewProvider(context.extensionUri);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('crowe-logic.plan', planView),
@@ -58,7 +62,9 @@ export async function activate(context: vscode.ExtensionContext) {
             chatView,
             { webviewOptions: { retainContextWhenHidden: true } },
         ),
+        vscode.window.registerWebviewViewProvider(BrowserViewProvider.VIEW_ID, browserView, { webviewOptions: { retainContextWhenHidden: true } }),
     );
+    setupBrowserPanel(context, browserView);
 
     const participant = vscode.chat.createChatParticipant(
         'crowe-logic.foundry',
@@ -81,8 +87,8 @@ export async function activate(context: vscode.ExtensionContext) {
     participant.followupProvider = {
         provideFollowups(_result, _context, _token) {
             return [
-                { prompt: 'Plan the next step', label: '📋 Plan next step', command: 'plan' },
-                { prompt: 'Run the current plan', label: '▶ Run plan', command: 'run' },
+                { prompt: 'Plan the next step', label: 'Plan next step', command: 'plan' },
+                { prompt: 'Run the current plan', label: 'Run plan', command: 'run' },
             ];
         }
     };
@@ -105,6 +111,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('crowe-logic.openCli', () => openCli(context)),
         vscode.commands.registerCommand('crowe-logic.openChatPanel', () => openChatPanel(context)),
         vscode.commands.registerCommand('crowe-logic.pickModel', () => pickModel()),
+        vscode.commands.registerCommand('crowe-logic.browser.open', () => browserView.focus()),
+        vscode.commands.registerCommand('crowe-logic.browser.refresh', () => browserView.refresh()),
         vscode.languages.registerCodeActionsProvider(
             { scheme: 'file' },
             new CroweCodeActionProvider(),
@@ -125,6 +133,7 @@ export async function activate(context: vscode.ExtensionContext) {
     await normalizeLegacyModelSelection();
     await applyConfiguredTheme();
     await maybeShowWelcome(context);
+    maybeAutoLaunchAgent(context);
 
     // Invalidate the resolver cache when the user edits pythonPath or foundryPath.
     context.subscriptions.push(
@@ -143,6 +152,32 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() { /* no-op */ }
+
+function setupBrowserPanel(context: vscode.ExtensionContext, browserView: BrowserViewProvider): void {
+    const cfg = () => vscode.workspace.getConfiguration('croweLogic');
+    const ignore = new Set<number>([8080, ...(cfg().get<number[]>('browser.ignorePorts', []) || [])]);
+    const intervalMs = Math.max(1, cfg().get<number>('browser.pollSeconds', 3)) * 1000;
+    const scanner = new PortScanner({ intervalMs, ignore });
+    context.subscriptions.push(
+        scanner,
+        scanner.onDidChange(({ ports, added }) => {
+            browserView.setPorts(ports);
+            if (added.length === 1 && cfg().get<boolean>('browser.autoOpen', true)) {
+                void browserView.previewPort(added[0]);
+            }
+        }),
+        vscode.commands.registerCommand('crowe-logic.browser.rescan', () => scanner.refresh()),
+    );
+    scanner.start();
+}
+
+function maybeAutoLaunchAgent(context: vscode.ExtensionContext): void {
+    const cfg = vscode.workspace.getConfiguration('croweLogic');
+    if (!cfg.get<boolean>('autoLaunchAgent', true)) return;
+    const inPod = process.platform === 'linux' && fs.existsSync('/workspace');
+    if (!inPod || vscode.window.terminals.length > 0) return;
+    void openCli(context);
+}
 
 async function normalizeLegacyModelSelection(): Promise<void> {
     const cfg = vscode.workspace.getConfiguration('croweLogic');
