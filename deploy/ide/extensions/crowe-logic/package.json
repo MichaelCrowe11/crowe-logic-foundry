@@ -11,7 +11,7 @@
     "directory": "deploy/ide/extensions/crowe-logic"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "AI",
@@ -415,7 +415,7 @@
           {
             "id": "sign-in",
             "title": "Sign in with your API token",
-            "description": "Run **Crowe Logic: Sign In** from the command palette and paste your `crowe_pat_…` token. The token is stored in the OS keychain and unlocks programmatic access to the AI platform.\n[Sign In](command:crowe-logic.signIn)",
+            "description": "Run **Crowe Logic: Sign In** from the command palette and paste your `crowe_pat_\u2026` token. The token is stored in the OS keychain and unlocks programmatic access to the AI platform.\n[Sign In](command:crowe-logic.signIn)",
             "media": {
               "image": "media/avatar-light.png",
               "altText": "Crowe Logic avatar"
