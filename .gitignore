@@ -46,3 +46,6 @@ data/training/
 # Local env backups (may contain live keys) — never commit
 .env*.bak*
 .env.env.bak-*
+
+# Local Claude Code tooling state (worktrees, session data)
+.claude/
