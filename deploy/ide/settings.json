@@ -5,7 +5,11 @@
   "editor.tabSize": 4,
   "editor.formatOnSave": true,
   "editor.minimap.enabled": false,
-  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": {
+    "Crowe Logic": { "path": "/usr/local/bin/crowe-agent", "icon": "sparkle", "overrideName": true },
+    "Diagnostics": { "path": "bash", "icon": "tools" }
+  },
+  "terminal.integrated.defaultProfile.linux": "Crowe Logic",
   "files.autoSave": "afterDelay",
   "files.autoSaveDelay": 1000,
   "python.defaultInterpreterPath": "/opt/venv/bin/python3",
