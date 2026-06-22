@@ -28,6 +28,15 @@ class PlanDenied(Exception):
     """Raised when the signed-in user's plan does not allow the requested model."""
 
 
+class GatewayError(Exception):
+    """Raised when the gateway returns an unhandled HTTP error."""
+
+    def __init__(self, status_code: int, detail: object):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(str(detail))
+
+
 class FreeTierCapped(Exception):
     """Raised on a structured 402 from the gateway (anonymous daily cap)."""
 
@@ -110,7 +119,13 @@ def chat(
             raise FreeTierCapped(resp.json().get("detail", {}))
         if resp.status_code == 401:
             raise auth.NotLoggedIn("Session expired. Run `crowe-logic login`.")
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            try:
+                payload = resp.json()
+                detail = payload.get("detail", payload)
+            except ValueError:
+                detail = resp.text
+            raise GatewayError(resp.status_code, detail)
         return resp.json()
 
     raise auth.NotLoggedIn("Authentication failed. Run `crowe-logic login`.")

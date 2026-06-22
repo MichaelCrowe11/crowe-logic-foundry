@@ -15,6 +15,7 @@ import os
 import secrets
 import subprocess
 import threading
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -240,6 +241,18 @@ def login_pkce(open_browser: bool = True) -> dict:
     auth_url = f"{ISSUER}/protocol/openid-connect/auth?" + urllib.parse.urlencode(
         params
     )
+
+    if not open_browser:
+        # Headless / container path: surface the URL so the caller can complete
+        # the flow from any browser they can reach. stderr keeps stdout clean.
+        print(
+            "\nOpen this URL in your browser to sign in to Crowe ID:\n"
+            f"  {auth_url}\n\n"
+            f"Waiting for callback on http://localhost:{REDIRECT_PORT}/callback "
+            f"(timeout: {_LOGIN_TIMEOUT}s)...",
+            file=sys.stderr,
+            flush=True,
+        )
 
     redirect_url = _capture_via_listener(auth_url, REDIRECT_PORT, open_browser)
     if not redirect_url:

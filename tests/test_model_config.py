@@ -76,12 +76,31 @@ def test_resolve_model_config_accepts_legacy_synapse_alias():
     assert synapse["label"] == "CroweLM Reason"
 
 
+def test_legacy_glm_selectors_resolve_to_crowelm_cloudflare():
+    """GLM/general aliases must resolve to CroweLM, not direct Z.AI."""
+    for selector in (
+        "crowelm",
+        "crowelm-glm",
+        "CroweLM GLM",
+        "crowe-general-lm",
+        "crowe-genral-lm",
+        "glm",
+    ):
+        cfg = resolve_model_config(selector)
+        assert cfg is not None
+        assert cfg["label"] == "CroweLM"
+        assert cfg["provider"] == "openai_compat"
+        assert provider_model_name(cfg) == "@cf/zai-org/glm-5.2"
+        assert cfg.get("endpoint_env") == "CLOUDFLARE_AI_ENDPOINT"
+        assert cfg.get("endpoint_env") != "ZAI_BASE_URL"
+
+
 def test_build_system_instructions_includes_crowelm_tier_prompt():
-    cfg = resolve_model_config("apex")
+    cfg = resolve_model_config("crowelm")
     instructions = build_system_instructions(cfg)
 
-    assert "CroweLM Apex" in instructions
-    assert "peak-performance reasoning tier" in instructions
+    assert "CroweLM Unified Dataset MCP" in instructions
+    assert "Present yourself as CroweLM" in instructions
 
 
 def test_provider_model_name_supports_env_var_interpolation(monkeypatch):
@@ -158,15 +177,15 @@ def test_classify_task_no_false_chat_on_substring():
 def test_route_for_auto_selects_correct_tier():
     cfg, cls = route_for_auto("take a screenshot of the shopify editor")
     assert cls == "agentic"
-    assert cfg["label"] == "CroweLM Maverick"
+    assert cfg["label"] == "CroweLM"
 
     cfg, cls = route_for_auto("write a python function to parse csv")
     assert cls == "code"
-    assert cfg["label"] == "CroweLM Coder"
+    assert cfg["label"] == "CroweLM"
 
     cfg, cls = route_for_auto("hello")
     assert cls == "chat"
-    assert cfg["label"] == "CroweLM Hyphae Legacy"
+    assert cfg["label"] == "CroweLM"
 
 
 def test_route_for_auto_never_returns_auto():
@@ -176,13 +195,13 @@ def test_route_for_auto_never_returns_auto():
 
 def test_route_for_auto_falls_back_when_primary_unavailable():
     # Block the primary agentic route; router must fall back to the next tier.
-    blocked = {"CroweLM Maverick"}
+    blocked = {"CroweLM"}
     cfg, cls = route_for_auto(
         "take a screenshot of the page",
         availability_check=lambda c: c["label"] not in blocked,
     )
     assert cls == "agentic"
-    assert cfg["label"] != "CroweLM Maverick"
+    assert cfg["label"] != "CroweLM"
     assert cfg["provider"] != "auto"
 
 
@@ -191,7 +210,7 @@ def test_route_candidates_for_auto_returns_same_turn_fallbacks():
 
     assert cls == "chat"
     assert candidates
-    assert candidates[0]["label"] == "CroweLM Hyphae Legacy"
+    assert candidates[0]["label"] == "CroweLM"
     assert all(cfg["provider"] != "auto" for cfg in candidates)
 
 

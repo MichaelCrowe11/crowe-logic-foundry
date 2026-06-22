@@ -38,6 +38,7 @@ CROWE_STREAM_ENABLED = os.environ.get("CROWE_STREAM_ENABLED", "").lower() in (
 # Model tier → plan minimum. Models not listed are enterprise-only.
 MODEL_PLAN_ACCESS = {
     # Personal tier
+    "crowelm": "personal",
     "gpt-5.4-nano": "personal",
     "Llama-3-3-70B": "personal",
     "FW-GLM-5": "personal",
@@ -66,6 +67,14 @@ MODEL_PLAN_ACCESS = {
 # appear in any value here. The routing ID stays unchanged so /chat and
 # /chat/stream keep dispatching to the right provider.
 MODEL_DISPLAY = {
+    "crowelm": {
+        "name": "CroweLM",
+        "description": "Main CroweLM runtime, enhanced by the CroweLM Unified Dataset MCP.",
+    },
+    "crowelm-mycelium": {
+        "name": "CroweLM Mycelium",
+        "description": "Cultivation-focused community tier gated behind a signed-in workspace.",
+    },
     "gpt-5.4-nano": {
         "name": "CroweLM Nano",
         "description": "Fastest and cheapest. Best for high-volume tasks.",

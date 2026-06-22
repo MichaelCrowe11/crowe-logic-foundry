@@ -65,6 +65,20 @@ def test_model_switch_error_allows_hosted_models_with_endpoint_only(monkeypatch)
     assert cli_mod._model_switch_error(cfg) is None
 
 
+def test_model_switch_error_requires_cloudflare_token_for_crowelm(monkeypatch):
+    monkeypatch.setenv(
+        "CLOUDFLARE_AI_ENDPOINT",
+        "https://api.cloudflare.com/client/v4/accounts/example/ai/v1",
+    )
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+
+    cfg = resolve_model_config("crowelm")
+    error = cli_mod._model_switch_error(cfg)
+
+    assert error is not None
+    assert "CLOUDFLARE_API_TOKEN" in error
+
+
 def test_kernel_uses_standard_azure_openai_triplet_when_core_missing(monkeypatch):
     from config.agent_config import azure_openai_runtime_config
 

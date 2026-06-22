@@ -52,3 +52,21 @@ def test_chat_402_raises_free_tier_capped(monkeypatch):
     with pytest.raises(gc.FreeTierCapped) as exc:
         gc.chat("crowelm-mycelium", [{"role": "user", "content": "hi"}], bearer="crowe_anon_x.y")
     assert exc.value.detail["code"] == "anon_daily_cap"
+
+
+def test_chat_unhandled_gateway_error_has_status_and_detail(monkeypatch):
+    import cli.gateway_client as gc
+
+    class FakeResp:
+        status_code = 400
+
+        def json(self):
+            return {"detail": {"code": "unknown_model", "message": "bad model"}}
+
+    monkeypatch.setattr(gc.httpx, "post", lambda *a, **kw: FakeResp())
+
+    with pytest.raises(gc.GatewayError) as exc:
+        gc.chat("crowelm", [{"role": "user", "content": "hi"}], bearer="crowe_anon_x.y")
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "unknown_model"

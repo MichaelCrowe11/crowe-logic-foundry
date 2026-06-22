@@ -63,17 +63,16 @@ AZURE_SORA_ENDPOINT = os.environ.get("AZURE_SORA_ENDPOINT", "")
 AZURE_SORA_API_KEY = os.environ.get("AZURE_SORA_API_KEY", "")
 AZURE_SORA_DEPLOYMENT_NAME = os.environ.get("AZURE_SORA_DEPLOYMENT_NAME", "sora-2")
 
-# ─── Azure AI Foundry: Resource 3995 (CroweLM GLM) ──────────────────────────
-# OpenAI-compatible endpoint with API-key auth. Hosts:
-#   FW-GLM-5       → "CroweLM Dense"  (legacy selectors: CroweLM GLM / glm)
+# Legacy Azure GLM resource. Direct Z.AI routing is intentionally not part of
+# the live chain. Generic GLM selectors resolve to CroweLM above.
 AZURE_GLM_ENDPOINT = os.environ.get("AZURE_GLM_ENDPOINT", "")
 AZURE_GLM_API_KEY = os.environ.get("AZURE_GLM_API_KEY", "")
 
-# ─── Azure ML Managed Online Endpoint: GLM 5.1 (CroweLM Dense v2) ────────────
+# Azure ML Managed Online Endpoint: GLM 5.1 legacy Dense tier.
 # Azure ML managed online endpoint serving THUDM/GLM-5.1 via vLLM.
 # The endpoint exposes an OpenAI-compatible /v1/ surface (score.py wraps vLLM).
 # Deploy with: python scripts/deploy_glm51.py
-#   FW-GLM-5.1     → "CroweLM Dense"  (upgraded, replaces FW-GLM-5 in the chain)
+#   FW-GLM-5.1     -> "CroweLM Dense 5.1"
 AZURE_GLM51_ENDPOINT = os.environ.get("AZURE_GLM51_ENDPOINT", "")
 AZURE_GLM51_API_KEY = os.environ.get("AZURE_GLM51_API_KEY", "")
 
@@ -179,6 +178,41 @@ _BASE_MODEL_CHAIN = [
         "prompt": (
             "You are CroweLM Auto, Crowe Logic's intelligent tier router. "
             "Route each turn to the best-fit CroweLM model under the hood."
+        ),
+    },
+    # Main CroweLM runtime. Public identity is CroweLM; infrastructure details
+    # stay internal unless explicitly requested.
+    {
+        "name": "crowelm",
+        "label": "CroweLM",
+        "type": "reasoning",
+        "provider": "openai_compat",
+        "backend_name": "@cf/zai-org/glm-5.2",
+        "endpoint_env": "CLOUDFLARE_AI_ENDPOINT",
+        "api_key_env": "CLOUDFLARE_API_TOKEN",
+        "aliases": [
+            "crowelm",
+            "crowe",
+            "crowelm-main",
+            "crowelm-core",
+            "crowelm-dense",
+            "crowelm-glm",
+            "crowe-general-lm",
+            "crowe-genral-lm",
+            "dense",
+            "glm",
+            "glm-5.2",
+            "CroweLM Dense",
+            "CroweLM GLM",
+            "Crowe General LM",
+            "Crowe Genral LM",
+        ],
+        "prompt": (
+            "You are CroweLM, Crowe Logic's main learning model. "
+            "Your runtime model is enhanced by the CroweLM Unified Dataset MCP, "
+            "which mounts Crowe's growing knowledge base, tools, and domain datasets "
+            "into the session. Present as CroweLM. Do not frame yourself around "
+            "runtime hosts unless the user explicitly asks how the runtime is hosted."
         ),
     },
     # ─── Tier 0: CroweLM Supreme — live Azure frontier (gpt-5.5) ──────────
@@ -554,22 +588,20 @@ _BASE_MODEL_CHAIN = [
     },
     {
         "name": "FW-GLM-5.1",
-        "label": "CroweLM Dense",
+        "label": "CroweLM Dense 5.1",
         "type": "reasoning",
         "provider": "ollama",
         "backend_name": "glm-5.1:cloud",
         "aliases": [
-            "dense",
-            "crowelm-dense",
-            "crowelm-glm",
-            "glm",
+            "dense-51",
+            "crowelm-dense-51",
+            "glm-5.1",
             "glm51",
-            "glm45",
-            "CroweLM GLM",
             "CroweLM Dense v2",
+            "CroweLM Dense 5.1",
         ],
         "prompt": (
-            "You are CroweLM Dense, Crowe Logic's flagship dense-reasoning frontier tier. "
+            "You are CroweLM Dense 5.1, Crowe Logic's legacy dense-reasoning tier. "
             "Prioritize meticulous decomposition, exact terminology, and dense information synthesis. "
             "Do not volunteer infrastructure or upstream model details."
         ),
@@ -1255,7 +1287,7 @@ NEON_API_KEY = os.environ.get("NEON_API_KEY", "")
 
 # Agent identity
 AGENT_NAME = "crowe-logic"
-AGENT_VERSION = "0.4.2"
+AGENT_VERSION = "0.5.1"
 
 SYSTEM_INSTRUCTIONS = """You are Crowe Logic, a universal AI agent created by Michael Crowe.
 
@@ -1613,34 +1645,37 @@ def build_system_instructions(
 # Maps a classified task class to the CroweLM label that handles it best.
 # Keys match labels exactly; resolve_model_config() does the lookup.
 TASK_CLASS_ROUTES: dict[str, str] = {
-    "agentic": "CroweLM Maverick",
-    "code": "CroweLM Coder",
-    "creative": "CroweLM Sovereign",
-    "research": "CroweLM Ultra",
-    "domain_qa": "CroweLM Prime",
-    "chat": "CroweLM Hyphae Legacy",
-    "default": "CroweLM Helio",
+    "agentic": "CroweLM",
+    "code": "CroweLM",
+    "creative": "CroweLM",
+    "research": "CroweLM",
+    "domain_qa": "CroweLM",
+    "chat": "CroweLM",
+    "default": "CroweLM",
 }
 
 # Task-class fallback chain — if the primary route is unavailable (missing
 # keys, blocked, etc.), try the next in order before dropping to default.
 TASK_CLASS_FALLBACKS: dict[str, list[str]] = {
-    "agentic": ["CroweLM Ultra", "CroweLM Helio", "CroweLM Helio Pro"],
-    "code": ["CroweLM Forge", "CroweLM Maverick", "CroweLM Helio"],
+    "agentic": ["CroweLM Maverick", "CroweLM Ultra", "CroweLM Helio", "CroweLM Helio Pro"],
+    "code": ["CroweLM Coder", "CroweLM Forge", "CroweLM Maverick", "CroweLM Helio"],
     "creative": [
-        "CroweLM Dense",
+        "CroweLM Sovereign",
+        "CroweLM Dense 5.1",
         "CroweLM Prime",
         "CroweLM Helio",
         "CroweLM Sovereign Premium",
     ],
     "research": [
+        "CroweLM Ultra",
         "CroweLM Cipher Legacy",
         "CroweLM Maverick",
         "CroweLM Frontier",
         "CroweLM Helio",
     ],
-    "domain_qa": ["CroweLM Sovereign", "CroweLM Hyphae Legacy", "CroweLM Helio"],
+    "domain_qa": ["CroweLM Prime", "CroweLM Sovereign", "CroweLM Hyphae Legacy", "CroweLM Helio"],
     "chat": [
+        "CroweLM Hyphae Legacy",
         "CroweLM Cinder",
         "CroweLM Swift Raw",
         "CroweLM Lite",
@@ -1648,8 +1683,9 @@ TASK_CLASS_FALLBACKS: dict[str, list[str]] = {
         "CroweLM Helio",
     ],
     "default": [
+        "CroweLM Helio",
         "CroweLM Helio Pro",
-        "CroweLM Dense",
+        "CroweLM Dense 5.1",
         "CroweLM Cipher Legacy",
         "CroweLM Hyphae Legacy",
     ],

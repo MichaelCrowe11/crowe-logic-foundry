@@ -18,13 +18,14 @@ def test_anon_cap_constant():
     assert plans.ANON_DAILY_TURN_CAP == 20
 
 
-def test_mycelium_resolves_and_is_anon_accessible():
+def test_crowelm_is_paid_and_mycelium_is_anon_accessible():
     from config.agent_config import resolve_model_config
     from control_plane.gateway import MODEL_PLAN_ACCESS
 
-    cfg = resolve_model_config("crowelm-mycelium")
+    cfg = resolve_model_config("crowelm")
     assert cfg is not None
-    assert cfg["api_key_env"] == "CROWELM_MYCELIUM_API_KEY"
+    assert cfg["api_key_env"] == "CLOUDFLARE_API_TOKEN"
+    assert MODEL_PLAN_ACCESS["crowelm"] == "personal"
     assert MODEL_PLAN_ACCESS["crowelm-mycelium"] == plans.ANON_PLAN_ID
 
 
@@ -193,6 +194,17 @@ def test_anon_cannot_reach_paid_models():
     from control_plane import gateway
 
     req = gateway.GatewayRequest(model="gpt-5.5", messages=[{"role": "user", "content": "hi"}])
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(gateway.gateway_chat(req, key_info=_anon_key_info(), db=FakeDb()))
+    assert exc.value.status_code == 403
+
+
+def test_anon_cannot_reach_paid_crowelm():
+    import asyncio
+    from fastapi import HTTPException
+    from control_plane import gateway
+
+    req = gateway.GatewayRequest(model="crowelm", messages=[{"role": "user", "content": "hi"}])
     with pytest.raises(HTTPException) as exc:
         asyncio.run(gateway.gateway_chat(req, key_info=_anon_key_info(), db=FakeDb()))
     assert exc.value.status_code == 403
