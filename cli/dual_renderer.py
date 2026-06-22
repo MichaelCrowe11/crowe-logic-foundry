@@ -26,8 +26,15 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
-from cli.branding import GOLD_HEX, GOLD_DIM_HEX, DOT, GUTTER, thinking_spinner
+from cli.branding import GOLD_HEX, GOLD_DIM_HEX, DOT, GUTTER, MARK, thinking_spinner
 from cli.queue_renderer import PaneEvent
+
+# Pause the iTerm2 cursor-color pulse while the dual Live widget is active
+# to prevent OSC 12 escape sequences from leaking into the rendered output.
+try:
+    from iterm import pause_cursor_pulse, resume_cursor_pulse
+except ImportError:
+    pause_cursor_pulse = resume_cursor_pulse = lambda *a, **kw: None
 
 
 _FRAME_FPS = 20
@@ -50,6 +57,7 @@ class _PaneState:
     finished: bool = False
     dirty: bool = True
     error: str | None = None
+    delivered_at: float = 0.0  # monotonic timestamp when pane finished (for pulse)
 
 
 class DualPaneRenderer:
@@ -101,6 +109,7 @@ class DualPaneRenderer:
         self._t_start = time.monotonic()
         # Render an initial frame so the panels appear immediately.
         self._refresh_layout(force=True)
+        pause_cursor_pulse()
         self._live = Live(
             self._layout,
             console=self.console,
@@ -138,6 +147,7 @@ class DualPaneRenderer:
         if self._live is not None:
             self._live.stop()
             self._live = None
+            resume_cursor_pulse()
         self._print_final_transcripts()
 
     def transcripts(self) -> dict[str, dict[str, str]]:
@@ -214,6 +224,7 @@ class DualPaneRenderer:
             pane.status = "done"
             pane.finished = True
             pane.spinner_label = None
+            pane.delivered_at = time.monotonic()
             if isinstance(ev.payload, dict):
                 pane.tokens = ev.payload.get("tokens", pane.tokens)
                 pane.reasoning_tokens = ev.payload.get(
@@ -248,11 +259,21 @@ class DualPaneRenderer:
         return root
 
     def _any_dirty(self) -> bool:
-        return any(p.dirty for p in self._panes.values())
+        # Also keep refreshing if any pane has an active delivered pulse.
+        now = time.monotonic()
+        for p in self._panes.values():
+            if p.dirty:
+                return True
+            if p.delivered_at > 0 and (now - p.delivered_at) < 1.2:
+                return True
+        return False
 
     def _refresh_layout(self, force: bool = False) -> None:
+        now = time.monotonic()
         for pane_id, pane in self._panes.items():
-            if pane.dirty or force:
+            # Force-refresh panes with an active delivered pulse.
+            pulse_active = pane.delivered_at > 0 and (now - pane.delivered_at) < 1.2
+            if pane.dirty or force or pulse_active:
                 self._layout[pane_id].update(self._render_pane(pane))
                 pane.dirty = False
         if self._live is not None:
@@ -276,6 +297,19 @@ class DualPaneRenderer:
 
     def _pane_title(self, pane: _PaneState) -> Text:
         title = Text()
+        # Delivered pulse: for ~1.2s after a pane finishes, show a pulsing ◆
+        # that fades from warm-white to gold, matching the deepparallel
+        # convergence result delivery aesthetic.
+        if pane.delivered_at > 0:
+            elapsed = time.monotonic() - pane.delivered_at
+            if elapsed < 1.2:
+                pulse_t = elapsed / 1.2
+                # Pulse: bright at start, settling to gold
+                from cli.branding import _lerp_hex
+
+                pulse_color = _lerp_hex("#fff0c8", GOLD_HEX, pulse_t)
+                title.append(f"{MARK} ", style=f"bold {pulse_color}")
+
         title.append(pane.model_label, style=f"bold {GOLD_HEX}")
         meta = self._pane_meta(pane)
         if meta:

@@ -62,11 +62,19 @@ from cli.session_runtime import (
 )
 from config.agent_config import AGENT_VERSION, MODEL_CHAIN
 from config.telemetry import telemetry
-from iterm import iterm_set_var, install_iterm, uninstall_iterm, iterm_status
+from iterm import (
+    apply_terminal_chrome,
+    iterm_set_var,
+    install_iterm,
+    uninstall_iterm,
+    iterm_status,
+    stop_cursor_pulse,
+)
 
 console = Console()
 AGENT_ID_FILE = os.path.join(PROJECT_ROOT, ".agent_id")
 _PROVIDER_HEALTH_TTL_SECONDS = 600
+_TRUTHY_ENV = {"1", "true", "yes", "on"}
 
 # Smart routing state — tracks current model position in the chain
 _model_state = {
@@ -107,6 +115,27 @@ def _resolve_auto_to_concrete(model_cfg: dict) -> dict:
 
 def _provider_health_path() -> Path:
     return Path.home() / ".crowe-logic" / "runtime" / "provider_health.json"
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _TRUTHY_ENV
+
+
+def _uses_local_operator_runtime(model_cfg: dict) -> bool:
+    """Return True for models the operator CLI should run locally by default.
+
+    The deployed Crowe gateway does not yet know the new `crowelm` route.
+    Probing it first adds a visible 400 and a long detour on every local turn.
+    Keep the paid gateway as the production surface, but let the local operator
+    CLI use the configured Cloudflare-backed CroweLM runtime directly unless a
+    caller explicitly forces gateway routing.
+    """
+    if _env_truthy("CROWE_LOGIC_FORCE_GATEWAY"):
+        return False
+    return model_cfg.get("name") == "crowelm" or (
+        model_cfg.get("endpoint_env") == "CLOUDFLARE_AI_ENDPOINT"
+        and model_cfg.get("provider") == "openai_compat"
+    )
 
 
 def _load_provider_health() -> dict:
@@ -1186,7 +1215,8 @@ def _gateway_chat(label: str = "thinking...", **kwargs) -> dict:
     the backend reasons before it answers (and Modal may cold-start), so an
     unwrapped call freezes the terminal for many seconds. Same transient
     Live + thinking_spinner treatment the streaming renderer uses; gateway
-    exceptions (FreeTierCapped, PlanDenied, NotLoggedIn) propagate unchanged.
+    exceptions (FreeTierCapped, PlanDenied, GatewayError, NotLoggedIn)
+    propagate unchanged.
 
     The animation runs only on an interactive terminal. When stdout is piped
     or redirected a spinner is pointless, and rich's Live (which proxies
@@ -1613,6 +1643,7 @@ def chat(autonomy: str = "full"):
     """Start an interactive chat session with the agent."""
     import uuid
 
+    apply_terminal_chrome()
     # Session-wide tool autonomy; change mid-session with /autonomy <level>.
     _set_autonomy(autonomy)
     from prompt_toolkit import PromptSession
@@ -1688,6 +1719,7 @@ def chat(autonomy: str = "full"):
             user_input = session.prompt(prompt_html, multiline=False)
         except (EOFError, KeyboardInterrupt):
             iterm_set_var("crowe_logic_active", "0")
+            stop_cursor_pulse()
             orch.end_session(summary="Session ended by user")
             console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -1697,6 +1729,7 @@ def chat(autonomy: str = "full"):
             continue
         if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
             iterm_set_var("crowe_logic_active", "0")
+            stop_cursor_pulse()
             orch.end_session(summary="Session ended by user")
             console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -1903,11 +1936,7 @@ def chat(autonomy: str = "full"):
             # keys, no cascade). Mirrors run(); Auto has already resolved a
             # concrete tier above, so the gateway gets a real model id.
             # CROWE_LOGIC_LOCAL=1 is the escape hatch back to local keys. ──
-            use_local = os.environ.get("CROWE_LOGIC_LOCAL", "").strip().lower() in (
-                "1",
-                "true",
-                "yes",
-            )
+            use_local = _env_truthy("CROWE_LOGIC_LOCAL") or _uses_local_operator_runtime(model_cfg)
             if not use_local:
                 from cli import auth, gateway_client
 
@@ -1940,6 +1969,14 @@ def chat(autonomy: str = "full"):
                     except gateway_client.PlanDenied as exc:
                         _render_error(str(exc), "Plan does not allow this model")
                         continue
+                    except gateway_client.GatewayError as exc:
+                        routed = False
+                        if not session_state.get("_gateway_error_hinted"):
+                            console.print(
+                                f"  [dim]Crowe gateway returned {exc.status_code}; "
+                                "using local runtime. Deploy/restart the gateway to make this live.[/dim]"
+                            )
+                            session_state["_gateway_error_hinted"] = True
                     except auth.NotLoggedIn:
                         routed = False  # token died mid-call; fall through to local
                     if routed:
@@ -2603,9 +2640,12 @@ def _model_switch_error(model_cfg: dict) -> str | None:
 
     if provider == "openai_compat":
         endpoint_var = model_cfg.get("endpoint_env", "CROWE_OPEN_ENDPOINT")
+        api_key_var = model_cfg.get("api_key_env", "CROWE_OPEN_API_KEY")
         endpoint_val = os.environ.get(endpoint_var, "").strip()
         if not endpoint_val:
             return f"Cannot switch to {label} — missing {endpoint_var} in .env"
+        if endpoint_var == "CLOUDFLARE_AI_ENDPOINT" and not os.environ.get(api_key_var, "").strip():
+            return f"Cannot switch to {label}: missing {api_key_var} in .env"
         # OpenRouter has been retired in favor of NVIDIA NIM + IBM watsonx.
         # Block any openai_compat model still pointed at openrouter.ai so the
         # auto-router skips it instead of producing 402 credit errors.
@@ -2934,12 +2974,23 @@ def route(prompt: str, as_json: bool):
 
 
 @main.command(name="login")
-def login_cmd():
-    """Sign in to Crowe ID in the browser (PKCE)."""
+@click.option(
+    "--no-browser",
+    "no_browser",
+    is_flag=True,
+    default=False,
+    help="Don't open a browser; print the auth URL for manual completion.",
+)
+def login_cmd(no_browser: bool):
+    """Sign in to Crowe ID in the browser (PKCE).
+
+    With ``--no-browser``, prints the auth URL to stderr instead of
+    opening a browser. Use for headless contexts (containers, ssh, CI).
+    """
     from cli import auth
 
     try:
-        who = auth.login_pkce()
+        who = auth.login_pkce(open_browser=not no_browser)
     except Exception as exc:  # surface any sign-in failure as a clean exit
         console.print(f"  [#bf6f6f]Sign-in failed:[/] {exc}")
         raise SystemExit(1)
@@ -3261,6 +3312,7 @@ def run(prompt: str, autonomy: str = "full"):
     """Run a single prompt and print the response."""
     from cli.first_run import ensure_first_run
 
+    apply_terminal_chrome()
     if not ensure_first_run(console, session_state=session_state):
         return
     _set_autonomy(autonomy)
@@ -3358,11 +3410,7 @@ def run(prompt: str, autonomy: str = "full"):
     # cascade). The gateway holds every provider key server-side and owns
     # fallback, so a missing local key can never trigger the tier cascade.
     # CROWE_LOGIC_LOCAL=1 is the explicit escape hatch back to local keys. ──
-    use_local = os.environ.get("CROWE_LOGIC_LOCAL", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    use_local = _env_truthy("CROWE_LOGIC_LOCAL") or _uses_local_operator_runtime(model_cfg)
     if not use_local:
         from cli import auth, gateway_client
 
@@ -3389,6 +3437,12 @@ def run(prompt: str, autonomy: str = "full"):
             except gateway_client.PlanDenied as exc:
                 console.print(f"  [#bf6f6f]Plan does not allow this model:[/] {exc}")
                 return
+            except gateway_client.GatewayError as exc:
+                routed = False
+                console.print(
+                    f"  [dim]Crowe gateway returned {exc.status_code}; "
+                    "using local runtime. Deploy/restart the gateway to make this live.[/dim]"
+                )
             except auth.NotLoggedIn:
                 routed = False  # token died mid-call; fall through to local
             if routed:
@@ -4471,6 +4525,7 @@ def resume():
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.formatted_text import HTML
 
+    apply_terminal_chrome()
     orch = _get_orchestrator()
     sessions = orch.get_history(limit=1)
     if not sessions:
@@ -4535,6 +4590,7 @@ def resume():
             user_input = session.prompt(prompt_html, multiline=False)
         except (EOFError, KeyboardInterrupt):
             iterm_set_var("crowe_logic_active", "0")
+            stop_cursor_pulse()
             orch.end_session(summary="Resumed session ended by user")
             console.print("\n  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break
@@ -4543,6 +4599,7 @@ def resume():
             continue
         if user_input.lower() in ("exit", "quit", "/exit", "/quit"):
             iterm_set_var("crowe_logic_active", "0")
+            stop_cursor_pulse()
             orch.end_session(summary="Resumed session ended by user")
             console.print("  [bold #bfa669]Goodbye.[/bold #bfa669]\n")
             break

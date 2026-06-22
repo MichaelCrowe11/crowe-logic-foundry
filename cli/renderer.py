@@ -21,11 +21,24 @@ from cli.branding import (
     GUTTER,
     GOLD_HEX as GOLD,
     GOLD_DIM_HEX as DIM_GOLD,
+    MARK,
     build_reasoning_panel,
     build_transcript_markdown,
     thinking_spinner,
 )
 from cli.session_runtime import update_session_runtime
+
+# Cursor-pulse coordination: the iTerm2 cursor-color pulse thread writes
+# OSC 12 escape sequences to stdout on a 0.8s timer. If those writes land
+# while a Rich Live widget is mid-redraw, Rich's output capture strips the
+# ESC byte and the user sees raw ``]12;#bb9c62`` text in the response area.
+# We pause the pulse around every Live widget lifecycle to eliminate the
+# race. The functions are no-ops when the pulse isn't running (non-iTerm2
+# terminals, chrome disabled, etc.).
+try:
+    from iterm import pause_cursor_pulse, resume_cursor_pulse
+except ImportError:
+    pause_cursor_pulse = resume_cursor_pulse = lambda *a, **kw: None
 
 # Refresh rate for live displays (frames per second).
 #
@@ -43,6 +56,27 @@ _REASONING_FPS = 8
 _COMPACT_REASONING_LABELS = {"CroweLM Apex", "CroweLM Titan"}
 _COMPACT_REASONING_MAX_CHARS = 420
 _COMPACT_REASONING_LIVE_CHARS = 240
+_TRUTHY = {"1", "true", "yes", "on", "show", "debug", "full"}
+
+
+def _env_show_reasoning() -> bool:
+    """Return whether reasoning panels should be visible in normal CLI output."""
+    value = (
+        os.environ.get("CROWE_LOGIC_SHOW_REASONING")
+        or os.environ.get("CROWELM_SHOW_REASONING")
+        or ""
+    )
+    return value.strip().lower() in _TRUTHY
+
+
+def _env_show_streaming() -> bool:
+    """Return whether live answer panels should be visible before final output."""
+    value = (
+        os.environ.get("CROWE_LOGIC_SHOW_STREAMING")
+        or os.environ.get("CROWELM_SHOW_STREAMING")
+        or ""
+    )
+    return value.strip().lower() in _TRUTHY
 
 
 def _format_duration(ms: float) -> str:
@@ -80,10 +114,20 @@ class StreamRenderer:
         renderer.finish()            # renders telemetry footer
     """
 
-    def __init__(self, console, model_label: str, favicon: str = ""):
+    def __init__(
+        self,
+        console,
+        model_label: str,
+        favicon: str = "",
+        *,
+        show_reasoning: bool | None = None,
+        show_streaming: bool | None = None,
+    ):
         self.console = console
         self.model_label = model_label
         self.favicon = favicon
+        self.show_reasoning = _env_show_reasoning() if show_reasoning is None else show_reasoning
+        self.show_streaming = _env_show_streaming() if show_streaming is None else show_streaming
 
         # Segmented text state — a "segment" is one streaming pass between
         # tool calls. We clear _text_chunks at the start of each segment so
@@ -185,10 +229,23 @@ class StreamRenderer:
         self._text_chunks = []
         self._show_header()
 
+        # Convergence flash: a brief visual cue marking the transition from
+        # deep parallel thinking to streaming output. Only shown on the first
+        # segment of a response (when TTFT is first recorded), not on
+        # subsequent tool-call rounds. Skipped in non-interactive contexts.
+        if self._t_first_token == 0.0 and sys.stdout.isatty():
+            self._convergence_flash()
+
+        if not self.show_streaming:
+            self._md_live = None
+            self._last_md_update = 0.0
+            return
+
         # Keep the live widget transient so scrollback only contains the
         # finalized panel, not intermediate redraw frames. During the live
         # phase we can safely crop to the viewport; _stop_md_live() prints the
         # full final panel once streaming ends.
+        pause_cursor_pulse()
         self._md_live = Live(
             self._build_answer_panel("", live=True),
             console=self.console,
@@ -248,6 +305,13 @@ class StreamRenderer:
         Markdown/Text rendering is expensive and the Live widget only ticks
         at refresh_per_second anyway, so faster updates are pure waste.
         """
+        self._reasoning_chunks.append(token)
+        self._full_reasoning_chunks.append(token)
+        self._reasoning_token_count += 1
+
+        if not self.show_reasoning:
+            return
+
         # Start a live reasoning panel if we're not yet streaming content
         # for this segment and no panel is active.
         if self._reasoning_live is None and not self._streaming:
@@ -256,6 +320,7 @@ class StreamRenderer:
             # A transient live panel prevents repeated reasoning redraw frames
             # from being left behind in scrollback. We print one finalized
             # "captured" panel when the reasoning phase ends.
+            pause_cursor_pulse()
             self._reasoning_live = Live(
                 self._build_reasoning_panel("", live=True),
                 console=self.console,
@@ -265,10 +330,6 @@ class StreamRenderer:
             )
             self._reasoning_live.start()
             self._last_reason_update = 0.0
-
-        self._reasoning_chunks.append(token)
-        self._full_reasoning_chunks.append(token)
-        self._reasoning_token_count += 1
 
         if self._reasoning_live is not None:
             now = time.monotonic()
@@ -367,7 +428,7 @@ class StreamRenderer:
         if ttft > 0:
             parts.append(f"TTFT {_format_duration(ttft * 1000)}")
         parts.append(f"total {_format_duration(elapsed * 1000)}")
-        if self._reasoning_token_count > 0:
+        if self.show_reasoning and self._reasoning_token_count > 0:
             parts.append(f"{self._reasoning_token_count} reasoning")
 
         footer = Text()
@@ -417,6 +478,84 @@ class StreamRenderer:
 
     # ── Internal ──────────────────────────────────────────────
 
+    def _convergence_flash(self):
+        """Brief convergence flash marking the thinking-to-streaming transition.
+
+        Prints a single line where ◆ marks sweep from left to right, then a
+        result ◆ travels back — matching the deepparallel spinner's convergence
+        aesthetic. Uses a transient Live so it disappears without leaving
+        scrollback. Only fires once per response (first segment).
+        """
+        try:
+            from rich.align import Align
+            from rich.text import Text
+        except ImportError:
+            return
+
+        lanes = 16
+        crest = "#bfa669"
+        flash = "#fff0c8"
+        gutter = " " * GUTTER
+        sweep_frames = 10
+        deliver_frames = 7
+
+        flash_text = Text()
+        pause_cursor_pulse()
+        live = Live(
+            flash_text,
+            console=self.console,
+            refresh_per_second=30,
+            transient=True,
+            vertical_overflow="crop",
+        )
+        live.start()
+        try:
+            # Sweep phase: ◆ marks propagate left-to-right
+            for f in range(sweep_frames):
+                pos = (f / sweep_frames) * lanes
+                t = Text()
+                t.append(gutter)
+                for i in range(lanes):
+                    d = abs(i - pos)
+                    if d < 1.5:
+                        intensity = 1.0 - d / 1.5
+                        from cli.branding import _lerp_hex
+
+                        color = _lerp_hex(crest, flash, intensity * 0.8)
+                        t.append(MARK, style=f"bold {color}")
+                    else:
+                        t.append(" ", style="dim")
+                    t.append(" ")
+                live.update(t)
+                time.sleep(0.025)
+
+            # Deliver phase: single ◆ travels right-to-left
+            for f in range(deliver_frames):
+                pos = lanes - (f / deliver_frames) * lanes
+                t = Text()
+                t.append(gutter)
+                for i in range(lanes):
+                    d = abs(i - pos)
+                    if d < 0.6:
+                        from cli.branding import _lerp_hex
+
+                        color = _lerp_hex(crest, flash, 0.9)
+                        t.append(MARK, style=f"bold {color}")
+                    elif d < 1.5:
+                        from cli.branding import _lerp_hex
+
+                        trail = 1.0 - (d - 0.6) / 0.9
+                        color = _lerp_hex(crest, flash, trail * 0.3)
+                        t.append("·", style=color)
+                    else:
+                        t.append(" ", style="dim")
+                    t.append(" ")
+                live.update(t)
+                time.sleep(0.025)
+        finally:
+            live.stop()
+            resume_cursor_pulse()
+
     def _build_answer_panel(self, text: str, *, live: bool) -> object:
         """Build the live/final answer renderable."""
         meta = "streaming" if live else "final"
@@ -430,6 +569,7 @@ class StreamRenderer:
     def _start_spinner(self, label: str):
         self._stop_spinner()
         self._spinner = thinking_spinner(label)
+        pause_cursor_pulse()
         self._spin_live = Live(
             self._spinner, console=self.console, refresh_per_second=12, transient=True
         )
@@ -505,6 +645,7 @@ class StreamRenderer:
             self._spin_live.stop()
             self._spin_live = None
             self._spinner = None
+            resume_cursor_pulse()
 
     def _stop_md_live(self):
         """Stop the markdown Live and clear the segment buffer.
@@ -514,12 +655,13 @@ class StreamRenderer:
         series of redraw frames. Callers must read current_segment_text BEFORE
         calling this.
         """
+        full = "".join(self._text_chunks)
         if self._md_live:
-            full = "".join(self._text_chunks)
             self._md_live.stop()
             self._md_live = None
-            if full.strip():
-                self.console.print(self._build_answer_panel(full, live=False))
+            resume_cursor_pulse()
+        if full.strip():
+            self.console.print(self._build_answer_panel(full, live=False))
         # Reset unconditionally so _streaming and _text_chunks stay in sync
         # with the widget state even across idempotent calls.
         self._text_chunks = []
@@ -538,7 +680,8 @@ class StreamRenderer:
             full = "".join(self._reasoning_chunks).strip()
             self._reasoning_live.stop()
             self._reasoning_live = None
-            if full:
+            resume_cursor_pulse()
+            if full and self.show_reasoning:
                 self.console.print(self._build_reasoning_panel(full, live=False))
             self._reasoning_chunks = []
             self._last_reason_update = 0.0
@@ -556,7 +699,7 @@ class StreamRenderer:
             return
         text = "".join(self._reasoning_chunks).strip()
         self._reasoning_chunks = []
-        if not text:
+        if not text or not self.show_reasoning:
             return
         self.console.print()
         self.console.print(self._build_reasoning_panel(text, live=False))
