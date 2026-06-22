@@ -41,6 +41,7 @@ __all__ = [
     "WordmarkReelsSpinner",
     "GlyphCascadeSpinner",
     "HybridWaveReelSpinner",
+    "DeepParallelSpinner",
     "REGISTRY",
     "STYLES",
     "get_spinner",
@@ -491,12 +492,365 @@ class HybridWaveReelSpinner:
         return self.frame(_time.monotonic())
 
 
+class DeepParallelSpinner:
+    """Crowe Logic 'working' animation: multiple parallel reasoning streams
+    processing at different depths simultaneously. Each lane is an independent
+    reasoning thread whose depth oscillates at its own frequency — some streams
+    run shallow and fast, others dive deep and slow. Periodically a convergence
+    wave sweeps across the field, collects all streams, and fires a result
+    pulse (a traveling ◆) back across, then they desync into independent
+    processing again.
+
+    Enhancements over a simple depth field:
+
+    1. **Depth-tiered glyphs** — dormant streams show ``·``, shallow show thin
+       bars ``▏▎▍``, mid show ``▋▊▉``, deep show ``█▇``, peak shows ``◆``.
+       Depth is readable by *shape*, not just brightness.
+    2. **Color temperature by depth** — deep = warm drifting crest, mid = bronze,
+       shallow = cool dim, dormant = near-black. Depth reads as color.
+    3. **Stream dormancy cycling** — lanes periodically go dormant (``·``) and
+       reactivate with a warming ramp, showing dynamic parallelism.
+    4. **Neural firing spikes** — deterministic per-lane brightness bursts where
+       a stream briefly jumps to ``◆`` with a warm-white flash, like a neuron
+       firing mid-computation.
+    5. **Cross-stream resonance** — when adjacent streams are both at peak depth,
+       a connector glyph ``─`` appears between them, showing information flow
+       between parallel threads.
+    6. **Convergence with result delivery** — the wave doesn't just flash. It
+       sweeps left-to-right (collect), all streams flash at the leading edge,
+       then a result ``◆`` travels right-to-left (deliver) leaving a brief trail.
+
+    Pure + time-driven: the same ``now`` always yields the same Text, safe under
+    single-pane Live or rebuilt-every-frame layouts, legible at 4 fps and 24 fps.
+    """
+
+    # Depth-tiered glyph ladders — shape communicates depth, not just brightness.
+    _DORMANT_GLYPH = "·"
+    _SHALLOW_GLYPHS = "▏▎▍▌"        # thin vertical bars — surface processing
+    _MID_GLYPHS = "▋▊▉"             # medium blocks — active mid-level work
+    _DEEP_GLYPHS = "█▇▆"            # heavy blocks — deep computation
+    _PEAK_GLYPH = "◆"              # breakthrough — the Crowe mark at peak
+
+    # Color temperature stops — depth reads as color, not just brightness.
+    _DORMANT_COLOR = "#1a1610"      # near-black — stream is sleeping
+    _SHALLOW_COLOR = "#3a3528"      # cool dim bronze — surface level
+    _MID_COLOR = "#6f5f38"          # warm bronze — active processing
+    # Deep uses the live crest hue (drifting gold)
+    _PEAK_FLASH = "#fff0c8"         # warm-white — neural fire / convergence flash
+
+    # Resonance connector between adjacent peak streams.
+    _RESONANCE_GLYPH = "─"
+    _RESONANCE_THRESHOLD = 0.72     # both lanes must be above this to link
+
+    # Dormancy cycle tuning.
+    _DORMANT_PERIOD = 5.8           # seconds per full dormancy cycle per lane
+    _DORMANT_FRAC = 0.18            # fraction of cycle spent dormant
+    _WARMUP_FRAC = 0.08             # fraction of cycle spent warming back up
+
+    # Neural firing tuning.
+    _FIRE_PERIOD = 3.7              # seconds between firing opportunities per lane
+    _FIRE_WINDOW = 0.12             # fraction of fire period spent spiking
+    _FIRE_THRESHOLD = 0.55          # lane must be at least this deep to fire
+
+    def __init__(
+        self,
+        label: str = "thinking",
+        *,
+        rows: int = 3,
+        lanes: int = 16,
+        depth_speed: float = 1.8,
+        depth_spread: float = 0.38,
+        row_phase: float = 0.85,
+        hue_speed: float = 0.35,
+        converge_period: float = 3.2,
+        converge_width: float = 3.0,
+        converge_travel: float = 9.0,
+        deep_ratio: float = 0.65,
+        **kw,
+    ):
+        self.label = label
+        self._rows = max(1, rows)
+        self._lanes = max(1, lanes)
+        self._depth_speed = depth_speed
+        self._depth_spread = depth_spread
+        self._row_phase = row_phase
+        self._hue_speed = hue_speed
+        self._converge_period = max(0.5, converge_period)
+        self._converge_width = converge_width
+        self._converge_travel = converge_travel
+        self._deep_ratio = deep_ratio
+
+    @staticmethod
+    def _hash(a: int, b: int) -> int:
+        """Deterministic int hash for per-lane variation (frequencies, dormancy, firing)."""
+        h = (a * 73856093) ^ (b * 19349663)
+        return h & 0x7FFFFFFF
+
+    # -- depth computation -----------------------------------------------------
+
+    def _lane_depth(self, now: float, i: int, r: int) -> float:
+        """Depth of lane (i, r) at time *now* in 0..1.
+
+        Deep lanes use a slow sine; shallow lanes use a fast one. Each lane has
+        a deterministic frequency multiplier so streams visibly process at
+        different rates.
+        """
+        seed = self._hash(i + 7, r + 3) % 100
+        is_deep = (seed / 100.0) < self._deep_ratio
+        if is_deep:
+            freq = self._depth_speed * (0.6 + (seed % 40) / 100.0)
+        else:
+            freq = self._depth_speed * (1.8 + (seed % 60) / 100.0)
+        return (math.sin(now * freq - i * self._depth_spread - r * self._row_phase) + 1) / 2
+
+    # -- dormancy cycling ------------------------------------------------------
+
+    def _dormancy(self, now: float, i: int, r: int) -> float:
+        """Dormancy factor for lane (i, r) at time *now*: 0.0 = fully active,
+        1.0 = fully dormant, with a smooth warmup ramp in between.
+
+        Each lane's dormancy cycle is offset by a deterministic per-lane seed so
+        only some streams are dormant at any given time — dynamic parallelism.
+        """
+        seed = (self._hash(i + 11, r + 7) % 1000) / 1000.0
+        cycle_t = ((now / self._DORMANT_PERIOD) + seed) % 1.0
+        if cycle_t < self._DORMANT_FRAC:
+            # Fully dormant
+            return 1.0
+        elif cycle_t < self._DORMANT_FRAC + self._WARMUP_FRAC:
+            # Warming back up — smooth ramp from dormant to active
+            warmup_t = (cycle_t - self._DORMANT_FRAC) / self._WARMUP_FRAC
+            return 1.0 - warmup_t
+        return 0.0
+
+    # -- neural firing spikes --------------------------------------------------
+
+    def _firing(self, now: float, i: int, r: int, depth: float) -> float:
+        """Firing intensity for lane (i, r) at time *now*: 0.0 = not firing,
+        1.0 = peak flash. Only fires when the lane is already moderately deep.
+
+        Uses a deterministic per-lane seed so firing events are scattered across
+        the field — reads as individual neurons firing independently.
+        """
+        if depth < self._FIRE_THRESHOLD:
+            return 0.0
+        seed = (self._hash(i + 23, r + 19) % 1000) / 1000.0
+        cycle_t = ((now / self._FIRE_PERIOD) + seed) % 1.0
+        if cycle_t < self._FIRE_WINDOW:
+            # Firing spike: quick ramp up, quick fade
+            fire_t = cycle_t / self._FIRE_WINDOW
+            if fire_t < 0.3:
+                return fire_t / 0.3
+            return 1.0 - (fire_t - 0.3) / 0.7
+        return 0.0
+
+    # -- convergence with result delivery --------------------------------------
+
+    def _convergence(self, now: float) -> tuple[str, float, float]:
+        """Convergence state: (phase, intensity 0..1, position in cols).
+
+        Phases:
+          ``idle``    — no convergence active, streams are independent.
+          ``sweep``   — wave travels left-to-right, collecting streams.
+          ``deliver`` — result ◆ travels right-to-left, leaving a trail.
+        """
+        cycle = (now % self._converge_period) / self._converge_period
+        sweep_duration = self._lanes / self._converge_travel
+        sweep_frac = sweep_duration / self._converge_period
+        deliver_frac = min(sweep_frac * 0.5, 1.0 - sweep_frac)
+
+        if cycle < sweep_frac:
+            # SWEEP phase: left-to-right collection
+            progress = cycle / sweep_frac
+            if progress < 0.12:
+                intensity = progress / 0.12
+            elif progress > 0.92:
+                intensity = (1.0 - progress) / 0.08
+            else:
+                intensity = 1.0
+            pos = progress * self._lanes
+            return "sweep", intensity, pos
+
+        deliver_start = sweep_frac
+        deliver_end = sweep_frac + deliver_frac
+        if cycle < deliver_end:
+            # DELIVER phase: result ◆ travels right-to-left
+            progress = (cycle - deliver_start) / deliver_frac
+            # Brightness fades as the result is delivered
+            intensity = 1.0 - progress * 0.6
+            pos = (1.0 - progress) * self._lanes
+            return "deliver", intensity, pos
+
+        return "idle", 0.0, 0.0
+
+    # -- glyph + style selection -----------------------------------------------
+
+    def _depth_glyph(self, depth: float) -> str:
+        """Select a glyph based on depth tier. Shape communicates depth."""
+        if depth < 0.12:
+            return self._DORMANT_GLYPH
+        elif depth < 0.32:
+            idx = int((depth - 0.12) / 0.20 * len(self._SHALLOW_GLYPHS))
+            return self._SHALLOW_GLYPHS[min(idx, len(self._SHALLOW_GLYPHS) - 1)]
+        elif depth < 0.62:
+            idx = int((depth - 0.32) / 0.30 * len(self._MID_GLYPHS))
+            return self._MID_GLYPHS[min(idx, len(self._MID_GLYPHS) - 1)]
+        elif depth < 0.88:
+            idx = int((depth - 0.62) / 0.26 * len(self._DEEP_GLYPHS))
+            return self._DEEP_GLYPHS[min(idx, len(self._DEEP_GLYPHS) - 1)]
+        return self._PEAK_GLYPH
+
+    def _depth_style(self, depth: float, crest: str) -> str:
+        """Select a color based on depth tier. Color temperature by depth.
+
+        Always returns a bare ``#rrggbb`` hex (no Rich style prefix) so the
+        result can be passed to ``_lerp_hex`` for blending. Callers that need
+        bold can prepend ``"bold "`` to the returned string.
+        """
+        if depth < 0.12:
+            return self._DORMANT_COLOR
+        elif depth < 0.32:
+            t = (depth - 0.12) / 0.20
+            return _lerp_hex(self._DORMANT_COLOR, self._SHALLOW_COLOR, t)
+        elif depth < 0.62:
+            t = (depth - 0.32) / 0.30
+            return _lerp_hex(self._SHALLOW_COLOR, self._MID_COLOR, t)
+        elif depth < 0.88:
+            t = (depth - 0.62) / 0.26
+            return _lerp_hex(self._MID_COLOR, crest, t)
+        return crest
+
+    # -- frame -----------------------------------------------------------------
+
+    def frame(self, now: float) -> Text:
+        """Build the enhanced deep-parallel frame for an absolute wall-clock time.
+
+        Pure: the same *now* always yields the same Text.
+        """
+        text = Text()
+        crest = _crest_color(now * self._hue_speed)
+        conv_phase, conv_intensity, conv_pos = self._convergence(now)
+
+        for r in range(self._rows):
+            if r == 0:
+                text.append(f"{MARK} ", style=f"bold {crest}")
+            else:
+                text.append("\n  ")
+
+            # Pre-compute depths and dormancy for this row so we can check
+            # resonance between adjacent lanes.
+            depths = []
+            dormancies = []
+            for i in range(self._lanes):
+                d = self._lane_depth(now, i, r)
+                dorm = self._dormancy(now, i, r)
+                # Dormancy suppresses depth toward zero
+                if dorm > 0:
+                    d = d * (1.0 - dorm)
+                depths.append(d)
+                dormancies.append(dorm)
+
+            for i in range(self._lanes):
+                depth = depths[i]
+
+                # --- Convergence overrides ---
+                if conv_phase == "sweep" and conv_intensity > 0:
+                    d_conv = abs(i - conv_pos)
+                    d_conv = min(d_conv, self._lanes - d_conv)
+                    if d_conv <= self._converge_width:
+                        conv_t = 1.0 - (d_conv / self._converge_width)
+                        flash = conv_intensity * conv_t
+                        glyph = self._PEAK_GLYPH if conv_t > 0.6 else self._DEEP_GLYPHS[-1]
+                        style = f"bold {_lerp_hex(crest, self._PEAK_FLASH, flash * 0.75)}"
+                        text.append(glyph, style=style)
+                        # Resonance connector to next lane (if also in convergence)
+                        if i < self._lanes - 1:
+                            d_next = abs(i + 1 - conv_pos)
+                            d_next = min(d_next, self._lanes - d_next)
+                            if d_next <= self._converge_width:
+                                text.append(self._RESONANCE_GLYPH, style=f"bold {_lerp_hex(crest, self._PEAK_FLASH, flash * 0.5)}")
+                            else:
+                                text.append(" ")
+                        continue
+
+                elif conv_phase == "deliver" and conv_intensity > 0:
+                    # Result ◆ traveling right-to-left with a brief trail
+                    d_deliver = abs(i - conv_pos)
+                    if d_deliver < 0.6:
+                        # The result mark itself
+                        text.append(self._PEAK_GLYPH, style=f"bold {_lerp_hex(crest, self._PEAK_FLASH, conv_intensity * 0.8)}")
+                        if i < self._lanes - 1:
+                            text.append(" ")
+                        continue
+                    elif d_deliver < 1.8:
+                        # Trail: fading glow behind the result
+                        trail_t = 1.0 - (d_deliver - 0.6) / 1.2
+                        glyph = self._depth_glyph(depth)
+                        style = _lerp_hex(self._depth_style(depth, crest), crest, trail_t * conv_intensity * 0.5)
+                        text.append(glyph, style=style)
+                        if i < self._lanes - 1:
+                            text.append(" ")
+                        continue
+
+                # --- Neural firing spike ---
+                fire = self._firing(now, i, r, depth)
+                if fire > 0:
+                    glyph = self._PEAK_GLYPH
+                    style = f"bold {_lerp_hex(crest, self._PEAK_FLASH, fire * 0.8)}"
+                    text.append(glyph, style=style)
+                    if i < self._lanes - 1:
+                        text.append(" ")
+                    continue
+
+                # --- Dormant lane ---
+                if dormancies[i] > 0.85:
+                    text.append(self._DORMANT_GLYPH, style=self._DORMANT_COLOR)
+                    if i < self._lanes - 1:
+                        # Check resonance with next lane (won't happen if dormant, but keeps spacing)
+                        if depths[i + 1] > self._RESONANCE_THRESHOLD and dormancies[i + 1] < 0.3:
+                            text.append(" ")
+                        else:
+                            text.append(" ")
+                    continue
+
+                # --- Normal depth rendering ---
+                glyph = self._depth_glyph(depth)
+                base_color = self._depth_style(depth, crest)
+                if depth > 0.88:
+                    style = f"bold {base_color}"
+                else:
+                    style = base_color
+                text.append(glyph, style=style)
+
+                # --- Cross-stream resonance connector ---
+                if i < self._lanes - 1:
+                    next_depth = depths[i + 1]
+                    next_dorm = dormancies[i + 1]
+                    if (depth > self._RESONANCE_THRESHOLD
+                            and next_depth > self._RESONANCE_THRESHOLD
+                            and dormancies[i] < 0.2
+                            and next_dorm < 0.2):
+                        # Both adjacent streams at peak — draw a resonance link
+                        res_style = f"bold {_lerp_hex(crest, self._PEAK_FLASH, 0.3)}"
+                        text.append(self._RESONANCE_GLYPH, style=res_style)
+                    else:
+                        text.append(" ")
+
+            if r == 0:
+                text.append(f"  {self.label}…", style="dim")
+        return text
+
+    def __rich__(self) -> Text:
+        return self.frame(_time.monotonic())
+
+
 # ── Registry & factory ───────────────────────────────────────────────────────
 REGISTRY = {
     "classic": ClassicReelsSpinner,
     "wordmark": WordmarkReelsSpinner,
     "cascade": GlyphCascadeSpinner,
     "hybrid": HybridWaveReelSpinner,
+    "deepparallel": DeepParallelSpinner,
 }
 
 # Available style keys, in registration order.

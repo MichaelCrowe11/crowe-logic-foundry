@@ -43,3 +43,12 @@ def test_crest_color_always_valid_hex():
 def test_label_appears_in_frame():
     sp = branding.thinking_spinner("running tool")
     assert "running tool" in sp.frame(0.0).plain
+
+
+def test_default_spinner_is_clean_single_line():
+    sp = branding.thinking_spinner("thinking")
+    frame = sp.frame(0.0)
+
+    assert type(sp).__name__ == "PulseThinkingSpinner"
+    assert "\n" not in frame.plain
+    assert "CROWE" not in frame.plain

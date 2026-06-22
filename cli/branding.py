@@ -141,23 +141,70 @@ class ThinkingSpinner:
         return self.frame(_time.monotonic())
 
 
+class PulseThinkingSpinner:
+    """Polished one-line thinking animation for normal product/operator output."""
+
+    _GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    _NODES = 9
+
+    def __init__(
+        self,
+        label: str = "thinking",
+        *,
+        hue_speed: float = 0.35,
+        pulse_speed: float = 8.0,
+        **_kw,
+    ):
+        self._label = label
+        self._hue_speed = hue_speed
+        self._pulse_speed = pulse_speed
+
+    def frame(self, now: float):
+        from rich.text import Text
+
+        crest = _crest_color(now * self._hue_speed)
+        deep = _lerp_hex("#3a3326", crest, 0.35)
+        mid = _lerp_hex("#5f5335", crest, 0.55)
+        glyph = self._GLYPHS[int(now * 10) % len(self._GLYPHS)]
+        head = int(now * self._pulse_speed) % self._NODES
+        text = Text()
+        text.append(f"{MARK} ", style=f"bold {crest}")
+        text.append(glyph, style=f"bold {crest}")
+        text.append(" ")
+        for idx in range(self._NODES):
+            distance = min((idx - head) % self._NODES, (head - idx) % self._NODES)
+            if distance == 0:
+                text.append("◆", style=f"bold {crest}")
+            elif distance == 1:
+                text.append("•", style=mid)
+            else:
+                text.append("·", style=deep)
+        text.append(f" {self._label}...", style="dim")
+        return text
+
+    def __rich__(self):
+        return self.frame(_time.monotonic())
+
+
 def thinking_spinner(label: str = "thinking"):
     """A fresh Crowe Logic thinking animation. Drive it inside a `rich.live.Live`.
 
-    The reel style is selectable via the ``CROWE_SPINNER_STYLE`` env var:
-    ``wordmark`` (default) · ``classic`` · ``cascade`` · ``hybrid`` · ``wave``.
+    The style is selectable via the ``CROWE_SPINNER_STYLE`` env var:
+    ``pulse`` (default) · ``classic`` · ``wordmark`` · ``cascade`` · ``hybrid`` · ``wave``.
     ``wave`` restores the original pulse-field ``ThinkingSpinner``. Unknown values
     and any import failure fall back to a working spinner, so the animation can
     never break a turn. Both the single-pane renderer and the dual-pane renderer
     route through here, so this one switch styles every thinking surface.
     """
-    style = os.environ.get("CROWE_SPINNER_STYLE", "wordmark").strip().lower()
-    if style in ("wave", "pulse", "legacy", "field"):
+    style = os.environ.get("CROWE_SPINNER_STYLE", "pulse").strip().lower()
+    if style in ("pulse", "simple", "clean", "minimal", "default"):
+        return PulseThinkingSpinner(label)
+    if style in ("wave", "legacy", "field"):
         return ThinkingSpinner(label)
     try:
         from cli.spinners import REGISTRY, get_spinner
 
-        return get_spinner(style if style in REGISTRY else "wordmark", label)
+        return get_spinner(style if style in REGISTRY else "classic", label)
     except Exception:
         # The slot module is optional; never let a spinner import brick a turn.
         return ThinkingSpinner(label)
@@ -316,7 +363,14 @@ def render_transcript_markdown(
 def build_reasoning_panel(
     console, text: str, *, live: bool = False, meta: str | None = None
 ):
-    """Build the muted reasoning block used before or between answer segments."""
+    """Build the muted reasoning block used before or between answer segments.
+
+    When a live reasoning panel first appears (live=True, text is empty or just
+    starting), a depth shimmer accent is added to the left edge of the panel
+    title — a row of depth-tiered glyphs (·▏▎▍▌) in the crest color, matching
+    the deepparallel spinner's dormant-to-active ramp. This signals that deep
+    reasoning is actively flowing into the panel.
+    """
     from rich.padding import Padding
     from rich.panel import Panel
     from rich.text import Text
@@ -329,9 +383,27 @@ def build_reasoning_panel(
         if text.strip()
         else Text("thinking...", style="dim italic")
     )
+
+    # Depth shimmer accent for the panel title when reasoning is actively streaming.
+    title = _panel_title("reasoning", meta)
+    if live and len(text) < 80:
+        # Show a depth-tiered shimmer ramp on the left edge of the title,
+        # signaling deep reasoning is flowing in. The glyphs fade from
+        # dormant (·) to active (▌) matching the deepparallel aesthetic.
+        shimmer_glyphs = "·▏▎▍▌"
+        shimmer = Text()
+        for g in shimmer_glyphs:
+            shimmer.append(g, style=GOLD_DIM_HEX)
+        shimmer.append(" ", style="dim")
+        # Prepend shimmer to the title
+        full_title = Text()
+        full_title.append(shimmer)
+        full_title.append(title)
+        title = full_title
+
     panel = Panel(
         body,
-        title=_panel_title("reasoning", meta),
+        title=title,
         border_style=GOLD_DIM_HEX,
         box=box.ROUNDED,
         padding=(0, 1),
@@ -509,19 +581,50 @@ def welcome_screen(version: str = "0.2.7", avatar_seq: str = "") -> str:
 
 
 def _animate_wordmark_ignite(wordmark_plain: str, w: int) -> None:
-    """Ignite the typographic wordmark in place: a warm-bright band sweeps across
-    the letters (twice), lighting each as it passes, then they settle to gold.
+    """Ignite the typographic wordmark with a deep parallel ignition sequence.
 
-    Crowe Logic's distinct motion - a horizontal heat-shimmer over its typographic
-    mark, versus the sibling CLIs' block sweep / drop-in. Single line, redrawn with
-    carriage returns (terminal-safe), so it never stacks or ghosts.
+    Three-phase animation matching the deepparallel spinner aesthetic:
+      1. **Spark** — the ◆ mark at center pulses bright, then a warm band
+         ignites from the center outward in both directions (depth-tiered
+         glow: characters near the spark are warm-white, further ones are
+         bronze, far ones are dim).
+      2. **Sweep** — a horizontal heat-shimmer sweeps left-to-right (the
+         classic Crowe Logic motion), lighting each letter as it passes.
+      3. **Settle** — all characters settle to steady gold.
+
+    Single line, redrawn with carriage returns (terminal-safe), so it
+    never stacks or ghosts. Falls back gracefully on non-tty.
     """
     import time
 
     pad = " " * max(0, (w - cell_width(wordmark_plain)) // 2)
     chars = list(wordmark_plain)
     n = len(chars)
+    center = n / 2.0
     bright = "\033[38;2;255;240;200m\033[1m"  # warm bright ignition
+    mid_warm = "\033[38;2;210;180;110m\033[1m"  # mid bronze glow
+    dim_glow = "\033[38;2;90;78;45m\033[1m"  # dim far glow
+    dormant = "\033[38;2;40;35;20m\033[1m"  # near-dark
+
+    # Phase 1: Spark — center-outward ignition
+    for radius in range(0, int(center) + 3):
+        cells = []
+        for i, ch in enumerate(chars):
+            d = abs(i - center)
+            if d <= radius:
+                if d <= 1:
+                    cells.append(f"{bright}{ch}{RESET}")
+                elif d <= radius * 0.5:
+                    cells.append(f"{mid_warm}{ch}{RESET}")
+                else:
+                    cells.append(f"{dim_glow}{ch}{RESET}")
+            else:
+                cells.append(f"{dormant}{ch}{RESET}")
+        sys.stdout.write("\r" + pad + "".join(cells))
+        sys.stdout.flush()
+        time.sleep(0.008)
+
+    # Phase 2: Sweep — classic horizontal heat-shimmer (2 passes)
     for _pass in range(2):
         for head in range(-3, n + 4):
             cells = []
@@ -533,6 +636,8 @@ def _animate_wordmark_ignite(wordmark_plain: str, w: int) -> None:
             sys.stdout.write("\r" + pad + "".join(cells))
             sys.stdout.flush()
             time.sleep(0.012)
+
+    # Phase 3: Settle — steady gold
     sys.stdout.write("\r" + pad + f"{GOLD}{BOLD}{wordmark_plain}{RESET}")
     sys.stdout.flush()
 
@@ -768,6 +873,31 @@ def _metric_line(label: str, value: str, *, accent: str = WHITE_HEX):
     return line
 
 
+def _live_indicator(label: str, status_text: str, status_color: str):
+    """Build a pulsing LIVE indicator for the HUD API status cell.
+
+    When the API is live, the "LIVE" text pulses with the crest color drift
+    (matching the deepparallel spinner's hue cycle). Other statuses (THROTTLED,
+    DOWN) use the static color from _api_status_label. Preserves the exact
+    same label+value layout as _metric_line so grid column widths don't shift.
+    """
+    from rich.text import Text
+
+    line = Text()
+    line.append(f"{label} ", style=GOLD_DIM_HEX)
+    if status_text == "LIVE":
+        # Crest-drift pulse: "LIVE" text cycles through the gold hue range,
+        # making the indicator feel alive without adding width.
+        import time as _t
+
+        phase = _t.monotonic() * 0.35
+        crest = _crest_color(phase)
+        line.append(status_text, style=f"bold {crest}")
+    else:
+        line.append(status_text, style=status_color)
+    return line
+
+
 def _get_tracker_snapshot(session_state: dict) -> dict | None:
     """Pull the SessionCostTracker snapshot from session_state if present.
 
@@ -818,7 +948,7 @@ def build_session_hud(
     grid.add_column(min_width=24)
     grid.add_row(
         _metric_line("MODEL", model_label, accent=BLUE_HEX),
-        _metric_line("API", status_text, accent=status_color),
+        _live_indicator("API", status_text, status_color),
         _metric_line("SESSION", _format_session_duration(current), accent=GOLD_HEX),
     )
     grid.add_row(
