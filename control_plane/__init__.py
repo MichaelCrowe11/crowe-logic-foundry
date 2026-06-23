@@ -73,13 +73,28 @@ if _BRAND_DIR.is_dir():
 # overwrites the rebrand patches every release.
 try:
     from .updates import router as _updates_router
+
     app.include_router(_updates_router)
 except Exception as _e:
     import logging as _logging
+
     _logging.getLogger(__name__).warning("updates router not loaded: %s", _e)
 
 
+# Mesh-visibility endpoints (/mesh/tools, /mesh/surfaces, WS /mesh/attach).
+# Exposes the in-process tool/surface registry to external consumers (cla).
+try:
+    from .mesh import router as _mesh_router
+
+    app.include_router(_mesh_router)
+except Exception as _e:
+    import logging as _logging
+
+    _logging.getLogger(__name__).warning("mesh router not loaded: %s", _e)
+
+
 # ─── Models ──────────────────────────────────────────────────────────
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -177,10 +192,12 @@ class EntitlementCheck(BaseModel):
 
 # ─── Auth helpers ────────────────────────────────────────────────────
 
+
 def _hash_password(password: str) -> str:
     """Hash with bcrypt if available, else SHA-256 (dev fallback)."""
     try:
         import bcrypt
+
         return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     except ImportError:
         return hashlib.sha256(password.encode()).hexdigest()
@@ -189,6 +206,7 @@ def _hash_password(password: str) -> str:
 def _verify_password(password: str, password_hash: str) -> bool:
     try:
         import bcrypt
+
         return bcrypt.checkpw(password.encode(), password_hash.encode())
     except ImportError:
         return hashlib.sha256(password.encode()).hexdigest() == password_hash
@@ -234,7 +252,8 @@ async def _resolve_workspace(workspace_id: str, user: dict, db: Database) -> dic
         raise HTTPException(status_code=404, detail="Workspace not found")
     member = await db.fetchrow(
         "SELECT 1 FROM org_members WHERE org_id = $1 AND user_id = $2",
-        ws["org_id"], user["id"],
+        ws["org_id"],
+        user["id"],
     )
     if not member:
         raise HTTPException(status_code=403, detail="Not a member of this workspace")
@@ -243,12 +262,14 @@ async def _resolve_workspace(workspace_id: str, user: dict, db: Database) -> dic
 
 # ─── Health ──────────────────────────────────────────────────────────
 
+
 @app.get("/health")
 async def health():
     return {"status": "healthy", "version": "0.2.8", "service": "control-plane"}
 
 
 # ─── Public pricing ──────────────────────────────────────────────────
+
 
 @app.get("/api/public/plans")
 async def public_plans(db: Database = Depends(get_db)):
@@ -281,11 +302,13 @@ async def public_plans(db: Database = Depends(get_db)):
                 feat = json.loads(feat)
             except json.JSONDecodeError:
                 feat = {}
-        plans.append({
-            **raw,
-            "highlights": hi or [],
-            "features": feat or {},
-        })
+        plans.append(
+            {
+                **raw,
+                "highlights": hi or [],
+                "features": feat or {},
+            }
+        )
     return {"plans": plans, "currency": "USD"}
 
 
@@ -458,7 +481,11 @@ async def pricing_page():
 # message so the extension can display a useful notice instead of
 # opening a broken URL.
 
-IDE_LAUNCH_ENABLED = os.environ.get("IDE_LAUNCH_ENABLED", "").lower() in ("1", "true", "yes")
+IDE_LAUNCH_ENABLED = os.environ.get("IDE_LAUNCH_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 IDE_JWT_SECRET = os.environ.get("IDE_JWT_SECRET", JWT_SECRET)
 IDE_PUBLIC_URL = os.environ.get("IDE_PUBLIC_URL", "https://ide.crowelogic.com")
 
@@ -494,7 +521,11 @@ async def _resolve_pat_or_jwt(
             "UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1",
             key_hash,
         )
-        return {"user_id": row["user_id"], "workspace_id": row["workspace_id"], "plan_id": row["plan_id"]}
+        return {
+            "user_id": row["user_id"],
+            "workspace_id": row["workspace_id"],
+            "plan_id": row["plan_id"],
+        }
 
     # Otherwise treat as JWT
     claims = _decode_token(token)
@@ -513,7 +544,9 @@ async def _resolve_pat_or_jwt(
 
 def _ensure_same_workspace(workspace_id: str, auth: dict) -> None:
     if auth.get("workspace_id") != workspace_id:
-        raise HTTPException(status_code=403, detail="Token is not valid for this workspace")
+        raise HTTPException(
+            status_code=403, detail="Token is not valid for this workspace"
+        )
 
 
 @app.post("/api/ide/launch")
@@ -556,6 +589,7 @@ async def ide_launch(auth: dict = Depends(_resolve_pat_or_jwt)):
 
 # ─── Auth endpoints ──────────────────────────────────────────────────
 
+
 class StartFreeRequest(BaseModel):
     email: EmailStr
     display_name: Optional[str] = None
@@ -565,7 +599,7 @@ class StartFreeResponse(BaseModel):
     user_id: str
     email: str
     workspace_id: str
-    api_key: str            # one-time return; not stored elsewhere
+    api_key: str  # one-time return; not stored elsewhere
     plan_id: str = "personal"
     next_steps: list[str]
 
@@ -598,28 +632,36 @@ async def start_free(req: StartFreeRequest, db: Database = Depends(get_db)):
     await db.execute(
         """INSERT INTO users (id, email, display_name, password_hash)
            VALUES ($1, $2, $3, $4)""",
-        user_id, req.email,
+        user_id,
+        req.email,
         req.display_name or req.email.split("@")[0],
         _hash_password(placeholder_password),
     )
 
     org_id = secrets.token_hex(16)
-    org_slug = req.email.split("@")[0].lower().replace(".", "-") + "-" + secrets.token_hex(3)
+    org_slug = (
+        req.email.split("@")[0].lower().replace(".", "-") + "-" + secrets.token_hex(3)
+    )
     await db.execute(
         """INSERT INTO organizations (id, name, slug, owner_id)
            VALUES ($1, $2, $3, $4)""",
-        org_id, f"{(req.display_name or org_slug)}'s Org", org_slug, user_id,
+        org_id,
+        f"{(req.display_name or org_slug)}'s Org",
+        org_slug,
+        user_id,
     )
     await db.execute(
         "INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'owner')",
-        org_id, user_id,
+        org_id,
+        user_id,
     )
 
     workspace_id = secrets.token_hex(16)
     await db.execute(
         """INSERT INTO workspaces (id, org_id, name, slug, plan_id)
            VALUES ($1, $2, 'Default', 'default', 'personal')""",
-        workspace_id, org_id,
+        workspace_id,
+        org_id,
     )
 
     raw_key, key_prefix, key_hash = make_pat(workspace_id)
@@ -628,7 +670,11 @@ async def start_free(req: StartFreeRequest, db: Database = Depends(get_db)):
         """INSERT INTO api_keys
                (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
            VALUES ($1, $2, $3, $4, $5, 'Free tier (signup)', '["chat","vision","agents","ide"]')""",
-        key_id, workspace_id, user_id, key_hash, key_prefix,
+        key_id,
+        workspace_id,
+        user_id,
+        key_hash,
+        key_prefix,
     )
 
     # Seed the credit ledger with the personal-tier monthly allocation so
@@ -639,7 +685,8 @@ async def start_free(req: StartFreeRequest, db: Database = Depends(get_db)):
                (workspace_id, tier_key, balance, allocation, active)
            VALUES ($1, 'personal', $2, $2, TRUE)
            ON CONFLICT (workspace_id) DO NOTHING""",
-        workspace_id, allocation,
+        workspace_id,
+        allocation,
     )
 
     return StartFreeResponse(
@@ -667,7 +714,9 @@ async def register(req: RegisterRequest, db: Database = Depends(get_db)):
     await db.execute(
         """INSERT INTO users (id, email, display_name, password_hash)
            VALUES ($1, $2, $3, $4)""",
-        user_id, req.email, req.display_name or req.email.split("@")[0],
+        user_id,
+        req.email,
+        req.display_name or req.email.split("@")[0],
         _hash_password(req.password),
     )
 
@@ -677,17 +726,22 @@ async def register(req: RegisterRequest, db: Database = Depends(get_db)):
     await db.execute(
         """INSERT INTO organizations (id, name, slug, owner_id)
            VALUES ($1, $2, $3, $4)""",
-        org_id, f"{req.display_name or org_slug}'s Org", org_slug, user_id,
+        org_id,
+        f"{req.display_name or org_slug}'s Org",
+        org_slug,
+        user_id,
     )
     await db.execute(
         "INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'owner')",
-        org_id, user_id,
+        org_id,
+        user_id,
     )
     ws_id = secrets.token_hex(16)
     await db.execute(
         """INSERT INTO workspaces (id, org_id, name, slug, plan_id)
            VALUES ($1, $2, 'Default', 'default', 'personal')""",
-        ws_id, org_id,
+        ws_id,
+        org_id,
     )
 
     token = _mint_token(user_id, req.email)
@@ -721,13 +775,17 @@ async def auth_me(user: dict = Depends(get_current_user)):
 
 # ─── Plans ───────────────────────────────────────────────────────────
 
+
 @app.get("/api/plans", response_model=list[PlanResponse])
 async def list_plans(db: Database = Depends(get_db)):
-    rows = await db.fetch("SELECT * FROM plans WHERE is_public = TRUE ORDER BY sort_order, max_seats")
+    rows = await db.fetch(
+        "SELECT * FROM plans WHERE is_public = TRUE ORDER BY sort_order, max_seats"
+    )
     return [PlanResponse(**dict(r)) for r in rows]
 
 
 # ─── Workspaces ──────────────────────────────────────────────────────
+
 
 @app.get("/api/workspaces", response_model=list[WorkspaceResponse])
 async def list_workspaces(
@@ -761,17 +819,32 @@ async def create_workspace(
     await db.execute(
         """INSERT INTO workspaces (id, org_id, name, slug, ws_type, plan_id)
            VALUES ($1, $2, $3, $4, $5, $6)""",
-        ws_id, org["id"], req.name, req.slug, req.ws_type, plan_id,
+        ws_id,
+        org["id"],
+        req.name,
+        req.slug,
+        req.ws_type,
+        plan_id,
     )
     return WorkspaceResponse(
-        id=ws_id, org_id=org["id"], name=req.name, slug=req.slug,
-        ws_type=req.ws_type, plan_id=plan_id, status="active",
+        id=ws_id,
+        org_id=org["id"],
+        name=req.name,
+        slug=req.slug,
+        ws_type=req.ws_type,
+        plan_id=plan_id,
+        status="active",
     )
 
 
 # ─── API Keys ────────────────────────────────────────────────────────
 
-@app.post("/api/workspaces/{workspace_id}/keys", response_model=ApiKeyResponse, status_code=201)
+
+@app.post(
+    "/api/workspaces/{workspace_id}/keys",
+    response_model=ApiKeyResponse,
+    status_code=201,
+)
 async def create_api_key(
     workspace_id: str,
     req: ApiKeyCreate,
@@ -786,12 +859,20 @@ async def create_api_key(
     await db.execute(
         """INSERT INTO api_keys (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
            VALUES ($1, $2, $3, $4, $5, $6, $7)""",
-        key_id, workspace_id, user["id"], key_hash, key_prefix,
-        req.label, json.dumps(req.scopes),
+        key_id,
+        workspace_id,
+        user["id"],
+        key_hash,
+        key_prefix,
+        req.label,
+        json.dumps(req.scopes),
     )
     return ApiKeyResponse(
-        id=key_id, key=raw_key, key_prefix=key_prefix,
-        label=req.label, scopes=req.scopes,
+        id=key_id,
+        key=raw_key,
+        key_prefix=key_prefix,
+        label=req.label,
+        scopes=req.scopes,
     )
 
 
@@ -842,13 +923,18 @@ async def revoke_api_key(
     await _resolve_workspace(workspace_id, user, db)
     await db.execute(
         "UPDATE api_keys SET revoked = TRUE WHERE id = $1 AND workspace_id = $2",
-        key_id, workspace_id,
+        key_id,
+        workspace_id,
     )
 
 
 # ─── Entitlements ────────────────────────────────────────────────────
 
-@app.get("/api/workspaces/{workspace_id}/entitlements/{resource}", response_model=EntitlementCheck)
+
+@app.get(
+    "/api/workspaces/{workspace_id}/entitlements/{resource}",
+    response_model=EntitlementCheck,
+)
 async def check_entitlement(
     workspace_id: str,
     resource: str,
@@ -878,7 +964,9 @@ async def check_entitlement(
         return EntitlementCheck(allowed=True, remaining=None)
 
     if budget == 0:
-        return EntitlementCheck(allowed=False, reason=f"{resource} not included in plan")
+        return EntitlementCheck(
+            allowed=False, reason=f"{resource} not included in plan"
+        )
 
     # Sum current month usage
     now = datetime.now(timezone.utc)
@@ -887,7 +975,9 @@ async def check_entitlement(
         """SELECT COALESCE(SUM(quantity), 0) AS used
            FROM usage_events
            WHERE workspace_id = $1 AND event_type = $2 AND recorded_at >= $3""",
-        workspace_id, event_type, month_start,
+        workspace_id,
+        event_type,
+        month_start,
     )
     used = row["used"] if row else 0
     remaining = max(0, budget - used)
@@ -899,6 +989,7 @@ async def check_entitlement(
 
 
 # ─── Usage ───────────────────────────────────────────────────────────
+
 
 @app.get("/api/workspaces/{workspace_id}/usage", response_model=UsageResponse)
 async def get_usage(
@@ -916,7 +1007,8 @@ async def get_usage(
            FROM usage_events
            WHERE workspace_id = $1 AND recorded_at >= $2
            GROUP BY event_type""",
-        workspace_id, month_start,
+        workspace_id,
+        month_start,
     )
 
     usage = {r["event_type"]: int(r["total"]) for r in rows}
@@ -946,12 +1038,17 @@ async def record_usage(
     await db.execute(
         """INSERT INTO usage_events (workspace_id, user_id, event_type, quantity, model)
            VALUES ($1, $2, $3, $4, $5)""",
-        workspace_id, user["id"], event_type, quantity, model,
+        workspace_id,
+        user["id"],
+        event_type,
+        quantity,
+        model,
     )
     return {"recorded": True}
 
 
 # ─── Public checkout (landing page, unauthenticated) ────────────────
+
 
 class PublicCheckoutRequest(BaseModel):
     email: EmailStr
@@ -984,6 +1081,7 @@ async def public_checkout(req: PublicCheckoutRequest, db: Database = Depends(get
         )
 
     import stripe
+
     stripe.api_key = STRIPE_SECRET_KEY
     success = req.success_url or os.environ.get(
         "STRIPE_SUCCESS_URL",
@@ -1056,6 +1154,7 @@ async def get_checkout_result(session_id: str, db: Database = Depends(get_db)):
 
 # ─── Credit accounting (Gate 1 billing) ─────────────────────────────
 
+
 class CreditBalance(BaseModel):
     workspace_id: str
     tier_key: str
@@ -1104,10 +1203,18 @@ async def _ensure_credit_row(workspace_id: str, db: Database) -> dict:
         "SELECT * FROM workspace_credits WHERE workspace_id = $1",
         workspace_id,
     )
-    return dict(row) if row else {
-        "workspace_id": workspace_id, "tier_key": "personal",
-        "balance": 0, "allocation": 0, "reset_at": None, "active": True,
-    }
+    return (
+        dict(row)
+        if row
+        else {
+            "workspace_id": workspace_id,
+            "tier_key": "personal",
+            "balance": 0,
+            "allocation": 0,
+            "reset_at": None,
+            "active": True,
+        }
+    )
 
 
 @app.get(
@@ -1175,7 +1282,8 @@ async def consume_credits(
               SET balance = balance - $2, updated_at = now()
             WHERE workspace_id = $1 AND balance >= $2 AND active = TRUE
         RETURNING balance""",
-        workspace_id, req.amount,
+        workspace_id,
+        req.amount,
     )
     if updated is None:
         raise HTTPException(status_code=402, detail="Insufficient credits (race)")
@@ -1184,8 +1292,11 @@ async def consume_credits(
         """INSERT INTO credit_transactions
                (workspace_id, amount, reason, model_label, metadata)
            VALUES ($1, $2, $3, $4, $5)""",
-        workspace_id, -req.amount, req.reason,
-        req.model_label, json.dumps(req.metadata) if req.metadata else "{}",
+        workspace_id,
+        -req.amount,
+        req.reason,
+        req.model_label,
+        json.dumps(req.metadata) if req.metadata else "{}",
     )
 
     return {
@@ -1261,7 +1372,8 @@ async def run_research(
               SET balance = balance - $2, updated_at = now()
             WHERE workspace_id = $1 AND balance >= $2 AND active = TRUE
         RETURNING balance""",
-        req.workspace_id, cost,
+        req.workspace_id,
+        cost,
     )
     if updated is None:
         raise HTTPException(
@@ -1275,7 +1387,9 @@ async def run_research(
         """INSERT INTO credit_transactions
                (workspace_id, amount, reason, model_label, metadata)
            VALUES ($1, $2, 'research', $3, $4)""",
-        req.workspace_id, -cost, f"research:{depth}",
+        req.workspace_id,
+        -cost,
+        f"research:{depth}",
         json.dumps({"depth": depth, "question_len": len(req.question)}),
     )
 
@@ -1290,7 +1404,11 @@ async def run_research(
     except ResearchError as e:
         raise HTTPException(
             status_code=502,
-            detail={"error": "research_failed", "reason": getattr(e, "reason", "unknown"), "message": str(e)},
+            detail={
+                "error": "research_failed",
+                "reason": getattr(e, "reason", "unknown"),
+                "message": str(e),
+            },
         )
 
     return {
@@ -1332,14 +1450,18 @@ async def refill_credits(
                reset_at = EXCLUDED.reset_at,
                active = TRUE,
                updated_at = now()""",
-        workspace_id, req.tier_key, req.allocation, req.reset_at,
+        workspace_id,
+        req.tier_key,
+        req.allocation,
+        req.reset_at,
     )
 
     await db.execute(
         """INSERT INTO credit_transactions
                (workspace_id, amount, reason, metadata)
            VALUES ($1, $2, 'refill', $3)""",
-        workspace_id, req.allocation,
+        workspace_id,
+        req.allocation,
         json.dumps({"tier": req.tier_key, "reset_at": req.reset_at}),
     )
 
@@ -1362,7 +1484,9 @@ async def refill_credits(
 # that are pure functions of (db, event_object) for direct unit testing.
 
 
-async def _record_event_or_skip(db, event_id: str, event_type: str, payload: str) -> bool:
+async def _record_event_or_skip(
+    db, event_id: str, event_type: str, payload: str
+) -> bool:
     """Insert a billing_events row keyed by stripe_event_id.
 
     Returns True if the row was newly inserted (caller should run handlers).
@@ -1375,7 +1499,9 @@ async def _record_event_or_skip(db, event_id: str, event_type: str, payload: str
            VALUES ($1, $2, $3)
            ON CONFLICT (stripe_event_id) DO NOTHING
            RETURNING id""",
-        event_id, event_type, payload,
+        event_id,
+        event_type,
+        payload,
     )
     return row is not None
 
@@ -1398,7 +1524,9 @@ async def _handle_subscription_created(db, sub: dict) -> None:
     workspace_id = (sub.get("metadata") or {}).get("workspace_id")
     if not workspace_id:
         return
-    plan_id = canonical_plan_id((sub.get("metadata") or {}).get("plan_id") or "personal")
+    plan_id = canonical_plan_id(
+        (sub.get("metadata") or {}).get("plan_id") or "personal"
+    )
 
     await db.execute(
         """INSERT INTO subscriptions
@@ -1412,14 +1540,18 @@ async def _handle_subscription_created(db, sub: dict) -> None:
                current_period_start = EXCLUDED.current_period_start,
                current_period_end = EXCLUDED.current_period_end,
                updated_at = now()""",
-        workspace_id, plan_id, sub_id, sub.get("status", "incomplete"),
+        workspace_id,
+        plan_id,
+        sub_id,
+        sub.get("status", "incomplete"),
         sub.get("current_period_start") or 0,
         sub.get("current_period_end") or 0,
     )
 
     await db.execute(
         "UPDATE workspaces SET stripe_subscription_id = $1 WHERE id = $2",
-        sub_id, workspace_id,
+        sub_id,
+        workspace_id,
     )
 
 
@@ -1431,8 +1563,10 @@ async def _handle_subscription_updated(db, sub: dict) -> None:
                   current_period_end = to_timestamp($3),
                   updated_at = now()
             WHERE stripe_subscription_id = $4""",
-        sub["status"], sub["current_period_start"],
-        sub["current_period_end"], sub["id"],
+        sub["status"],
+        sub["current_period_start"],
+        sub["current_period_end"],
+        sub["id"],
     )
     # Plan changes (upgrade/downgrade) come through this event. Refill
     # to the new tier's allocation so the upgrade takes effect
@@ -1499,11 +1633,11 @@ async def _handle_invoice_payment_failed(db, invoice: dict) -> None:
 
 
 _WEBHOOK_HANDLERS = {
-    "customer.subscription.created":  _handle_subscription_created,
-    "customer.subscription.updated":  _handle_subscription_updated,
-    "customer.subscription.deleted":  _handle_subscription_deleted,
-    "invoice.paid":                   _handle_invoice_paid,
-    "invoice.payment_failed":         _handle_invoice_payment_failed,
+    "customer.subscription.created": _handle_subscription_created,
+    "customer.subscription.updated": _handle_subscription_updated,
+    "customer.subscription.deleted": _handle_subscription_deleted,
+    "invoice.paid": _handle_invoice_paid,
+    "invoice.payment_failed": _handle_invoice_payment_failed,
 }
 
 
@@ -1526,6 +1660,7 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Billing not configured")
 
     import stripe
+
     stripe.api_key = STRIPE_SECRET_KEY
     payload = await request.body()
     sig = request.headers.get("stripe-signature")
@@ -1541,7 +1676,10 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
     # any state. No race window between "have we seen this?" and
     # "process it" because the SQL statement is atomic.
     is_new = await _record_event_or_skip(
-        db, event["id"], event["type"], payload.decode(),
+        db,
+        event["id"],
+        event["type"],
+        payload.decode(),
     )
     if not is_new:
         return {"received": True, "duplicate": True}
@@ -1558,6 +1696,7 @@ async def stripe_webhook(request: Request, db: Database = Depends(get_db)):
 
 
 # ─── Webhook helpers ────────────────────────────────────────────────
+
 
 async def _provision_from_checkout(db, session_obj: dict) -> None:
     """Create user + workspace + api_key after a successful Checkout session.
@@ -1579,16 +1718,20 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         session_id,
     )
     if existing:
-        return   # idempotent retry
+        return  # idempotent retry
 
     metadata = session_obj.get("metadata") or {}
     customer_details = session_obj.get("customer_details") or {}
     email = (
-        session_obj.get("customer_email")
-        or customer_details.get("email")
-        or metadata.get("email")
-        or ""
-    ).strip().lower()
+        (
+            session_obj.get("customer_email")
+            or customer_details.get("email")
+            or metadata.get("email")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     tier_key = canonical_plan_id(metadata.get("tier_key") or "personal")
     if not email:
         # No email means we can't provision. Log and bail.
@@ -1597,7 +1740,8 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
                    (stripe_session_id, email, tier_key, workspace_id, api_key,
                     claimed, error)
                VALUES ($1, '', $2, '', '', TRUE, 'no_email_in_session')""",
-            session_id, tier_key,
+            session_id,
+            tier_key,
         )
         return
 
@@ -1608,11 +1752,13 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         # No password: the user will set one via password-reset on first
         # web login, or stay API-key-only forever (Crowe Logic doesn't
         # strictly require a web login for CLI-only usage).
-        placeholder = secrets.token_hex(32)   # unreachable hash, forces reset
+        placeholder = secrets.token_hex(32)  # unreachable hash, forces reset
         await db.execute(
             """INSERT INTO users (id, email, display_name, password_hash)
                VALUES ($1, $2, $3, $4)""",
-            user_id, email, email.split("@")[0],
+            user_id,
+            email,
+            email.split("@")[0],
             _hash_password(placeholder),
         )
     else:
@@ -1632,12 +1778,16 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         await db.execute(
             """INSERT INTO organizations (id, name, slug, owner_id, stripe_customer_id)
                VALUES ($1, $2, $3, $4, $5)""",
-            org_id, f"{email.split('@')[0]} Org", org_slug, user_id,
+            org_id,
+            f"{email.split('@')[0]} Org",
+            org_slug,
+            user_id,
             customer_id,
         )
         await db.execute(
             "INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'owner')",
-            org_id, user_id,
+            org_id,
+            user_id,
         )
     else:
         org_id = org["id"]
@@ -1645,7 +1795,8 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
             """UPDATE organizations
                   SET stripe_customer_id = COALESCE(NULLIF($2, ''), stripe_customer_id)
                 WHERE id = $1""",
-            org_id, customer_id,
+            org_id,
+            customer_id,
         )
 
     # Find or create the default workspace.
@@ -1659,7 +1810,10 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
             """INSERT INTO workspaces (id, org_id, name, slug, plan_id,
                                         stripe_subscription_id)
                VALUES ($1, $2, 'Default', 'default', $3, $4)""",
-            workspace_id, org_id, tier_key, subscription_id,
+            workspace_id,
+            org_id,
+            tier_key,
+            subscription_id,
         )
     else:
         workspace_id = ws["id"]
@@ -1669,7 +1823,9 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
                   SET plan_id = $2,
                       stripe_subscription_id = COALESCE(NULLIF($3, ''), stripe_subscription_id)
                 WHERE id = $1""",
-            workspace_id, tier_key, subscription_id,
+            workspace_id,
+            tier_key,
+            subscription_id,
         )
 
     if subscription_id:
@@ -1684,7 +1840,10 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
                    stripe_subscription_id = $4,
                    status = 'active',
                    updated_at = now()""",
-            f"sub_{workspace_id}", workspace_id, tier_key, subscription_id,
+            f"sub_{workspace_id}",
+            workspace_id,
+            tier_key,
+            subscription_id,
         )
 
     api_key, key_prefix, key_hash = make_pat(workspace_id)
@@ -1693,7 +1852,11 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
         """INSERT INTO api_keys
                (id, workspace_id, user_id, key_hash, key_prefix, label, scopes)
            VALUES ($1, $2, $3, $4, $5, 'VS Code (checkout)', '["chat","vision","agents","ide"]')""",
-        key_id, workspace_id, user_id, key_hash, key_prefix,
+        key_id,
+        workspace_id,
+        user_id,
+        key_hash,
+        key_prefix,
     )
 
     # Refill credits immediately so the user can start using the product
@@ -1709,7 +1872,9 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
                allocation = EXCLUDED.allocation,
                active = TRUE,
                updated_at = now()""",
-        workspace_id, tier_key, allocation,
+        workspace_id,
+        tier_key,
+        allocation,
     )
 
     # Store the provisioned key in the one-time-retrieval table so the
@@ -1720,7 +1885,11 @@ async def _provision_from_checkout(db, session_obj: dict) -> None:
                (stripe_session_id, email, tier_key, workspace_id, api_key,
                 claimed, error)
            VALUES ($1, $2, $3, $4, $5, FALSE, '')""",
-        session_id, email, tier_key, workspace_id, api_key,
+        session_id,
+        email,
+        tier_key,
+        workspace_id,
+        api_key,
     )
 
 
@@ -1755,12 +1924,16 @@ async def _refill_credits_for_subscription(db, stripe_subscription_id: str) -> N
                    reset_at = EXCLUDED.reset_at,
                    active = TRUE,
                    updated_at = now()""",
-            row["workspace_id"], tier_key, allocation, reset_at,
+            row["workspace_id"],
+            tier_key,
+            allocation,
+            reset_at,
         )
         await db.execute(
             """INSERT INTO credit_transactions
                    (workspace_id, amount, reason, metadata)
                VALUES ($1, $2, 'webhook_refill', $3)""",
-            row["workspace_id"], allocation,
+            row["workspace_id"],
+            allocation,
             json.dumps({"tier": tier_key, "stripe_sub": stripe_subscription_id}),
         )
