@@ -102,7 +102,13 @@ class MCPServerConnection:
         return self._process is not None and self._process.poll() is None
 
     def _send_request(self, method: str, params: dict) -> dict:
-        """Send a JSON-RPC request and read the response."""
+        """Send a JSON-RPC request and read the matching response.
+
+        Servers may interleave notifications (logging, progress) on stdout;
+        reading the next line blindly would return those in place of the
+        response and shift every subsequent reply off by one. Skip anything
+        whose id does not match ours.
+        """
         with self._lock:
             self._request_id += 1
             msg = {
@@ -111,7 +117,14 @@ class MCPServerConnection:
                 "method": method,
                 "params": params,
             }
-            return self._rpc(msg)
+            self._write(msg)
+            deadline = time.time() + 30
+            while True:
+                resp = self._read(deadline)
+                if resp.get("id") == self._request_id and (
+                    "result" in resp or "error" in resp
+                ):
+                    return resp
 
     def _send_notification(self, method: str, params: dict):
         """Send a JSON-RPC notification (no response expected)."""
@@ -123,10 +136,6 @@ class MCPServerConnection:
             }
             self._write(msg)
 
-    def _rpc(self, msg: dict) -> dict:
-        """Write a message and read the response."""
-        self._write(msg)
-        return self._read()
 
     def _write(self, msg: dict):
         """Write a JSON-RPC message to the server's stdin."""
@@ -136,18 +145,18 @@ class MCPServerConnection:
         self._process.stdin.write(payload.encode() + b"\n")
         self._process.stdin.flush()
 
-    def _read(self) -> dict:
-        """Read a JSON-RPC response from the server's stdout."""
+    def _read(self, deadline: float) -> dict:
+        """Read one JSON-RPC message line from the server's stdout."""
         if not self.alive:
             raise ConnectionError("MCP server process is not running")
 
-        # Read with timeout
         line = b""
-        start = time.time()
-        while time.time() - start < 30:
+        while time.time() < deadline:
             byte = self._process.stdout.read(1)
             if byte == b"\n":
-                break
+                if line:
+                    break
+                continue
             if byte == b"":
                 if self._process.poll() is not None:
                     stderr = self._process.stderr.read().decode()[:500]

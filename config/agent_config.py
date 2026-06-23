@@ -928,23 +928,6 @@ _BASE_MODEL_CHAIN = [
         "type": "reasoning",
         "provider": "ollama",
     },
-    # ─── Free tier: CroweLM Mycelium — anonymous gateway-only tier (Modal proxy) ──
-    {
-        "name": "crowelm-mycelium",
-        "label": "CroweLM Mycelium",
-        "type": "fast",
-        "provider": "openai_compat",
-        # The Modal app (crowe-mycelium-serve) fronts Ollama, which serves the
-        # model under its registry tag — NOT our brand name.
-        "backend_name": "Mcrowe1210/gemma-4-mycelium-e4b",
-        "aliases": ["mycelium-free", "free"],
-        "endpoint_env": "CROWELM_MYCELIUM_ENDPOINT",
-        "api_key_env": "CROWELM_MYCELIUM_API_KEY",
-        "prompt": (
-            "You are CroweLM Mycelium, Crowe Logic's free community model. "
-            "Be helpful and concise."
-        ),
-    },
 ]
 
 
@@ -1255,7 +1238,7 @@ NEON_API_KEY = os.environ.get("NEON_API_KEY", "")
 
 # Agent identity
 AGENT_NAME = "crowe-logic"
-AGENT_VERSION = "0.4.2"
+AGENT_VERSION = "0.5.0"
 
 SYSTEM_INSTRUCTIONS = """You are Crowe Logic, a universal AI agent created by Michael Crowe.
 
@@ -1550,24 +1533,14 @@ _TIER_OVERLAYS: dict[str, str] = {
 }
 
 
-def build_system_instructions(
-    model_cfg: dict | None = None, *, include_agent_tools: bool = True
-) -> str:
+def build_system_instructions(model_cfg: dict | None = None) -> str:
     """Compose the base system prompt with a model-specific CroweLM persona.
 
     Quality Stack integration: prefer per-variant prompt files at
     config/system_prompts/<slug>.md when present. Falls back to the inline
     `prompt` field on model_cfg for variants that don't yet have a file.
-
-    ``include_agent_tools`` controls whether the ~9k-char SYSTEM_INSTRUCTIONS
-    agent base (Core Tools, Vision, MCP ecosystem, etc.) is prepended. The CLI
-    agent needs it. A toolless surface — e.g. the metered gateway's chat turn,
-    which cannot execute tools — must pass False: otherwise the model is told it
-    has tools it doesn't, dutifully emits ``<tool_code> crowe_knowledge_base(...)``
-    instead of answering, and returns broken/empty content. Identity, brand
-    policy, and tier guidance are kept either way.
     """
-    prompt_parts = [SYSTEM_INSTRUCTIONS.strip()] if include_agent_tools else []
+    prompt_parts = [SYSTEM_INSTRUCTIONS.strip()]
     if not model_cfg:
         return "\n\n".join(prompt_parts)
 

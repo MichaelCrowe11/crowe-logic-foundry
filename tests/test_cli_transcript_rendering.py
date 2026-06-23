@@ -47,7 +47,9 @@ def test_render_transcript_markdown_prints_authored_answer_block():
     assert "world" in output
 
 
-def test_render_tool_card_uses_action_panel_for_success():
+def test_render_tool_card_uses_compact_line_for_success():
+    # Success renders as a one-line ledger entry, not a bordered panel; the
+    # ACTION panel is reserved for failures so red weight means trouble.
     console = _recorded_console()
 
     render_tool_card(
@@ -60,10 +62,14 @@ def test_render_tool_card_uses_action_panel_for_success():
     )
 
     output = console.export_text()
-    assert "ACTION · ok" in output
+    assert "ACTION" not in output
+    assert "✓" in output
     assert "browser_navigate" in output
+    assert "1.2s" in output
     assert "url=https://example.com" in output
     assert "loaded (11 chars)" in output
+    body = [l for l in output.splitlines() if l.strip()]
+    assert len(body) == 1
 
 
 def test_render_error_preserves_literal_detail_text():
