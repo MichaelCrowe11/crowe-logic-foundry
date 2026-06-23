@@ -23,11 +23,13 @@ Two-stage registration so the model actually sees the tools:
      id(user_functions) is busted by mutating in place BEFORE the first
      load_tools() call — which is fine because we run at import time.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
@@ -44,6 +46,7 @@ ENABLE_ENV = "CROWE_AGENT_TOOLS"
 HOST_ENV = "CROWE_AGENT_HOST"
 PORT_ENV = "CROWE_AGENT_PORT"
 AUTH_ENV = "WAVETERM_AUTH_KEY"
+_TOKEN_FILE = Path.home() / ".crowe-logic" / "agent-authkey"
 
 # Track the proxy fns we created so we can drop them again on test resets.
 _REGISTERED_PROXIES: List[Callable] = []
@@ -55,9 +58,24 @@ def _base_url() -> str:
     return f"http://{host}:{port}"
 
 
+def _auth_key() -> Optional[str]:
+    """Resolve the agent transport auth key: env first, then the shared token file.
+
+    Crowe Terminal sets WAVETERM_AUTH_KEY when it spawns the bridge directly; for every
+    other Foundry entry point it persists the key to ~/.crowe-logic/agent-authkey.
+    """
+    key = os.environ.get(AUTH_ENV)
+    if key:
+        return key
+    try:
+        return _TOKEN_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 def _headers() -> Dict[str, str]:
     headers = {"Content-Type": "application/json"}
-    key = os.environ.get(AUTH_ENV)
+    key = _auth_key()
     if key:
         headers["X-AuthKey"] = key
     return headers
@@ -71,7 +89,9 @@ def _fetch_catalog() -> Optional[List[Dict[str, Any]]]:
         with httpx.Client(timeout=2.0) as client:
             r = client.get(f"{_base_url()}/v1/tools", headers=_headers())
             if r.status_code != 200:
-                logger.info("[crowe-terminal-tools] catalog fetch returned %s", r.status_code)
+                logger.info(
+                    "[crowe-terminal-tools] catalog fetch returned %s", r.status_code
+                )
                 return None
             data = r.json()
             return data.get("tools") or []
@@ -84,7 +104,10 @@ def _call_remote(tool_name: str, kwargs: Dict[str, Any]) -> str:
     """POST a tool call back to Crowe Terminal and return the result as a string."""
     if httpx is None:
         return json.dumps({"error": "httpx not installed in foundry env"})
-    body = {"name": tool_name, "arguments": {k: v for k, v in kwargs.items() if v is not None}}
+    body = {
+        "name": tool_name,
+        "arguments": {k: v for k, v in kwargs.items() if v is not None},
+    }
     try:
         with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
             r = client.post(
@@ -93,16 +116,20 @@ def _call_remote(tool_name: str, kwargs: Dict[str, Any]) -> str:
                 json=body,
             )
         if r.status_code != 200:
-            return json.dumps({
-                "error": f"crowe-terminal call failed: {r.status_code}",
-                "body": r.text[:512],
-            })
+            return json.dumps(
+                {
+                    "error": f"crowe-terminal call failed: {r.status_code}",
+                    "body": r.text[:512],
+                }
+            )
         payload = r.json()
         if payload.get("iserror"):
-            return json.dumps({
-                "error": payload.get("errortext") or "tool returned error",
-                "tool": tool_name,
-            })
+            return json.dumps(
+                {
+                    "error": payload.get("errortext") or "tool returned error",
+                    "tool": tool_name,
+                }
+            )
         content = payload.get("content")
         if isinstance(content, (dict, list)):
             return json.dumps(content)
@@ -206,7 +233,9 @@ def _make_proxy(catalog_entry: Dict[str, Any]) -> Optional[Callable]:
     try:
         exec(src, namespace)  # noqa: S102 - we generate the source ourselves
     except SyntaxError as exc:
-        logger.error("[crowe-terminal-tools] failed to compile proxy %s: %s", py_name, exc)
+        logger.error(
+            "[crowe-terminal-tools] failed to compile proxy %s: %s", py_name, exc
+        )
         return None
     return namespace[py_name]
 
@@ -229,7 +258,9 @@ def _add_to_user_functions(fn: Callable) -> None:
         cache.clear()
 
 
-def _add_to_legacy_registry(fn: Callable, name: str, description: str, schema: Dict[str, Any], mutating: bool) -> None:
+def _add_to_legacy_registry(
+    fn: Callable, name: str, description: str, schema: Dict[str, Any], mutating: bool
+) -> None:
     try:
         from tools.registry import ToolMeta, get_registry
     except ImportError:
@@ -242,7 +273,9 @@ def _add_to_legacy_registry(fn: Callable, name: str, description: str, schema: D
         parameters=schema,
         returns="JSON string with tool result.",
         is_async=False,
-        tags={"crowe-terminal", "remote", "mutating"} if mutating else {"crowe-terminal", "remote"},
+        tags={"crowe-terminal", "remote", "mutating"}
+        if mutating
+        else {"crowe-terminal", "remote"},
     )
     registry = get_registry()
     registry._tools[fn.__name__] = meta  # noqa: SLF001
@@ -268,7 +301,8 @@ def discover_and_register() -> List[str]:
         _add_to_legacy_registry(
             fn,
             fn.__name__,
-            (fn_meta.get("description") or "") + (" [mutating]" if entry.get("x_mutating") else ""),
+            (fn_meta.get("description") or "")
+            + (" [mutating]" if entry.get("x_mutating") else ""),
             fn_meta.get("parameters") or {"type": "object"},
             bool(entry.get("x_mutating")),
         )
