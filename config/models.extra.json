@@ -115,7 +115,7 @@
       "type": "reasoning",
       "provider": "openai_compat",
       "backend_name": "nvidia/nemotron-3-super-120b-a12b",
-      "endpoint_env": "NEMOCLAW_ENDPOINT",
+      "endpoint_env": "NEMOCLAW_SANDBOX_URL",
       "api_key_env": "NEMOCLAW_API_KEY",
       "aliases": [
         "crowelm-talon-nemoclaw",
